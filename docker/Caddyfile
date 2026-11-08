@@ -1,0 +1,5 @@
+{$DOMAIN} {
+	reverse_proxy moecloud:3000 {
+		flush_interval -1
+	}
+}

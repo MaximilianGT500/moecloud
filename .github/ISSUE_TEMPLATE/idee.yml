@@ -1,0 +1,24 @@
+name: Idee vorschlagen
+description: Eine neue Funktion oder eine Verbesserung
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Schau bitte zuerst in die [offenen Issues](https://github.com/MaximilianGT500/moecloud/issues), ob es die Idee schon gibt. Dann reicht ein Daumen nach oben oder ein Kommentar dort.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Worum geht es?
+      description: Was möchtest du erreichen und was fehlt dir dafür in MoeCloud?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Wie könnte es aussehen?
+      description: Beschreib, wie du dir die Lösung vorstellst. Screenshots oder Skizzen helfen.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen
+      description: Wie löst du es bisher, oder wie machen es andere Programme?

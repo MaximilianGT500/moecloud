@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+cd /opt/moecloud
+export MOECLOUD_COMMAND=moecloud
+dir="${DATA_DIR:-/data}"
+
+if [ "$(id -u)" = "0" ]; then
+  exec setpriv --reuid="$(stat -c %u "$dir")" --regid="$(stat -c %g "$dir")" --clear-groups node cli.ts "$@"
+fi
+exec node cli.ts "$@"

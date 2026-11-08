@@ -1,0 +1,83 @@
+name: Prüfung
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v7
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --no-audit --no-fund
+
+      - name: Formatierung prüfen
+        run: npx prettier --check .
+
+      - name: Typen prüfen
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Übersetzungen prüfen
+        run: node tools/i18n.ts --strict
+
+      - name: Oberfläche bauen
+        run: npm run build
+
+      - name: Ablauf im Browser
+        run: npm run test:browser
+        env:
+          TMPDIR: ${{ runner.temp }}
+          SCREENSHOTS: ${{ runner.temp }}/screenshots
+
+      - name: Bilder zu Fehlern hochladen
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-fehler
+          path: ${{ runner.temp }}/moecloud-browser-fehler
+          if-no-files-found: ignore
+
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v7
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Links, Anker und Versionen prüfen
+        run: node --disable-warning=ExperimentalWarning tools/check-website.ts
+
+      - name: HTML prüfen
+        working-directory: website
+        run: npx --yes html-validate@11 index.html changelog.html 404.html
+
+      - name: Skripte prüfen
+        run: |
+          bash -n website/install.sh
+          bash website/install.sh --help
+          shellcheck website/install.sh docker/entrypoint.sh docker/moecloud

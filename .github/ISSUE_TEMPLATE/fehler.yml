@@ -1,0 +1,54 @@
+name: Fehler melden
+description: Etwas funktioniert nicht so, wie es soll
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke, dass du dir die Zeit nimmst. Schau bitte zuerst in die [offenen Issues](https://github.com/MaximilianGT500/moecloud/issues), ob es den Fehler schon gibt.
+        Sicherheitslücken meldest du bitte nicht hier, sondern vertraulich wie in der [SECURITY.md](https://github.com/MaximilianGT500/moecloud/blob/main/SECURITY.md) beschrieben.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Steht unten links in der Seitenleiste und unter Admin › System.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation
+      options:
+        - Installationsskript
+        - Docker
+        - Node.js
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Was ist passiert?
+      description: Was hast du gemacht, was ist passiert und was hättest du erwartet?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zum Nachstellen
+      placeholder: |
+        1. Ordner „Fotos“ öffnen
+        2. Ein Bild mit Rechtsklick teilen
+        3. …
+  - type: input
+    id: client
+    attributes:
+      label: Browser und Betriebssystem
+      description: Bei WebDAV auch das Programm, etwa Explorer, Finder oder rclone.
+      placeholder: Firefox 150 unter Windows 11
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: Passende Zeilen aus dem Log, ohne Passwörter, Tokens oder Links. Mit Docker zeigt sie `docker compose logs moecloud`.
+      render: shell

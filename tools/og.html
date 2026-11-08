@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>MoeCloud</title>
+    <style>
+      @font-face {
+        font-family: 'M PLUS Rounded 1c';
+        font-weight: 400;
+        src: url('{{font400}}') format('woff2');
+      }
+      @font-face {
+        font-family: 'M PLUS Rounded 1c';
+        font-weight: 800;
+        src: url('{{font800}}') format('woff2');
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+      }
+      body {
+        position: relative;
+        background: #f3f8f5;
+        color: #142a22;
+        font-family: 'M PLUS Rounded 1c', sans-serif;
+      }
+      .text {
+        position: absolute;
+        left: 72px;
+        top: 96px;
+        width: 520px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        font-weight: 800;
+        font-size: 40px;
+      }
+      .brand img {
+        width: 132px;
+        filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)
+          drop-shadow(6px 7px 0 #b5dccb);
+      }
+      h1 {
+        margin: 40px 0 0;
+        font-size: 64px;
+        line-height: 1.05;
+        letter-spacing: -0.02em;
+        font-weight: 800;
+      }
+      p {
+        margin: 24px 0 0;
+        font-size: 26px;
+        line-height: 1.45;
+        color: #46645a;
+      }
+      .shot {
+        position: absolute;
+        left: 640px;
+        top: 92px;
+        width: 760px;
+        border-radius: 22px;
+        border: 6px solid #fff;
+        box-shadow: 12px 14px 0 #b5dccb;
+        transform: rotate(-3deg);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="text">
+      <div class="brand"><img src="{{sticker}}" alt="" />MoeCloud</div>
+      <h1>Deine Dateien, dein Server</h1>
+      <p>Hochladen, ansehen, teilen und als Laufwerk einbinden. Mit Virenscan, Open Source.</p>
+    </div>
+    <img class="shot" src="{{shot}}" alt="" />
+  </body>
+</html>

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Sicherheitslücke melden
+    url: https://github.com/MaximilianGT500/moecloud/security/policy
+    about: Bitte nicht öffentlich, sondern vertraulich melden.
+  - name: Anleitung
+    url: https://github.com/MaximilianGT500/moecloud#readme
+    about: Installation, Einrichtung, Virenscan, E-Mail und alle Einstellungen.
+  - name: Website
+    url: https://moecloud.moestudio.net
+    about: Kurzanleitung und Changelog.
