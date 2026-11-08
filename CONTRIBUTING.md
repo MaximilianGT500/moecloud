@@ -39,16 +39,11 @@ node tools/i18n.ts --strict
 
 Hast du etwas an der Oberfläche geändert, prüf den Ablauf zusätzlich mit `npm run test:browser`. Der Test braucht Chrome, mit `CHROME_PATH` gibst du den Pfad an. Er erzeugt dabei auch die Screenshots in `docs/screenshots` neu.
 
-## Website
+Änderst du das Installationsskript, prüf es mit `shellcheck install.sh`.
 
-Die Projektseite liegt in `website/` und kommt ohne Build aus. Nach neuen Screenshots erzeugt `node tools/website.ts` die Bilder, Schriften und das Vorschaubild neu. Vor dem Veröffentlichen prüfen diese Befehle Links und HTML:
+## Neue Version
 
-```bash
-node tools/check-website.ts
-cd website && npx html-validate index.html changelog.html 404.html
-```
-
-Für eine neue Version gehören die Versionsnummer in `package.json`, ein Eintrag im `CHANGELOG.md`, ein Abschnitt in `website/changelog.html` und die `website/version.json` zusammen. `tools/check-website.ts` meldet, wenn sie nicht zusammenpassen.
+Für eine neue Version gehören die Versionsnummer in `package.json` und ein Eintrag im `CHANGELOG.md` zusammen. Die Projektseite moecloud.moestudio.net mit `version.json` und Changelog liegt nicht in diesem Repository.
 
 ## Regeln für den Code
 

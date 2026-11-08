@@ -15,6 +15,6 @@ Dockerfile
 docker-compose*.yml
 docker/Caddyfile
 .prettierrc.json
-website
+install.sh
 tools
 docker/clamav.yml

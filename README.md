@@ -124,7 +124,7 @@ Mit Domain bindet das Skript MoeCloud nur an `127.0.0.1`, erreichbar ist es dann
 | `sudo moecloud stop`    | MoeCloud und alle Dienste daneben beenden, `start` startet sie wieder   |
 | `sudo moecloud …`       | Alle anderen Befehle der [Kommandozeile](#kommandozeile), etwa `backup` |
 
-Das Skript liegt auch im Repository unter [`website/install.sh`](website/install.sh). Wer es vorher lesen möchte, lädt es erst herunter und startet es dann mit `sudo bash install.sh`.
+Das Skript liegt auch im Repository als [`install.sh`](install.sh). Wer es vorher lesen möchte, lädt es erst herunter und startet es dann mit `sudo bash install.sh`.
 
 ### Mit Docker
 
@@ -670,8 +670,6 @@ npm run dev
 | `node tools/i18n.ts`                  | Prüft, ob alle Texte übersetzt sind und alle Platzhalter stimmen                                                                                                              |
 | `node tools/demo.ts <adresse> [code]` | Legt Beispieldaten mit Emi, Mia und Lea an, mit Code auch gleich die Einrichtung                                                                                              |
 | `node tools/icons.ts`                 | Erzeugt alle Icons aus `public/favicon.svg`                                                                                                                                   |
-| `node tools/website.ts`               | Erzeugt Schriften, Bilder und Vorschaubild für die Website aus den Screenshots, braucht wie der Ablauf im Browser Chrome                                                      |
-| `node tools/check-website.ts`         | Prüft Links, Anker und die `version.json` der Website                                                                                                                         |
 
 Die Tests für den Virenscan brauchen kein ClamAV, sie sprechen mit einem nachgebauten `clamd`. E-Mails landen in den Tests in einem Postausgang im Speicher.
 
@@ -687,10 +685,10 @@ Die Texte sind auf Deutsch geschrieben und dienen gleichzeitig als Schlüssel f�
 | `web/src`       | Oberfläche mit React und Material UI, nach Bereichen getrennt, die Vorschauen unter `app/files/preview`                      |
 | `web/src/theme` | Farbschema aus der Grundfarbe, Tokens und MUI-Theme                                                                          |
 | `docker/`       | Startskript, Kommandozeile, Caddyfile und die Ergänzung für ClamAV                                                           |
-| `website/`      | Projektseite moecloud.moestudio.net mit Installationsskript und `version.json`                                               |
 | `test/`         | API-Tests und der Ablauf im Browser                                                                                          |
-| `tools/`        | Übersetzungen prüfen, Beispieldaten, Icons und Website                                                                       |
+| `tools/`        | Übersetzungen prüfen, Beispieldaten und Icons                                                                                |
 | `cli.ts`        | Befehle für die Kommandozeile                                                                                                |
+| `install.sh`    | Installationsskript, das auch unter moecloud.moestudio.net/install.sh liegt                                                  |
 
 ## Support, Mitwirken und Lizenz
 
