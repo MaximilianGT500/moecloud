@@ -13,6 +13,7 @@ import { renderDocument } from './lib/html.ts';
 import { setLogger } from './lib/log.ts';
 import { maintenancePage, messagePage } from './views/pages.ts';
 import { basicAuth } from './services/apppasswords.ts';
+import { needsSecondFactor } from './services/auth.ts';
 import { readSession } from './services/sessions.ts';
 import { CSRF_COOKIE, LANG_COOKIE, type RequestAuth } from './lib/request.ts';
 import * as settings from './services/settings.ts';
@@ -31,6 +32,7 @@ import { eventRoutes } from './routes/events.ts';
 import { davRoutes } from './routes/dav.ts';
 import { systemAdminRoutes } from './routes/system-admin.ts';
 import { metricsRoutes } from './routes/metrics.ts';
+import { groupRoutes } from './routes/groups.ts';
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -117,6 +119,25 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
 
+  const secondFactorRoutes = new Set([
+    'GET /api/session',
+    'GET /api/account',
+    'GET /api/account/security',
+    'PATCH /api/account',
+    'PATCH /api/account/prefs',
+    'POST /api/account/password',
+    'POST /api/account/totp/setup',
+    'POST /api/account/totp/enable',
+    'POST /api/account/passkeys/options',
+    'POST /api/account/passkeys',
+    'PATCH /api/account/passkeys/:id',
+    'DELETE /api/account/app-passwords/:id',
+    'DELETE /api/account/sessions/:id',
+    'POST /api/account/sessions/revoke-others',
+    'DELETE /api/account/session',
+    'POST /api/language',
+  ]);
+
   app.addHook('onRequest', async (request, reply) => {
     request.nonce = randomBytes(16).toString('base64');
     if (isAsset(request.url)) return;
@@ -156,6 +177,21 @@ export async function buildApp(): Promise<FastifyInstance> {
         status: 503,
         body: maintenancePage(request, settings.get('maintenance.message')),
       });
+    }
+    if (auth && needsSecondFactor(auth.user)) {
+      if (!auth.session) request.auth = null;
+      else if (request.url.startsWith('/api/')) {
+        if (!secondFactorRoutes.has(`${request.method} ${request.routeOptions.url ?? ''}`)) {
+          return reply.code(403).send({
+            error: {
+              code: 'second_factor_required',
+              message: t(request.lang, 'Richte zuerst die Zwei-Faktor-Anmeldung ein, die Verwaltung verlangt sie'),
+            },
+          });
+        }
+      } else if (request.method === 'GET' && /^\/(files|admin)(\/|\?|$)/.test(request.url)) {
+        return reply.redirect('/account');
+      }
     }
   });
 
@@ -244,6 +280,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(publicRoutes);
   await app.register(accountRoutes);
   await app.register(adminRoutes);
+  await app.register(groupRoutes);
   await app.register(systemAdminRoutes);
   await app.register(eventRoutes);
   await app.register(davRoutes);

@@ -47,6 +47,9 @@ const GROUPS: Record<string, string[]> = {
     'files_transferred',
     'invite_created',
     'invite_deleted',
+    'group_created',
+    'group_updated',
+    'group_deleted',
   ],
   system: [
     'settings_changed',

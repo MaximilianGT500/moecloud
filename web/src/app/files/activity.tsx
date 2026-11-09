@@ -16,6 +16,10 @@ import NoteAddRounded from '@mui/icons-material/NoteAddRounded';
 import PaletteRounded from '@mui/icons-material/PaletteRounded';
 import PersonAddAlt1Rounded from '@mui/icons-material/PersonAddAlt1Rounded';
 import PersonRemoveRounded from '@mui/icons-material/PersonRemoveRounded';
+import GroupAddRounded from '@mui/icons-material/GroupAddRounded';
+import GroupRemoveRounded from '@mui/icons-material/GroupRemoveRounded';
+import UnarchiveRounded from '@mui/icons-material/UnarchiveRounded';
+import RotateRightRounded from '@mui/icons-material/RotateRightRounded';
 import RestoreFromTrashRounded from '@mui/icons-material/RestoreFromTrashRounded';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { formatDateTime, formatDayLabel, formatRelative, formatTime } from '../../lib/format';
@@ -37,6 +41,10 @@ export type ActivityAction =
   | 'version_restore'
   | 'share_user'
   | 'unshare_user'
+  | 'share_group'
+  | 'unshare_group'
+  | 'extract'
+  | 'rotate'
   | 'share_link'
   | 'comment'
   | 'color';
@@ -70,6 +78,10 @@ const ICONS: Record<ActivityAction, SvgIconComponent> = {
   version_restore: HistoryRounded,
   share_user: PersonAddAlt1Rounded,
   unshare_user: PersonRemoveRounded,
+  share_group: GroupAddRounded,
+  unshare_group: GroupRemoveRounded,
+  extract: UnarchiveRounded,
+  rotate: RotateRightRounded,
   share_link: LinkRounded,
   comment: AddCommentRounded,
   color: PaletteRounded,
@@ -104,6 +116,14 @@ function own(entry: ActivityEntry, p: Record<string, string>) {
       return t('Du hast {name} mit {with} geteilt', p);
     case 'unshare_user':
       return t('Du teilst {name} nicht mehr mit {with}', p);
+    case 'share_group':
+      return t('Du hast {name} mit der Gruppe {with} geteilt', p);
+    case 'unshare_group':
+      return t('Du teilst {name} nicht mehr mit der Gruppe {with}', p);
+    case 'extract':
+      return t('Du hast {name} entpackt', p);
+    case 'rotate':
+      return t('Du hast {name} gedreht', p);
     case 'share_link':
       return t('Du hast einen Link für {name} erstellt', p);
     case 'comment':
@@ -144,6 +164,14 @@ function other(entry: ActivityEntry, p: Record<string, string>) {
       return t('{who} hat {name} mit {with} geteilt', p);
     case 'unshare_user':
       return t('{who} teilt {name} nicht mehr mit {with}', p);
+    case 'share_group':
+      return t('{who} hat {name} mit der Gruppe {with} geteilt', p);
+    case 'unshare_group':
+      return t('{who} teilt {name} nicht mehr mit der Gruppe {with}', p);
+    case 'extract':
+      return t('{who} hat {name} entpackt', p);
+    case 'rotate':
+      return t('{who} hat {name} gedreht', p);
     case 'share_link':
       return t('{who} hat einen Link für {name} erstellt', p);
     case 'comment':

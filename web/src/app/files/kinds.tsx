@@ -42,6 +42,7 @@ export interface Item {
   owner?: { id: number; name: string } | null;
   location?: string | null;
   grantId?: string;
+  viaGroup?: string;
   color?: string | null;
   infected?: boolean;
   takenAt?: number | null;

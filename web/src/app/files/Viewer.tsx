@@ -13,19 +13,26 @@ import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import InfoRounded from '@mui/icons-material/InfoRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
+import RotateLeftRounded from '@mui/icons-material/RotateLeftRounded';
+import RotateRightRounded from '@mui/icons-material/RotateRightRounded';
 import { AnimatePresence, m } from 'motion/react';
+import { api, errorText } from '../../lib/api';
 import { formatBytes, formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { c, mix, radius } from '../../theme/tokens';
 import { confirm } from '../common/dialogs';
+import { toast } from '../common/toast';
 import { ActionButtons, type Action } from './ActionMenu';
 import { triggerDownload } from './actions';
 import { Fact, MetaFacts, ScanState } from './facts';
 import { FileIcon, contentUrl, kindColor, kindLabel, previewType, thumbUrl, type Item } from './kinds';
+import { canEdit } from './model';
 import { useMeta } from './preview/media';
 import { Preview } from './preview/Preview';
 
 const SLIDE_SECONDS = 5;
+
+const ROTATABLE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/tiff']);
 
 interface ViewerProps {
   items: Item[];
@@ -90,11 +97,27 @@ export function Viewer({ items, index, onIndex, base = '/api', canDownload = tru
   const [dirty, setDirty] = useState(false);
   const [info, setInfo] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const touch = useRef<{ x: number; y: number; at: number } | null>(null);
   const has = (step: number) => index !== null && index + step >= 0 && index + step < items.length;
   const images = items.filter((entry) => previewType(entry) === 'image');
   const nextImage = index === null ? -1 : items.findIndex((entry, position) => position > index && previewType(entry) === 'image');
   const slideshow = playing && item !== null && previewType(item) === 'image';
+
+  const rotatable = item !== null && Boolean(onSaved) && canEdit(item) && !item.infected && ROTATABLE.has(item.mime ?? '') && !playing;
+
+  const rotate = async (degrees: 90 | 270) => {
+    if (!item || rotating) return;
+    setRotating(true);
+    try {
+      const result = await api.post<{ node: Item }>(`/api/nodes/${item.id}/rotate`, { degrees });
+      onSaved?.(result.node);
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setRotating(false);
+    }
+  };
 
   const go = async (step: number) => {
     if (!has(step) || index === null) return;
@@ -224,6 +247,20 @@ export function Viewer({ items, index, onIndex, base = '/api', canDownload = tru
                   {playing ? <PauseRounded /> : <PlayArrowRounded />}
                 </IconButton>
               </Tooltip>
+            )}
+            {rotatable && (
+              <>
+                <Tooltip title={t('Nach links drehen')}>
+                  <IconButton aria-label={t('Nach links drehen')} disabled={rotating} onClick={() => void rotate(270)}>
+                    <RotateLeftRounded />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('Nach rechts drehen')}>
+                  <IconButton aria-label={t('Nach rechts drehen')} disabled={rotating} onClick={() => void rotate(90)}>
+                    <RotateRightRounded />
+                  </IconButton>
+                </Tooltip>
+              </>
             )}
             <Tooltip title={info ? t('Informationen ausblenden') : t('Informationen zeigen')}>
               <IconButton aria-label={t('Informationen')} aria-pressed={info} onClick={() => setInfo(!info)}>

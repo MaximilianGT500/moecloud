@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
+import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -21,6 +22,10 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import AddLinkRounded from '@mui/icons-material/AddLinkRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import PauseCircleRounded from '@mui/icons-material/PauseCircleRounded';
+import PlayCircleRounded from '@mui/icons-material/PlayCircleRounded';
+import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import PersonAddRounded from '@mui/icons-material/PersonAddRounded';
@@ -63,6 +68,18 @@ interface Person {
   initials: string;
 }
 
+type Recipient = ({ kind: 'user' } & Person) | { kind: 'group'; id: number; name: string; members: number };
+
+function GroupAvatar({ size }: { size: number }) {
+  return (
+    <Avatar
+      sx={{ width: size, height: size, bgcolor: c.tertiaryContainer, color: c.onTertiaryContainer, '& svg': { fontSize: size * 0.55 } }}
+    >
+      <GroupsRounded />
+    </Avatar>
+  );
+}
+
 const settings = () =>
   (boot() as unknown as { share?: ShareSettings }).share ?? { links: true, users: true, requirePassword: false, maxDays: 0 };
 
@@ -95,6 +112,7 @@ function LinkForm({
   const [allowUpload, setAllowUpload] = useState(link?.allowUpload ?? false);
   const [uploadOnly, setUploadOnly] = useState(link?.uploadOnly ?? false);
   const [notify, setNotify] = useState(link?.notify ?? true);
+  const [maxDownloads, setMaxDownloads] = useState<number | null>(link?.maxDownloads ?? null);
   const [busy, setBusy] = useState(false);
   const today = dayValue(Date.now() + 86_400_000);
   const max = rules.maxDays ? dayValue(Date.now() + rules.maxDays * 86_400_000) : undefined;
@@ -112,6 +130,7 @@ function LinkForm({
         allowUpload: allowUpload || uploadOnly,
         uploadOnly,
         notify: (allowUpload || uploadOnly) && notify,
+        maxDownloads: allowDownload && !uploadOnly ? maxDownloads : null,
       };
       const result = link
         ? await api.patch<{ link: SharedLink }>(`/api/links/${link.id}`, body)
@@ -185,6 +204,24 @@ function LinkForm({
           }
           label={t('Herunterladen erlauben')}
         />
+        {allowDownload && !uploadOnly && (
+          <TextField
+            select
+            size="small"
+            label={t('Downloads')}
+            value={maxDownloads ?? 0}
+            onChange={(event) => setMaxDownloads(Number(event.target.value) || null)}
+            helperText={t('Danach funktioniert der Link nicht mehr. Ansehen zählt nicht als Download.')}
+            sx={{ mt: 1.5, mb: 1, maxWidth: 360 }}
+          >
+            <MenuItem value={0}>{t('Unbegrenzt')}</MenuItem>
+            {[1, 3, 5, 10, 25, 50, 100].map((count) => (
+              <MenuItem key={count} value={count}>
+                {tn(count, 'Höchstens {count} Download', 'Höchstens {count} Downloads')}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
         {folder && (
           <FormControlLabel
             control={
@@ -243,7 +280,23 @@ function LinkCard({
       ? { icon: <UploadRounded />, label: t('Nur hochladen') }
       : link.allowUpload && { icon: <UploadRounded />, label: t('Hochladen erlaubt') },
     !link.allowDownload && !link.uploadOnly && { icon: <VisibilityRounded />, label: t('Nur ansehen') },
+    link.maxDownloads && {
+      icon: <DownloadRounded />,
+      label: link.exhausted
+        ? t('Alle Downloads genutzt')
+        : t('{count} von {max} Downloads', { count: formatNumber(link.downloads), max: formatNumber(link.maxDownloads) }),
+    },
+    link.paused && { icon: <PauseCircleRounded />, label: t('Pausiert') },
   ].filter(Boolean) as { icon: ReactElement; label: string }[];
+  const togglePause = async () => {
+    try {
+      const result = await api.patch<{ link: SharedLink }>(`/api/links/${link.id}`, { paused: !link.paused });
+      onChange(result.link);
+      toast(result.link.paused ? t('Link pausiert') : t('Link wieder aktiv'));
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
   return (
     <Box sx={{ bgcolor: c.surfaceContainer, borderRadius: `${radius.md}px`, p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       {link.label && (
@@ -263,6 +316,11 @@ function LinkCard({
         <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: 1, minWidth: 140 }}>
           {t('{views} Aufrufe · {downloads} Downloads', { views: formatNumber(link.views), downloads: formatNumber(link.downloads) })}
         </Typography>
+        <Tooltip title={link.paused ? t('Fortsetzen') : t('Pausieren')}>
+          <IconButton aria-label={link.paused ? t('Link fortsetzen') : t('Link pausieren')} onClick={() => void togglePause()}>
+            {link.paused ? <PlayCircleRounded /> : <PauseCircleRounded />}
+          </IconButton>
+        </Tooltip>
         <Tooltip title={t('QR-Code')}>
           <IconButton aria-label={t('QR-Code')} aria-expanded={qr} onClick={() => setQr(!qr)}>
             <QrCode2Rounded />
@@ -302,8 +360,8 @@ function LinkCard({
 
 function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[]; onChange: (grants: SharedGrant[]) => void }) {
   const [query, setQuery] = useState('');
-  const [options, setOptions] = useState<Person[]>([]);
-  const [person, setPerson] = useState<Person | null>(null);
+  const [options, setOptions] = useState<Recipient[]>([]);
+  const [recipient, setRecipient] = useState<Recipient | null>(null);
   const [permission, setPermission] = useState<'view' | 'edit'>('view');
   const [loading, setLoading] = useState(false);
 
@@ -313,8 +371,20 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
     const timer = setTimeout(() => {
       setLoading(true);
       api
-        .get<{ items: Person[] }>(`/api/users/search?q=${encodeURIComponent(query.trim())}`, abort.signal)
-        .then((result) => setOptions(result.items.filter((entry) => !grants.some((grant) => grant.user?.id === entry.id))))
+        .get<{ items: Person[]; groups?: { id: number; name: string; members: number }[] }>(
+          `/api/users/search?q=${encodeURIComponent(query.trim())}`,
+          abort.signal
+        )
+        .then((result) =>
+          setOptions([
+            ...(result.groups ?? [])
+              .filter((group) => !grants.some((grant) => grant.group?.id === group.id))
+              .map((group) => ({ kind: 'group' as const, ...group })),
+            ...result.items
+              .filter((entry) => !grants.some((grant) => grant.user?.id === entry.id))
+              .map((person) => ({ kind: 'user' as const, ...person })),
+          ])
+        )
         .catch(() => {})
         .finally(() => setLoading(false));
     }, 220);
@@ -325,13 +395,20 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
   }, [query, grants]);
 
   const add = async () => {
-    if (!person) return;
+    if (!recipient) return;
     try {
-      const result = await api.post<{ grant: SharedGrant }>(`/api/nodes/${item.id}/grants`, { userId: person.id, permission });
+      const result = await api.post<{ grant: SharedGrant }>(`/api/nodes/${item.id}/grants`, {
+        ...(recipient.kind === 'group' ? { groupId: recipient.id } : { userId: recipient.id }),
+        permission,
+      });
       onChange([...grants, result.grant]);
-      setPerson(null);
+      setRecipient(null);
       setQuery('');
-      toast(t('Mit {name} geteilt', { name: person.name }));
+      toast(
+        recipient.kind === 'group'
+          ? t('Mit der Gruppe {name} geteilt', { name: recipient.name })
+          : t('Mit {name} geteilt', { name: recipient.name })
+      );
     } catch (error) {
       toast(errorText(error));
     }
@@ -343,12 +420,12 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
         <Autocomplete
           sx={{ flex: 1, minWidth: 220 }}
           options={query.trim().length < 2 ? [] : options}
-          value={person}
-          onChange={(_event, value) => setPerson(value)}
+          value={recipient}
+          onChange={(_event, value) => setRecipient(value)}
           inputValue={query}
           onInputChange={(_event, value) => setQuery(value)}
           getOptionLabel={(option) => option.name}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
+          isOptionEqualToValue={(a, b) => a.kind === b.kind && a.id === b.id}
           filterOptions={(list) => list}
           loading={loading}
           noOptionsText={query.trim().length < 2 ? t('Tipp mindestens 2 Zeichen') : t('Niemand gefunden')}
@@ -357,17 +434,21 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
             const { key, ...rest } = props as typeof props & { key: string };
             return (
               <Box component="li" key={key} {...rest} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                <UserAvatar initials={option.initials} size={32} />
+                {option.kind === 'group' ? <GroupAvatar size={32} /> : <UserAvatar initials={option.initials} size={32} />}
                 <Box>
                   <Typography variant="body2">{option.name}</Typography>
                   <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
-                    @{option.username}
+                    {option.kind === 'group'
+                      ? tn(option.members, 'Gruppe mit {count} Person', 'Gruppe mit {count} Personen')
+                      : `@${option.username}`}
                   </Typography>
                 </Box>
               </Box>
             );
           }}
-          renderInput={(params) => <TextField {...params} label={t('Person hinzufügen')} placeholder={t('Name oder Benutzername')} />}
+          renderInput={(params) => (
+            <TextField {...params} label={t('Person oder Gruppe')} placeholder={t('Name, Benutzername oder Gruppe')} />
+          )}
         />
         <Select
           value={permission}
@@ -378,25 +459,27 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
           <MenuItem value="view">{t('Kann ansehen')}</MenuItem>
           <MenuItem value="edit">{t('Kann bearbeiten')}</MenuItem>
         </Select>
-        <Button variant="tonal" startIcon={<PersonAddRounded />} disabled={!person} onClick={() => void add()} sx={{ minHeight: 56 }}>
+        <Button variant="tonal" startIcon={<PersonAddRounded />} disabled={!recipient} onClick={() => void add()} sx={{ minHeight: 56 }}>
           {t('Teilen')}
         </Button>
       </Box>
       {grants.map((grant) => (
         <Box key={grant.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <UserAvatar initials={grant.user?.initials ?? '?'} size={36} />
+          {grant.group ? <GroupAvatar size={36} /> : <UserAvatar initials={grant.user?.initials ?? '?'} size={36} />}
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
-              {grant.user?.name ?? t('Gelöschtes Konto')}
+              {grant.group?.name ?? grant.user?.name ?? t('Gelöschtes Konto')}
             </Typography>
             <Typography variant="caption" noWrap component="p" sx={{ color: c.onSurfaceVariant }}>
-              @{grant.user?.username}
+              {grant.group
+                ? tn(grant.group.members, 'Gruppe mit {count} Person', 'Gruppe mit {count} Personen')
+                : `@${grant.user?.username ?? ''}`}
             </Typography>
           </Box>
           <Select
             size="small"
             value={grant.permission}
-            aria-label={t('Recht von {name}', { name: grant.user?.name ?? '' })}
+            aria-label={t('Recht von {name}', { name: grant.group?.name ?? grant.user?.name ?? '' })}
             onChange={async (event) => {
               try {
                 const result = await api.patch<{ grant: SharedGrant }>(`/api/grants/${grant.id}`, { permission: event.target.value });
@@ -411,7 +494,7 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
           </Select>
           <Tooltip title={t('Freigabe entfernen')}>
             <IconButton
-              aria-label={t('Freigabe für {name} entfernen', { name: grant.user?.name ?? '' })}
+              aria-label={t('Freigabe für {name} entfernen', { name: grant.group?.name ?? grant.user?.name ?? '' })}
               onClick={async () => {
                 try {
                   await api.delete(`/api/grants/${grant.id}`);

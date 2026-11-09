@@ -38,7 +38,7 @@ Dieser Verhaltenskodex gilt in allen Räumen der Community und auch dann, wenn e
 
 ## Durchsetzung
 
-Missbräuchliches, belästigendes oder anderweitig inakzeptables Verhalten kannst du über das [Kontaktformular](https://maxi.lol/kontakt/) melden. Jede Meldung wird zügig und fair geprüft.
+Missbräuchliches, belästigendes oder anderweitig inakzeptables Verhalten kannst du über das [Kontaktformular](https://m-s.gg) melden. Jede Meldung wird zügig und fair geprüft.
 
 Alle, die den Verhaltenskodex durchsetzen, respektieren die Privatsphäre und Sicherheit der Person, die einen Vorfall meldet.
 

@@ -1,10 +1,21 @@
 import type { FastifyRequest } from 'fastify';
-import { one, run, tx } from '../lib/db.ts';
+import { one, run, tx, value } from '../lib/db.ts';
 import { hmac, newTotpSecret, normalizeRecoveryCode, randomId, recoveryCode, verifyPassword, verifyTotp } from '../lib/crypto.ts';
 import { badRequest, unauthorized } from '../lib/errors.ts';
 import { Limiter } from '../lib/limiter.ts';
 import * as settings from './settings.ts';
 import { findByLogin, getUser, keyOf, type UserRow } from './users.ts';
+
+export const secondFactorRequired = (user: Pick<UserRow, 'role'>, policy = settings.get('auth.require2fa')) =>
+  policy === 'all' || (policy === 'admins' && user.role === 'admin');
+
+export const passkeyCount = (userId: number) => value<number>('SELECT COUNT(*) FROM passkeys WHERE user_id = ?', userId) ?? 0;
+
+export const hasPasskey = (user: UserRow) => settings.get('auth.passkeys') && passkeyCount(user.id) > 0;
+
+export const hasSecondFactor = (user: UserRow) => Boolean(user.totp_enabled) || hasPasskey(user);
+
+export const needsSecondFactor = (user: UserRow) => secondFactorRequired(user) && !hasSecondFactor(user);
 
 const perIp = new Limiter(30, 15 * 60 * 1000);
 const perAccount = new Limiter(10, 15 * 60 * 1000);
@@ -124,6 +135,9 @@ export function enableTotp(user: UserRow, code: string) {
 
 export function disableTotp(request: FastifyRequest, user: UserRow, code: string) {
   if (!user.totp_enabled) return;
+  if (secondFactorRequired(user) && !hasPasskey(user)) {
+    throw badRequest('Die Verwaltung verlangt einen zweiten Faktor. Richte zuerst einen Passkey ein, dann kannst du die App entfernen.');
+  }
   if (!verifySecondFactor(request, user, code)) throw badRequest('Der Code stimmt nicht');
   resetTotp(user.id);
 }

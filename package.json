@@ -1,6 +1,6 @@
 {
   "name": "moecloud",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Selbst gehostete Cloud für deine Dateien: hochladen, ordnen, teilen und per WebDAV einbinden.",
   "type": "module",

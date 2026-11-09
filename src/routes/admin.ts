@@ -10,7 +10,7 @@ import { t } from '../lib/i18n.ts';
 import { admin } from '../lib/request.ts';
 import { displayName, email, hexColor, palette, parse, password, quota, username } from '../lib/validate.ts';
 import { AUDIT_ACTIONS, audit, listAudit, type AuditAction } from '../services/audit.ts';
-import { resetTotp } from '../services/auth.ts';
+import { hasSecondFactor, needsSecondFactor, resetTotp, secondFactorRequired } from '../services/auth.ts';
 import { listBackups } from '../services/backups.ts';
 import { createInvite, deleteInvite, listInvites, presentInvite } from '../services/invites.ts';
 import { serverGroups } from '../services/library.ts';
@@ -62,6 +62,7 @@ const settingsSchema = z
     'site.privacy': z.string().max(50_000),
     'auth.registration': z.enum(['closed', 'open', 'invite']),
     'auth.passkeys': z.boolean(),
+    'auth.require2fa': z.enum(['off', 'admins', 'all']),
     'storage.defaultQuota': quota,
     'storage.maxUpload': quota,
     'storage.trashDays': z.number().int().min(0).max(3650),
@@ -89,6 +90,7 @@ const settingsSchema = z
 function userView(user: Parameters<typeof adminUser>[0]) {
   return {
     ...adminUser(user),
+    needs2fa: needsSecondFactor(user),
     sessions: listSessions(user.id).length,
     links: value<number>('SELECT COUNT(*) FROM links WHERE owner_id = ?', user.id) ?? 0,
     files: value<number>("SELECT COUNT(*) FROM nodes WHERE owner_id = ? AND type = 'file' AND trashed_at IS NULL", user.id) ?? 0,
@@ -247,6 +249,15 @@ export async function adminRoutes(app: FastifyInstance) {
     return { user: userView(getUser(user.id)!) };
   });
 
+  app.post<{ Params: { id: string } }>('/api/admin/users/:id/reset-passkeys', async (request) => {
+    const actor = admin(request);
+    const user = getUser(Number(request.params.id));
+    if (!user) throw notFound('Diese Person gibt es nicht');
+    const removed = run('DELETE FROM passkeys WHERE user_id = ?', user.id).changes;
+    audit('admin_2fa_reset', { actor: actor.id, subject: user.id, request, details: { passkeys: removed } });
+    return { user: userView(getUser(user.id)!) };
+  });
+
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/logout', async (request) => {
     const actor = admin(request);
     const user = getUser(Number(request.params.id));
@@ -286,6 +297,18 @@ export async function adminRoutes(app: FastifyInstance) {
       (key) => JSON.stringify(input[key as keyof typeof input]) !== JSON.stringify(settings.get(key as settings.SettingKey))
     );
     const maintenance = input['maintenance.enabled'];
+    const policy = input['auth.require2fa'];
+    if (policy && changed.includes('auth.require2fa') && secondFactorRequired(actor, policy) && !hasSecondFactor(actor)) {
+      throw badRequest('Richte zuerst für dein eigenes Konto eine Authenticator-App oder einen Passkey ein');
+    }
+    if (
+      changed.includes('auth.passkeys') &&
+      input['auth.passkeys'] === false &&
+      secondFactorRequired(actor, policy) &&
+      !actor.totp_enabled
+    ) {
+      throw badRequest('Ohne Passkeys fehlt dir der zweite Faktor. Richte zuerst die Authenticator-App ein.');
+    }
     settings.setMany(input as Partial<settings.Settings>);
     if (maintenance !== undefined && changed.includes('maintenance.enabled')) {
       audit('maintenance', { actor: actor.id, request, details: { enabled: maintenance } });

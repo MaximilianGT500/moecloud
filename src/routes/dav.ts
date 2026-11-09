@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { HttpError, badRequest, forbidden, notFound, tooLarge } from '../lib/errors.ts';
 import { sendFile } from '../lib/http.ts';
 import { cleanName } from '../lib/names.ts';
+import { t } from '../lib/i18n.ts';
 import { basicAuth } from '../services/apppasswords.ts';
+import { needsSecondFactor } from '../services/auth.ts';
 import { record } from '../services/activity.ts';
 import { blobPath, receive, store } from '../services/blobs.ts';
 import { ingest } from '../services/ingest.ts';
@@ -76,7 +78,14 @@ function resolve(user: UserRow, segments: string[]): Resolved {
 
 function authenticate(request: FastifyRequest, reply: FastifyReply): UserRow | null {
   const result = basicAuth(request.headers.authorization, request.ip);
-  if (result && result !== 'blocked') return result;
+  if (result && result !== 'blocked') {
+    if (!needsSecondFactor(result)) return result;
+    reply
+      .code(403)
+      .type('text/plain; charset=utf-8')
+      .send(t(request.lang, 'Richte zuerst die Zwei-Faktor-Anmeldung ein, die Verwaltung verlangt sie'));
+    return null;
+  }
   reply
     .code(result === 'blocked' ? 429 : 401)
     .header('WWW-Authenticate', `Basic realm="${settings.get('site.name').replace(/"/g, '')}", charset="UTF-8"`)

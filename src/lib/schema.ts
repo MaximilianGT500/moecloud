@@ -333,6 +333,38 @@ const MIGRATIONS = [
     INSERT INTO blob_text_fts(rowid, content) VALUES (new.id, new.content);
   END;
   `,
+  `
+  CREATE TABLE groups (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE group_members (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+  );
+  CREATE INDEX group_members_user ON group_members(user_id);
+
+  CREATE TABLE group_grants (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (node_id, group_id)
+  );
+  CREATE INDEX group_grants_group ON group_grants(group_id);
+  CREATE INDEX group_grants_owner ON group_grants(owner_id);
+
+  ALTER TABLE links ADD COLUMN max_downloads INTEGER;
+  ALTER TABLE links ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

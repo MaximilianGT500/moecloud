@@ -64,9 +64,11 @@ const problems: string[] = [];
 const statuses: string[] = [];
 const failures: string[] = [];
 let photosUrl = '';
+let current = '';
 
 async function step(name: string, run: () => Promise<void>) {
   const started = Date.now();
+  current = name;
   try {
     await run();
     process.stdout.write(`ok      ${name} (${Date.now() - started} ms)\n`);
@@ -116,7 +118,7 @@ async function open(owner: BrowserContext, label: string) {
   page.on('pageerror', (error) => problems.push(`${label}: ${error.message}`));
   page.on('response', (response) => {
     if (response.status() >= 400 && !response.url().includes('/api/session/check'))
-      statuses.push(`${label}: ${response.status()} ${response.request().method()} ${response.url().replace(base, '')}`);
+      statuses.push(`${label} bei „${current}“: ${response.status()} ${response.request().method()} ${response.url().replace(base, '')}`);
   });
   return page;
 }
@@ -339,6 +341,28 @@ try {
     await page.getByRole('dialog').waitFor({ state: 'detached' });
   });
 
+  await step('Archiv entpacken', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').dblclick();
+    await item(page, 'Website.zip').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Entpacken', exact: true }).click();
+    await visible(page, '4 Dateien entpackt.');
+    await item(page, 'Website').dblclick();
+    await item(page, 'README.md').waitFor();
+    await item(page, 'website').waitFor();
+  });
+
+  await step('Tastenkürzel', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+    await page.keyboard.press('?');
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText('Tastenkürzel', { exact: true }).waitFor();
+    await dialog.getByText('Alles auswählen', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+  });
+
   await step('Ordnerfarbe', async () => {
     await page.goto(`${base}/files`);
     await item(page, 'Dokumente').click({ button: 'right' });
@@ -375,6 +399,28 @@ try {
     await page.goto(`${base}/admin/scan`);
     await visible(page, 'Dateien beim Hochladen prüfen');
     await shot(page, 'admin-scan');
+  });
+
+  await step('Gruppe anlegen und damit teilen', async () => {
+    await page.goto(`${base}/admin/groups`);
+    await page.getByRole('button', { name: 'Gruppe anlegen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('Familie');
+    await dialog.getByLabel('Mitglieder').click();
+    await page.getByRole('option', { name: /Mia Weber/ }).click();
+    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await visible(page, 'Gruppe „Familie“ angelegt');
+    await visible(page, '1 Mitglied');
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen', exact: true }).click();
+    const share = page.getByRole('dialog');
+    await share.getByLabel('Person oder Gruppe', { exact: true }).fill('Fam');
+    await page.getByRole('option', { name: /Familie/ }).click();
+    await share.getByRole('button', { name: 'Teilen', exact: true }).click();
+    await share.getByText('Familie', { exact: true }).first().waitFor();
+    await share.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await share.waitFor({ state: 'detached' });
   });
 
   await step('Ankündigung für alle', async () => {
@@ -457,6 +503,29 @@ try {
     await page.goto(`${base}/login`);
     await Promise.all([page.waitForURL('**/files**'), page.getByRole('button', { name: 'Mit Passkey anmelden' }).click()]);
     await item(page, 'Urlaub 2026').waitFor();
+  });
+
+  await step('Zwei-Faktor-Pflicht mit Passkey', async () => {
+    await api(page, 'PATCH', '/api/admin/settings', { 'auth.require2fa': 'all' });
+    try {
+      const other = await context('dark');
+      const mia = await open(other, 'mia');
+      await mia.goto(`${base}/login`);
+      await mia.fill('input[name=login]', 'mia');
+      await mia.fill('input[name=password]', password);
+      await Promise.all([mia.waitForURL('**/account'), mia.click('button[type=submit]')]);
+      await visible(mia, 'Richte die Zwei-Faktor-Anmeldung ein');
+      await other.close();
+      await dark.clearCookies();
+      await page.goto(`${base}/login`);
+      await page.fill('input[name=login]', 'emi');
+      await page.fill('input[name=password]', password);
+      await Promise.all([page.waitForURL('**/login/2fa**'), page.click('button[type=submit]')]);
+      await Promise.all([page.waitForURL('**/files**'), page.getByRole('button', { name: 'Mit Passkey bestätigen' }).click()]);
+      await item(page, 'Urlaub 2026').waitFor();
+    } finally {
+      await api(page, 'PATCH', '/api/admin/settings', { 'auth.require2fa': 'off' });
+    }
   });
 
   const phone = await context('light', true);

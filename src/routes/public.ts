@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { forbidden, HttpError, notFound, unauthorized } from '../lib/errors.ts';
 import { verifyPassword } from '../lib/crypto.ts';
 import { escapeHtml, isSecure } from '../lib/http.ts';
@@ -14,9 +14,12 @@ import { hasPreview } from '../services/thumbs.ts';
 import {
   baseUrl,
   countAccess,
+  downloadsLeft,
   isUnlocked,
   linkFolder,
+  linkByToken,
   linkNode,
+  linkState,
   resolveToken,
   unlockCookie,
   unlockToken,
@@ -67,6 +70,20 @@ function linkFor(request: FastifyRequest<TokenParams>) {
   return resolved;
 }
 
+function shareInfo(link: LinkRow, node: NodeRow) {
+  return {
+    token: link.token,
+    label: link.label,
+    owner: getUser(link.owner_id)?.name ?? '',
+    allowDownload: Boolean(link.allow_download),
+    allowUpload: Boolean(link.allow_upload),
+    uploadOnly: Boolean(link.upload_only),
+    expiresAt: link.expires_at,
+    downloadsLeft: downloadsLeft(link),
+    node: presentPublic([node])[0],
+  };
+}
+
 function publicCrumbs(link: LinkRow, node: NodeRow) {
   const nodes = chain(node.id);
   const start = Math.max(
@@ -85,13 +102,39 @@ function invalidPage(request: FastifyRequest) {
   });
 }
 
+function pausedPage(request: FastifyRequest) {
+  return messagePage(request, {
+    icon: 'linkOff',
+    title: t(request.lang, 'Dieser Link ist gerade pausiert'),
+    text: t(request.lang, 'Die Person, die ihn geteilt hat, kann ihn jederzeit wieder freigeben. Versuch es später noch einmal.'),
+    action: null,
+  });
+}
+
+function exhaustedPage(request: FastifyRequest) {
+  return messagePage(request, {
+    icon: 'linkOff',
+    title: t(request.lang, 'Dieser Link wurde schon so oft genutzt wie erlaubt'),
+    text: t(request.lang, 'Frag die Person, die ihn dir geschickt hat, nach einem neuen.'),
+    action: null,
+  });
+}
+
+function unavailable(request: FastifyRequest<TokenParams>, reply: FastifyReply) {
+  const stored = linkByToken(request.params.token);
+  const state = stored ? linkState(stored) : 'expired';
+  return renderDocument(request, reply, {
+    title: t(request.lang, 'Link ungültig'),
+    status: 404,
+    body: state === 'paused' ? pausedPage(request) : state === 'exhausted' ? exhaustedPage(request) : invalidPage(request),
+  });
+}
+
 export async function publicRoutes(app: FastifyInstance) {
   app.get<TokenParams>('/s/:token', async (request, reply) => {
     reply.header('Referrer-Policy', 'no-referrer');
     const resolved = resolveToken(request.params.token);
-    if (!resolved) {
-      return renderDocument(request, reply, { title: t(request.lang, 'Link ungültig'), status: 404, body: invalidPage(request) });
-    }
+    if (!resolved) return unavailable(request, reply);
     const { link, node } = resolved;
     if (!isUnlocked(request, link)) {
       return renderDocument(request, reply, {
@@ -123,16 +166,7 @@ export async function publicRoutes(app: FastifyInstance) {
       extraHead,
       data: {
         user: request.auth?.session ? { name: request.auth.user.name } : null,
-        share: {
-          token: link.token,
-          label: link.label,
-          owner: owner?.name ?? '',
-          allowDownload: Boolean(link.allow_download),
-          allowUpload: Boolean(link.allow_upload),
-          uploadOnly: Boolean(link.upload_only),
-          expiresAt: link.expires_at,
-          node: presentPublic([node])[0],
-        },
+        share: shareInfo(link, node),
       },
     });
   });
@@ -140,9 +174,7 @@ export async function publicRoutes(app: FastifyInstance) {
   app.post<TokenParams>('/s/:token', async (request, reply) => {
     reply.header('Referrer-Policy', 'no-referrer');
     const resolved = resolveToken(request.params.token);
-    if (!resolved) {
-      return renderDocument(request, reply, { title: t(request.lang, 'Link ungültig'), status: 404, body: invalidPage(request) });
-    }
+    if (!resolved) return unavailable(request, reply);
     const { link, node } = resolved;
     const form = body<{ _csrf?: string; password?: string }>(request);
     try {
@@ -178,18 +210,7 @@ export async function publicRoutes(app: FastifyInstance) {
 
   app.get<TokenParams>('/api/public/:token', async (request) => {
     const { link, node } = linkFor(request);
-    return {
-      share: {
-        token: link.token,
-        label: link.label,
-        owner: getUser(link.owner_id)?.name ?? '',
-        allowDownload: Boolean(link.allow_download),
-        allowUpload: Boolean(link.allow_upload),
-        uploadOnly: Boolean(link.upload_only),
-        expiresAt: link.expires_at,
-        node: presentPublic([node])[0],
-      },
-    };
+    return { share: shareInfo(link, node) };
   });
 
   app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/children', async (request) => {
@@ -212,7 +233,8 @@ export async function publicRoutes(app: FastifyInstance) {
       if (node.type !== 'file' || link.upload_only) throw notFound();
       const download = request.query.download === '1';
       if (download && !link.allow_download) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
-      if (download && !request.headers.range) countAccess(link, 'downloads');
+      const range = request.headers.range;
+      if (download && (!range || range.startsWith('bytes=0-'))) countAccess(link, 'downloads');
       return sendNode(request, reply, node, download);
     }
   );

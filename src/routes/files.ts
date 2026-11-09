@@ -10,6 +10,8 @@ import { me } from '../lib/request.ts';
 import { id, ids, parse } from '../lib/validate.ts';
 import { forNode, forUser } from '../services/activity.ts';
 import { listArchive, openEntry } from '../services/archive.ts';
+import { extractArchive } from '../services/extract.ts';
+import { rotateImage } from '../services/rotate.ts';
 import { blobPath, getBlob, metaOf, receive } from '../services/blobs.ts';
 import { addComment, deleteComment, listComments } from '../services/comments.ts';
 import { ingest } from '../services/ingest.ts';
@@ -24,6 +26,7 @@ import {
   emptyTrash,
   move,
   present,
+  getNode,
   recent,
   rename,
   requireAccess,
@@ -261,6 +264,14 @@ export async function fileRoutes(app: FastifyInstance) {
     return { node: present([updated], user, requireAccess(user, updated.id).role)[0] };
   });
 
+  app.post<IdParams>('/api/nodes/:id/rotate', async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ degrees: z.union([z.literal(90), z.literal(180), z.literal(270)]) }), request.body);
+    const { node } = requireAccess(user, request.params.id, 'edit');
+    const updated = await rotateImage(user, node, input.degrees);
+    return { node: present([updated], user, requireAccess(user, updated.id).role)[0] };
+  });
+
   app.get<IdParams>('/api/nodes/:id/thumb', { compress: false }, async (request, reply) => {
     const { node } = requireAccess(me(request), request.params.id);
     return sendThumb(request, reply, node);
@@ -325,6 +336,12 @@ export async function fileRoutes(app: FastifyInstance) {
   app.get<IdParams>('/api/nodes/:id/meta', async (request) => {
     const { node } = requireAccess(me(request), request.params.id);
     return nodeMeta(node);
+  });
+
+  app.post<IdParams>('/api/nodes/:id/extract', async (request) => {
+    const user = me(request);
+    const result = await extractArchive(user, request.params.id);
+    return { ...result, folder: present([getNode(result.folderId)!], user)[0] };
   });
 
   app.get<IdParams>('/api/nodes/:id/archive', async (request) => {

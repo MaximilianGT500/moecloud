@@ -44,6 +44,7 @@ interface ShareBoot extends Boot {
     allowUpload: boolean;
     uploadOnly: boolean;
     expiresAt: number | null;
+    downloadsLeft: number | null;
     node: Item;
   };
 }
@@ -109,6 +110,7 @@ export function SharePage() {
   const [dragging, setDragging] = useState(false);
   const [revision, setRevision] = useState(0);
   const [uploader] = useState(() => new Uploader(base));
+  const [left, setLeft] = useState(share.downloadsLeft);
   const input = useRef<HTMLInputElement>(null);
   const depth = useRef(0);
 
@@ -132,10 +134,30 @@ export function SharePage() {
     return () => abort.abort();
   }, [base, folderId, root.type, share.uploadOnly, revision]);
 
+  useEffect(() => {
+    if (share.downloadsLeft === null) return;
+    let timer = 0;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        api
+          .get<{ share: { downloadsLeft: number | null } }>(base)
+          .then((result) => setLeft(result.share.downloadsLeft))
+          .catch(() => setLeft(0));
+      }, 1500);
+    };
+    window.addEventListener('moe:download', refresh);
+    return () => {
+      window.removeEventListener('moe:download', refresh);
+      window.clearTimeout(timer);
+    };
+  }, [base, share.downloadsLeft]);
+
   const current = listing?.id === folderId ? listing : null;
   const files = current?.items.filter((item) => item.type === 'file') ?? [];
   const viewerIndex = viewer ? files.findIndex((item) => item.id === viewer) : -1;
   const canUpload = share.allowUpload && root.type === 'folder';
+  const canDownload = share.allowDownload && left !== 0;
 
   const upload = (entries: UploadEntry[]) => {
     if (entries.length) uploader.add(entries, share.uploadOnly ? root.id : folderId);
@@ -268,6 +290,11 @@ export function SharePage() {
                     share.owner ? t('Geteilt von {name}', { name: share.owner }) : null,
                     root.type === 'file' ? `${kindLabel(root.kind)} · ${formatBytes(root.size)}` : null,
                     share.expiresAt ? t('verfügbar bis {date}', { date: formatDay(share.expiresAt) }) : null,
+                    share.allowDownload && left !== null
+                      ? left === 0
+                        ? t('keine Downloads mehr möglich')
+                        : tn(left, 'noch ein Download möglich', 'noch {count} Downloads möglich')
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -279,7 +306,7 @@ export function SharePage() {
                     {t('Hochladen')}
                   </Button>
                 )}
-                {share.allowDownload && !share.uploadOnly && (
+                {canDownload && !share.uploadOnly && (
                   <Button
                     variant="contained"
                     startIcon={<DownloadRounded />}
@@ -307,7 +334,7 @@ export function SharePage() {
               </>
             ) : root.type === 'file' ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', minHeight: 200 }}>
-                <Preview item={root} base={base} canDownload={share.allowDownload} inline />
+                <Preview item={root} base={base} canDownload={canDownload} inline />
               </Box>
             ) : error ? (
               <EmptyState compact icon={<FolderOpenRounded />} title={t('Das hat nicht geklappt')} text={error} />
@@ -366,13 +393,17 @@ export function SharePage() {
                       onSelect={setSelected}
                       onOpen={(item) => (item.type === 'folder' ? setQuery('f', item.id, false) : setViewer(item.id))}
                       onMenu={(item) =>
-                        share.allowDownload
+                        canDownload
                           ? triggerDownload(item.type === 'file' ? contentUrl(item, base, true) : `${base}/zip?ids=${item.id}`)
-                          : toast(t('Herunterladen ist für diesen Link ausgeschaltet'))
+                          : toast(
+                              share.allowDownload
+                                ? t('Dieser Link wurde schon so oft genutzt wie erlaubt')
+                                : t('Herunterladen ist für diesen Link ausgeschaltet')
+                            )
                       }
                       base={base}
                       label={root.name}
-                      menu={share.allowDownload ? { icon: <DownloadRounded fontSize="small" />, label: t('Herunterladen') } : undefined}
+                      menu={canDownload ? { icon: <DownloadRounded fontSize="small" />, label: t('Herunterladen') } : undefined}
                     />
                   </Box>
                 )}
@@ -414,7 +445,7 @@ export function SharePage() {
         index={viewerIndex >= 0 ? viewerIndex : null}
         onIndex={(index) => setViewer(index === null ? null : files[index].id)}
         base={base}
-        canDownload={share.allowDownload}
+        canDownload={canDownload}
       />
     </Box>
   );

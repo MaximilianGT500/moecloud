@@ -120,9 +120,18 @@ export async function register(
   return one<PasskeyRow>('SELECT * FROM passkeys WHERE id = ?', info.credential.id)!;
 }
 
-export async function authenticationOptions(request: FastifyRequest, key: string) {
+export async function authenticationOptions(request: FastifyRequest, key: string, user?: UserRow) {
   const rp = relyingParty(request);
-  const options = await generateAuthenticationOptions({ rpID: rp.rpID, userVerification: 'preferred' });
+  const options = await generateAuthenticationOptions({
+    rpID: rp.rpID,
+    userVerification: user ? 'discouraged' : 'preferred',
+    allowCredentials: user
+      ? listPasskeys(user.id).map((passkey) => ({
+          id: passkey.id,
+          transports: passkey.transports ? (JSON.parse(passkey.transports) as string[]) : undefined,
+        }))
+      : undefined,
+  });
   remember(`login:${key}`, options.challenge);
   return options;
 }

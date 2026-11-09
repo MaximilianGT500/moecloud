@@ -45,6 +45,7 @@ export interface AdminUser {
   used: number;
   totp: boolean;
   passkeys: number;
+  needs2fa: boolean;
   hasPassword: boolean;
   createdAt: number;
   lastLoginAt: number | null;
@@ -357,6 +358,27 @@ function UserDialog({
                     {t('Authenticator-App zurücksetzen')}
                   </Button>
                 )}
+                {user.passkeys > 0 && (
+                  <Button
+                    variant="tonal"
+                    onClick={async () => {
+                      if (
+                        !(await confirm({
+                          title: t('Alle Passkeys entfernen?'),
+                          text: t('Hilft, wenn {name} das Gerät mit dem Passkey verloren hat.', { name: user.name }),
+                          confirm: t('Entfernen'),
+                          danger: true,
+                        }))
+                      )
+                        return;
+                      await api.post(`/api/admin/users/${user.id}/reset-passkeys`).catch((error) => toast(errorText(error)));
+                      toast(t('Passkeys entfernt'));
+                      onSaved();
+                    }}
+                  >
+                    {t('Passkeys entfernen')}
+                  </Button>
+                )}
                 {!self && user.sessions > 0 && (
                   <Button
                     variant="tonal"
@@ -485,6 +507,9 @@ export function PeopleSection() {
                         )}
                         {(user.totp || user.passkeys > 0) && (
                           <Chip size="small" label={user.totp ? '2FA' : t('Passkey')} variant="outlined" />
+                        )}
+                        {user.needs2fa && !user.disabled && (
+                          <Chip size="small" label={t('2FA fehlt')} sx={{ bgcolor: c.errorContainer, color: c.onErrorContainer }} />
                         )}
                       </Box>
                       <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>

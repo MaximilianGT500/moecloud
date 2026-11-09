@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="${MOECLOUD_DIR:-/opt/moecloud}"
+SITE="https://moecloud.moestudio.net"
+
+bold=""
+green=""
+yellow=""
+red=""
+reset=""
+if [ -t 1 ]; then
+  bold=$'\033[1m'
+  green=$'\033[32m'
+  yellow=$'\033[33m'
+  red=$'\033[31m'
+  reset=$'\033[0m'
+fi
+
+PROBLEMS=0
+ok() { printf '%s✓%s %s\n' "$green" "$reset" "$*"; }
+warn() {
+  PROBLEMS=$((PROBLEMS + 1))
+  printf '%s!%s %s\n' "$yellow" "$reset" "$*"
+}
+fail() {
+  printf '%sFehler:%s %s\n' "$red" "$reset" "$*" >&2
+  exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail "Starte den Befehl mit sudo, zum Beispiel: sudo moecloud ${1:-help}"
+[ -f "$DIR/docker-compose.yml" ] || fail "In $DIR liegt keine Installation von MoeCloud."
+command -v docker >/dev/null 2>&1 || fail "Docker fehlt auf diesem Server."
+
+compose() { (cd "$DIR" && docker compose "$@"); }
+env_get() { sed -n "s/^$1=//p" "$DIR/.env" 2>/dev/null | tail -n 1 || true; }
+
+cli() {
+  if [ -t 0 ] && [ -t 1 ]; then
+    compose exec moecloud moecloud "$@"
+  else
+    compose exec -T moecloud moecloud "$@"
+  fi
+}
+
+state_of() {
+  local id
+  id="$(compose ps -q "$1" 2>/dev/null || true)"
+  if [ -z "$id" ]; then
+    printf 'gestoppt'
+    return 0
+  fi
+  docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || printf 'unbekannt'
+}
+
+port() {
+  local value
+  value="$(env_get MOECLOUD_PORT)"
+  printf '%s' "${value:-3000}"
+}
+
+address() {
+  local url ip
+  url="$(env_get PUBLIC_URL)"
+  if [ -n "$url" ]; then
+    printf '%s' "$url"
+    return 0
+  fi
+  ip="$(hostname -I 2>/dev/null | awk '{ print $1 }' || true)"
+  printf 'http://%s:%s' "${ip:-localhost}" "$(port)"
+}
+
+clamav_enabled() { case "$(env_get COMPOSE_FILE)" in *clamav*) return 0 ;; *) return 1 ;; esac; }
+
+timer_enabled() { command -v systemctl >/dev/null 2>&1 && systemctl is-enabled moecloud-update.timer >/dev/null 2>&1; }
+
+version_label() {
+  local version
+  version="$(env_get MOECLOUD_VERSION)"
+  if [ "$(env_get MOECLOUD_PIN)" = "1" ]; then
+    printf '%s (festgehalten)' "${version:-latest}"
+  else
+    printf '%s' "${version:-latest}"
+  fi
+}
+
+status() {
+  local state
+  state="$(state_of moecloud)"
+  printf '%sMoeCloud%s %s\n\n' "$bold" "$reset" "$(version_label)"
+  printf '  %-16s %s\n' "Zustand" "$state"
+  printf '  %-16s %s\n' "Adresse" "$(address)"
+  printf '  %-16s %s\n' "Ordner" "$DIR"
+  printf '  %-16s %s\n' "Freier Platz" "$(df -Ph "$DIR" 2>/dev/null | awk 'NR == 2 { print $4 }' || echo '?')"
+  if clamav_enabled; then
+    printf '  %-16s %s\n' "Virenscan" "ClamAV, $(state_of clamav)"
+  else
+    printf '  %-16s %s\n' "Virenscan" "nicht eingerichtet"
+  fi
+  if timer_enabled; then
+    printf '  %-16s %s\n' "Updates" "jede Nacht automatisch"
+  else
+    printf '  %-16s %s\n' "Updates" "von Hand mit sudo moecloud update"
+  fi
+  printf '\n'
+  compose ps
+}
+
+newest_backup() {
+  local file
+  file="$(find "$DIR/data/backups" -maxdepth 1 -type f -name '*.db' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2- || true)"
+  printf '%s' "$file"
+}
+
+doctor() {
+  local state free memory backup age domain url code
+  printf '%sMoeCloud prüfen%s\n\n' "$bold" "$reset"
+  if docker info >/dev/null 2>&1; then ok "Docker läuft"; else warn "Docker läuft nicht. Starte es mit: sudo systemctl start docker"; fi
+  state="$(state_of moecloud)"
+  case "$state" in
+    healthy) ok "Der Container läuft und antwortet" ;;
+    starting) warn "MoeCloud startet gerade noch, versuch es gleich noch einmal" ;;
+    gestoppt) warn "MoeCloud läuft nicht. Starte es mit: sudo moecloud start" ;;
+    *) warn "Der Container ist $state. Mehr zeigt: sudo moecloud logs" ;;
+  esac
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$(port)/healthz" 2>/dev/null || true)"
+  if [ "$code" = "200" ]; then ok "Port $(port) antwortet"; else warn "Auf Port $(port) antwortet MoeCloud nicht (Status ${code:-keiner})"; fi
+  domain="$(env_get DOMAIN)"
+  if [ -n "$domain" ]; then
+    url="https://$domain/healthz"
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$url" 2>/dev/null || true)"
+    if [ "$code" = "200" ]; then
+      ok "https://$domain ist mit gültigem Zertifikat erreichbar"
+    else
+      warn "https://$domain antwortet nicht (Status ${code:-keiner}). Prüf DNS, Firewall und: sudo moecloud logs caddy"
+    fi
+  fi
+  free="$(df -Pm "$DIR" 2>/dev/null | awk 'NR == 2 { print $4 }' || echo 0)"
+  if [ "${free:-0}" -lt 2048 ]; then warn "Nur noch ${free:-0} MB frei unter $DIR"; else ok "$((free / 1024)) GB frei unter $DIR"; fi
+  memory="$(awk '/MemAvailable/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null || echo 0)"
+  if [ "${memory:-0}" -lt 256 ]; then warn "Nur noch ${memory:-0} MB Arbeitsspeicher frei"; else ok "${memory} MB Arbeitsspeicher frei"; fi
+  backup="$(newest_backup)"
+  if [ -z "$backup" ]; then
+    warn "Es gibt noch keine Sicherung der Datenbank. Leg eine an mit: sudo moecloud backup"
+  else
+    age=$((($(date +%s) - $(stat -c %Y "$backup")) / 86400))
+    if [ "$age" -gt 2 ]; then
+      warn "Die letzte Sicherung ist $age Tage alt. Prüf unter Admin › Sicherungen, ob sie eingeschaltet sind"
+    else
+      ok "Letzte Sicherung: $(basename "$backup")"
+    fi
+  fi
+  if clamav_enabled; then
+    case "$(state_of clamav)" in
+      healthy | running) ok "ClamAV läuft" ;;
+      starting) warn "ClamAV lädt noch die Signaturen, das dauert beim Start ein paar Minuten" ;;
+      *) warn "ClamAV läuft nicht. Mehr zeigt: sudo moecloud logs clamav" ;;
+    esac
+  fi
+  if [ "$state" = "healthy" ]; then
+    cli version 2>/dev/null | sed 's/^/  /' || true
+  fi
+  printf '\n'
+  if [ "$PROBLEMS" -eq 0 ]; then
+    ok "Alles in Ordnung"
+  else
+    printf '%s%s Hinweise%s, siehe oben.\n' "$yellow" "$PROBLEMS" "$reset"
+    exit 1
+  fi
+}
+
+update() {
+  if [ -f "$DIR/install.sh" ]; then
+    exec bash "$DIR/install.sh" --update --dir "$DIR" "$@"
+  fi
+  curl -fsSL "$SITE/install.sh" | bash -s -- --update --dir "$DIR" "$@"
+}
+
+UNIT=/etc/systemd/system/moecloud-update
+
+auto_update() {
+  case "${1:-}" in
+    on)
+      if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+        fail "Ohne systemd gibt es keine automatischen Updates. Aktualisiere mit: sudo moecloud update"
+      fi
+      printf '%s\n' \
+        '[Unit]' \
+        'Description=MoeCloud aktualisieren' \
+        'Wants=network-online.target' \
+        'After=network-online.target docker.service' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        "ExecStart=$(readlink -f "${BASH_SOURCE[0]}") update --yes" >"$UNIT.service"
+      printf '%s\n' \
+        '[Unit]' \
+        'Description=MoeCloud jede Nacht aktualisieren' \
+        '' \
+        '[Timer]' \
+        'OnCalendar=*-*-* 04:00' \
+        'RandomizedDelaySec=1h' \
+        'Persistent=true' \
+        '' \
+        '[Install]' \
+        'WantedBy=timers.target' >"$UNIT.timer"
+      systemctl daemon-reload
+      systemctl enable --now moecloud-update.timer >/dev/null 2>&1
+      ok "Automatische Updates laufen jede Nacht zwischen 4 und 5 Uhr"
+      ;;
+    off)
+      systemctl disable --now moecloud-update.timer >/dev/null 2>&1 || true
+      rm -f "$UNIT.timer" "$UNIT.service"
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      ok "Automatische Updates sind aus"
+      ;;
+    *)
+      if timer_enabled; then
+        printf 'Automatische Updates sind an.\n'
+        systemctl list-timers moecloud-update.timer --no-pager 2>/dev/null || true
+      else
+        printf 'Automatische Updates sind aus. Einschalten mit: sudo moecloud auto-update on\n'
+      fi
+      ;;
+  esac
+}
+
+uninstall() {
+  local answer=""
+  if [ "${1:-}" != "--yes" ]; then
+    printf 'MoeCloud stoppen und entfernen? Deine Daten in %s bleiben erhalten. (j/n) ' "$DIR"
+    IFS= read -r answer </dev/tty || answer=""
+    case "$answer" in j | J | ja | y | yes) ;; *) fail "Abgebrochen." ;; esac
+  fi
+  compose down --remove-orphans --rmi all --volumes || true
+  systemctl disable --now moecloud-update.timer >/dev/null 2>&1 || true
+  rm -f "$UNIT.timer" "$UNIT.service"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  rm -f "$(readlink -f "${BASH_SOURCE[0]}")"
+  ok "MoeCloud ist entfernt."
+  printf 'Deine Dateien und die Datenbank liegen weiter in %s/data.\n' "$DIR"
+  printf 'Brauchst du sie nicht mehr, lösch den Ordner selbst mit: sudo rm -rf %s\n' "$DIR"
+}
+
+help() {
+  printf '%sMoeCloud auf diesem Server%s\n\n' "$bold" "$reset"
+  printf '  %-30s %s\n' \
+    "moecloud status" "Zustand, Version und Adresse" \
+    "moecloud doctor" "Typische Probleme finden" \
+    "moecloud logs [dienst]" "Logs ansehen, zum Beispiel von caddy oder clamav" \
+    "moecloud update [--version x.y.z]" "Aktualisieren oder eine Version festhalten" \
+    "moecloud auto-update [on|off]" "Automatische Updates jede Nacht" \
+    "moecloud start | stop" "MoeCloud mit allen Diensten starten oder anhalten" \
+    "moecloud restart [dienst]" "MoeCloud oder einen anderen Dienst neu starten" \
+    "moecloud uninstall" "Container entfernen, deine Daten bleiben"
+  printf '\nIm Container:\n'
+  cli help 2>/dev/null | sed -n '3,$p' || printf '  MoeCloud läuft gerade nicht, starte es mit: sudo moecloud start\n'
+}
+
+command="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$command" in
+  status) status ;;
+  doctor) doctor ;;
+  update) update "$@" ;;
+  auto-update) auto_update "$@" ;;
+  logs)
+    service="moecloud"
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      service="$1"
+      shift
+    fi
+    cd "$DIR"
+    exec docker compose logs -f --tail=200 "$service" "$@"
+    ;;
+  restart) compose restart "${@:-moecloud}" ;;
+  stop) compose down ;;
+  start) compose up -d ;;
+  uninstall) uninstall "$@" ;;
+  help | --help | -h) help ;;
+  *) cli "$command" "$@" ;;
+esac

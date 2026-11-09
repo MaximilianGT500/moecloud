@@ -22,6 +22,7 @@ export function triggerDownload(url: string) {
   document.body.append(link);
   link.click();
   link.remove();
+  window.dispatchEvent(new CustomEvent('moe:download', { detail: url }));
 }
 
 export function download(items: Item[], base = '/api') {
@@ -141,4 +142,30 @@ export async function leaveShare(item: Item) {
   });
   if (!ok) return false;
   return Boolean(await attempt(() => api.delete(`/api/grants/${item.grantId}`).then(() => true)));
+}
+
+export interface ExtractResult {
+  folderId: string;
+  files: number;
+  folders: number;
+  skipped: { infected: number; encrypted: number; unsafe: number; tooLarge: number };
+  folder: Item;
+}
+
+export async function extract(item: Item) {
+  toast(t('„{name}“ wird entpackt', { name: item.name }), { duration: 2500 });
+  const result = await attempt(() => api.post<ExtractResult>(`/api/nodes/${item.id}/extract`, {}));
+  if (!result) return null;
+  const { infected, encrypted, unsafe, tooLarge } = result.skipped;
+  const other = encrypted + unsafe + tooLarge;
+  return {
+    result,
+    message: [
+      tn(result.files, 'Eine Datei entpackt.', '{count} Dateien entpackt.'),
+      infected ? tn(infected, 'Eine Datei enthielt Schadsoftware.', '{count} Dateien enthielten Schadsoftware.') : '',
+      other ? tn(other, 'Eine Datei wurde übersprungen.', '{count} Dateien wurden übersprungen.') : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  };
 }

@@ -69,8 +69,14 @@ export function resolveAccess(user: UserRow, nodeId: string): Access | null {
   if (!node) return null;
   if (node.owner_id === user.id) return { node, role: 'owner', rootId: user.root_id };
   const grants = all<{ permission: 'view' | 'edit'; node_id: string; depth: number }>(
-    `${CHAIN} SELECT g.permission, g.node_id, c.depth FROM chain c JOIN grants g ON g.node_id = c.id WHERE g.user_id = ?`,
+    `${CHAIN} SELECT g.permission, g.node_id, c.depth FROM chain c JOIN grants g ON g.node_id = c.id WHERE g.user_id = ?
+     UNION ALL
+     SELECT gg.permission, gg.node_id, c.depth FROM chain c
+     JOIN group_grants gg ON gg.node_id = c.id
+     JOIN group_members m ON m.group_id = gg.group_id
+     WHERE m.user_id = ?`,
     nodeId,
+    user.id,
     user.id
   );
   if (grants.length === 0) return null;
@@ -168,7 +174,12 @@ export function audience(nodeIds: Iterable<string | null>): number[] {
     if (!id) continue;
     const owner = one<{ owner_id: number }>('SELECT owner_id FROM nodes WHERE id = ?', id);
     if (owner) users.add(owner.owner_id);
-    for (const row of all<{ user_id: number }>(`${CHAIN} SELECT DISTINCT g.user_id FROM chain c JOIN grants g ON g.node_id = c.id`, id)) {
+    for (const row of all<{ user_id: number }>(
+      `${CHAIN} SELECT g.user_id FROM chain c JOIN grants g ON g.node_id = c.id
+       UNION
+       SELECT m.user_id FROM chain c JOIN group_grants gg ON gg.node_id = c.id JOIN group_members m ON m.group_id = gg.group_id`,
+      id
+    )) {
       users.add(row.user_id);
     }
   }
@@ -628,7 +639,10 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
   const shared = new Set(
     inChunks(ids, (chunk) =>
       all<{ node_id: string }>(
-        `SELECT node_id FROM links WHERE node_id IN (${placeholders(chunk.length)}) UNION SELECT node_id FROM grants WHERE node_id IN (${placeholders(chunk.length)})`,
+        `SELECT node_id FROM links WHERE node_id IN (${placeholders(chunk.length)})
+         UNION SELECT node_id FROM grants WHERE node_id IN (${placeholders(chunk.length)})
+         UNION SELECT node_id FROM group_grants WHERE node_id IN (${placeholders(chunk.length)})`,
+        ...chunk,
         ...chunk,
         ...chunk
       )

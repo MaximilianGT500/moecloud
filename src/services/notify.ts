@@ -35,7 +35,8 @@ const many = (lang: Lang, count: number, one: string, other: string, params: Par
 
 const KINDS: Record<NotifyKind, Kind> = {
   shared: {
-    title: (lang, p) => t(lang, '{by} hat „{name}“ mit dir geteilt', p),
+    title: (lang, p) =>
+      p.group ? t(lang, '{by} hat „{name}“ mit der Gruppe {group} geteilt', p) : t(lang, '{by} hat „{name}“ mit dir geteilt', p),
     text: (lang, p) =>
       p.permission === 'edit'
         ? t(lang, 'Du kannst den Inhalt ansehen und bearbeiten.')

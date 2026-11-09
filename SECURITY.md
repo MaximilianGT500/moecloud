@@ -16,7 +16,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 Melde Sicherheitslücken bitte nicht öffentlich als Issue, sondern vertraulich:
 
 - über **Security › Report a vulnerability** in diesem Repository oder
-- über das [Kontaktformular](https://maxi.lol/kontakt/).
+- über das [Kontaktformular](https://m-s.gg).
 
 Hilfreich sind:
 

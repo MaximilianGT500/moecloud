@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { HttpError, badRequest, forbidden, notFound } from '../lib/errors.ts';
+import { HttpError, badRequest, forbidden, notFound, unauthorized } from '../lib/errors.ts';
 import { renderDocument } from '../lib/html.ts';
 import { isSecure, safeRedirect } from '../lib/http.ts';
 import { t } from '../lib/i18n.ts';
@@ -9,7 +9,15 @@ import { parse, displayName, email, password, username } from '../lib/validate.t
 import { randomId } from '../lib/crypto.ts';
 import { forgotPage, loginPage, registerPage, resetPage, secondFactorPage } from '../views/pages.ts';
 import { audit } from '../services/audit.ts';
-import { finishSecondFactor, passwordLogin, pendingUser, startSecondFactor, verifySecondFactor } from '../services/auth.ts';
+import {
+  finishSecondFactor,
+  hasPasskey,
+  passwordLogin,
+  pendingUser,
+  secondFactorRequired,
+  startSecondFactor,
+  verifySecondFactor,
+} from '../services/auth.ts';
 import { mailReady } from '../services/mail.ts';
 import { notifyAdmins } from '../services/notify.ts';
 import { completeReset, findReset, requestReset } from '../services/resets.ts';
@@ -18,10 +26,13 @@ import { authenticate, authenticationOptions } from '../services/passkeys.ts';
 import { clearSessionCookie, createSession, destroySession } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { isSetUp } from '../services/setup.ts';
-import { createUser } from '../services/users.ts';
+import { createUser, type UserRow } from '../services/users.ts';
 
 const PENDING_COOKIE = 'moe_2fa';
 const PASSKEY_COOKIE = 'moe_wa';
+
+const confirmView = (request: FastifyRequest, user: UserRow, next: string, error?: string | null) =>
+  secondFactorPage(request, { csrf: request.csrf, next, error, totp: Boolean(user.totp_enabled), passkey: hasPasskey(user) });
 
 const message = (request: FastifyRequest, error: unknown) => {
   if (error instanceof HttpError) return t(request.lang, error.message, error.params);
@@ -89,7 +100,7 @@ export async function authRoutes(app: FastifyInstance) {
           audit('login_failed', { request, details: { login: login.slice(0, 64), method: 'password' } });
         throw error;
       }
-      if (user.totp_enabled) {
+      if (user.totp_enabled || (secondFactorRequired(user) && hasPasskey(user))) {
         const token = startSecondFactor(user, 'password');
         reply.setCookie(PENDING_COOKIE, token, { path: '/login', httpOnly: true, sameSite: 'lax', secure: isSecure(request), maxAge: 300 });
         return reply.redirect(`/login/2fa?next=${encodeURIComponent(next)}`, 303);
@@ -105,11 +116,39 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { next?: string } }>('/login/2fa', async (request, reply) => {
     const next = safeRedirect(request.query.next);
-    if (!pendingUser(request.cookies[PENDING_COOKIE])) return reply.redirect(`/login?expired=1&next=${encodeURIComponent(next)}`);
-    return renderDocument(request, reply, {
-      title: t(request.lang, 'Bestätigen'),
-      body: secondFactorPage(request, { csrf: request.csrf, next }),
-    });
+    const pending = pendingUser(request.cookies[PENDING_COOKIE]);
+    if (!pending) return reply.redirect(`/login?expired=1&next=${encodeURIComponent(next)}`);
+    return renderDocument(request, reply, { title: t(request.lang, 'Bestätigen'), body: confirmView(request, pending.user, next) });
+  });
+
+  const pendingPasskey = (request: FastifyRequest) => {
+    checkFormCsrf(request, request.headers['x-csrf-token']);
+    const token = request.cookies[PENDING_COOKIE];
+    const pending = pendingUser(token);
+    if (!pending || !token) throw unauthorized('Die Anmeldung ist abgelaufen, fang bitte noch einmal an');
+    if (!hasPasskey(pending.user)) throw badRequest('Für dein Konto gibt es keinen Passkey');
+    return { token, pending };
+  };
+
+  app.post('/login/2fa/passkey/options', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+    const { token, pending } = pendingPasskey(request);
+    return authenticationOptions(request, `2fa:${token}`, pending.user);
+  });
+
+  app.post('/login/2fa/passkey/verify', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const { token, pending } = pendingPasskey(request);
+    const input = body<{ response?: unknown; next?: string }>(request);
+    if (!input.response || typeof input.response !== 'object') throw badRequest('Die Antwort des Passkeys fehlt');
+    const user = await authenticate(request, `2fa:${token}`, input.response as Parameters<typeof authenticate>[2]);
+    if (user.id !== pending.user.id) {
+      audit('login_failed', { subject: pending.user.id, request, details: { login: pending.user.username, method: '2fa' } });
+      throw unauthorized('Dieser Passkey gehört zu einem anderen Konto');
+    }
+    finishSecondFactor(token);
+    reply.clearCookie(PENDING_COOKIE, { path: '/login' });
+    createSession(request, reply, user, `${pending.method}+passkey`);
+    audit('login', { actor: user.id, request, details: { method: `${pending.method}+passkey` } });
+    return { redirect: safeRedirect(input.next) };
   });
 
   app.post('/login/2fa', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
@@ -133,7 +172,7 @@ export async function authRoutes(app: FastifyInstance) {
       return renderDocument(request, reply, {
         title: t(request.lang, 'Bestätigen'),
         status: error instanceof HttpError ? error.status : 400,
-        body: secondFactorPage(request, { csrf: request.csrf, next, error: message(request, error) }),
+        body: confirmView(request, pending.user, next, message(request, error)),
       });
     }
   });

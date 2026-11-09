@@ -43,6 +43,9 @@ export const AUDIT_ACTIONS = [
   'backup_deleted',
   'backup_failed',
   'maintenance',
+  'group_created',
+  'group_updated',
+  'group_deleted',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

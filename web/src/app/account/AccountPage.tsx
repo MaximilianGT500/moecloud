@@ -21,6 +21,8 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AdminPanelSettingsRounded from '@mui/icons-material/AdminPanelSettingsRounded';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import ComputerRounded from '@mui/icons-material/ComputerRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
@@ -64,6 +66,8 @@ interface Account {
   mail: boolean;
   prefs: MailPrefs;
   security: {
+    required: boolean;
+    setupRequired: boolean;
     hasPassword: boolean;
     totp: boolean;
     recoveryCodes: number;
@@ -602,6 +606,8 @@ export function AccountPage() {
   };
 
   const security = account?.security;
+  const locked = Boolean(security?.setupRequired);
+  const unlocked = Boolean(boot().setup2fa && security && !security.setupRequired);
 
   return (
     <AppShell
@@ -621,6 +627,67 @@ export function AccountPage() {
           </Box>
         ) : (
           <>
+            {locked && (
+              <Box
+                role="status"
+                sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: 2,
+                  p: { xs: 2, sm: 3 },
+                  borderRadius: `${radius.lg}px`,
+                  bgcolor: c.secondaryContainer,
+                  color: c.onSecondaryContainer,
+                }}
+              >
+                <ShieldRounded sx={{ fontSize: 36, flex: 'none', color: c.primary }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="h6" component="h2">
+                    {t('Richte die Zwei-Faktor-Anmeldung ein')}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5 }}>
+                    {t(
+                      'Die Verwaltung verlangt für dein Konto einen zweiten Faktor. Sobald eine Authenticator-App oder ein Passkey eingerichtet ist, kannst du MoeCloud wie gewohnt nutzen.'
+                    )}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
+                    <Button variant="contained" startIcon={<PhonelinkLockRounded />} onClick={() => setDialog('totp')}>
+                      {t('Authenticator-App einrichten')}
+                    </Button>
+                    {account.passkeysEnabled && supportsPasskeys && (
+                      <Button variant="outlined" color="inherit" startIcon={<KeyRounded />} onClick={() => void addPasskey()}>
+                        {t('Passkey hinzufügen')}
+                      </Button>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+            )}
+            {unlocked && (
+              <Box
+                role="status"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 1.5,
+                  pl: 2,
+                  pr: 1,
+                  py: 1,
+                  borderRadius: `${radius.md}px`,
+                  bgcolor: c.secondaryContainer,
+                  color: c.onSecondaryContainer,
+                }}
+              >
+                <CheckCircleRounded sx={{ color: c.primary }} />
+                <Typography variant="body2" sx={{ flex: 1, minWidth: 200 }}>
+                  {t('Alles eingerichtet. Dein Konto ist jetzt zusätzlich geschützt.')}
+                </Typography>
+                <Button endIcon={<ArrowForwardRounded />} href="/files" sx={{ color: 'inherit' }}>
+                  {t('Zu deinen Dateien')}
+                </Button>
+              </Box>
+            )}
             <Box
               sx={{
                 display: 'flex',
@@ -641,7 +708,7 @@ export function AccountPage() {
                   @{account.user.username} · {account.user.role === 'admin' ? t('Admin') : t('Mitglied')}
                 </Typography>
                 <StorageMeter storage={account.storage} />
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
+                <Box sx={{ display: locked ? 'none' : 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
                   <Button size="small" variant="tonal" startIcon={<DataUsageRounded />} href="/files/storage">
                     {t('Speicher ansehen')}
                   </Button>
@@ -651,10 +718,12 @@ export function AccountPage() {
                 </Box>
               </Box>
               <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, flexWrap: 'wrap', width: '100%' }}>
-                <Button variant="tonal" startIcon={<DeleteRounded />} href="/files/trash">
-                  {t('Papierkorb')}
-                </Button>
-                {account.user.role === 'admin' && (
+                {!locked && (
+                  <Button variant="tonal" startIcon={<DeleteRounded />} href="/files/trash">
+                    {t('Papierkorb')}
+                  </Button>
+                )}
+                {account.user.role === 'admin' && !locked && (
                   <Button variant="tonal" startIcon={<AdminPanelSettingsRounded />} href="/admin">
                     {t('Verwaltung')}
                   </Button>
@@ -887,52 +956,54 @@ export function AccountPage() {
               )}
             </Section>
 
-            <Section
-              title={t('WebDAV und App-Passwörter')}
-              description={t(
-                'Binde MoeCloud als Laufwerk im Explorer, im Finder oder mit rclone ein. Melde dich dort mit deinem Benutzernamen und einem App-Passwort an.'
-              )}
-            >
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2 }}>
-                <CopyField value={boot().webdav ?? `${location.origin}/dav/`} label={t('WebDAV-Adresse')} />
-                <CopyField value={account.user.username} label={t('Benutzername')} />
-              </Box>
-              {security.appPasswords.map((entry) => (
-                <Row
-                  key={entry.id}
-                  icon={<KeyRounded />}
-                  title={entry.name}
-                  text={`…${entry.hint} · ${entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt')}`}
-                  action={
-                    <Tooltip title={t('Widerrufen')}>
-                      <IconButton
-                        aria-label={t('App-Passwort {name} widerrufen', { name: entry.name })}
-                        onClick={async () => {
-                          if (
-                            !(await confirm({
-                              title: t('App-Passwort widerrufen?'),
-                              text: t('Geräte, die „{name}“ nutzen, verlieren den Zugriff.', { name: entry.name }),
-                              confirm: t('Widerrufen'),
-                              danger: true,
-                            }))
-                          )
-                            return;
-                          await api.delete(`/api/account/app-passwords/${entry.id}`).catch((error) => toast(errorText(error)));
-                          void load();
-                        }}
-                      >
-                        <DeleteOutlineRounded />
-                      </IconButton>
-                    </Tooltip>
-                  }
-                />
-              ))}
-              <Box>
-                <Button variant="tonal" startIcon={<KeyRounded />} onClick={() => setDialog('app')}>
-                  {t('App-Passwort erstellen')}
-                </Button>
-              </Box>
-            </Section>
+            {!locked && (
+              <Section
+                title={t('WebDAV und App-Passwörter')}
+                description={t(
+                  'Binde MoeCloud als Laufwerk im Explorer, im Finder oder mit rclone ein. Melde dich dort mit deinem Benutzernamen und einem App-Passwort an.'
+                )}
+              >
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2 }}>
+                  <CopyField value={boot().webdav ?? `${location.origin}/dav/`} label={t('WebDAV-Adresse')} />
+                  <CopyField value={account.user.username} label={t('Benutzername')} />
+                </Box>
+                {security.appPasswords.map((entry) => (
+                  <Row
+                    key={entry.id}
+                    icon={<KeyRounded />}
+                    title={entry.name}
+                    text={`…${entry.hint} · ${entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt')}`}
+                    action={
+                      <Tooltip title={t('Widerrufen')}>
+                        <IconButton
+                          aria-label={t('App-Passwort {name} widerrufen', { name: entry.name })}
+                          onClick={async () => {
+                            if (
+                              !(await confirm({
+                                title: t('App-Passwort widerrufen?'),
+                                text: t('Geräte, die „{name}“ nutzen, verlieren den Zugriff.', { name: entry.name }),
+                                confirm: t('Widerrufen'),
+                                danger: true,
+                              }))
+                            )
+                              return;
+                            await api.delete(`/api/account/app-passwords/${entry.id}`).catch((error) => toast(errorText(error)));
+                            void load();
+                          }}
+                        >
+                          <DeleteOutlineRounded />
+                        </IconButton>
+                      </Tooltip>
+                    }
+                  />
+                ))}
+                <Box>
+                  <Button variant="tonal" startIcon={<KeyRounded />} onClick={() => setDialog('app')}>
+                    {t('App-Passwort erstellen')}
+                  </Button>
+                </Box>
+              </Section>
+            )}
 
             <Section
               title={t('Sitzungen')}

@@ -7,6 +7,7 @@ import BackupRounded from '@mui/icons-material/BackupRounded';
 import DashboardRounded from '@mui/icons-material/DashboardRounded';
 import DnsRounded from '@mui/icons-material/DnsRounded';
 import GppGoodRounded from '@mui/icons-material/GppGoodRounded';
+import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import MailRounded from '@mui/icons-material/MailRounded';
 import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
@@ -21,6 +22,7 @@ import { c, curve, mix, radius } from '../../theme/tokens';
 import { AppShell } from '../shell/AppShell';
 import { AuditSection } from './Audit';
 import { BackupsSection } from './Backups';
+import { GroupsSection } from './Groups';
 import { InvitesSection } from './Invites';
 import { LinksSection } from './Links';
 import { MailSection } from './Mail';
@@ -32,7 +34,8 @@ import { loadSettings } from './shared';
 import { SystemSection } from './System';
 import { WebhooksSection } from './Webhooks';
 
-type SectionKey = 'overview' | 'people' | 'invites' | 'links' | 'audit' | 'scan' | 'mail' | 'webhooks' | 'backups' | 'settings' | 'system';
+type SectionKey =
+  'overview' | 'people' | 'groups' | 'invites' | 'links' | 'audit' | 'scan' | 'mail' | 'webhooks' | 'backups' | 'settings' | 'system';
 
 const LEGACY: Record<string, SectionKey> = { users: 'people', invites: 'invites', settings: 'settings', overview: 'overview' };
 
@@ -40,6 +43,7 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
   return [
     { key: 'overview', label: t('Übersicht'), icon: <DashboardRounded />, group: 0 },
     { key: 'people', label: t('Personen'), icon: <PeopleRounded />, group: 1 },
+    { key: 'groups', label: t('Gruppen'), icon: <GroupsRounded />, group: 1 },
     { key: 'invites', label: t('Einladungen'), icon: <MarkEmailUnreadRounded />, group: 1 },
     { key: 'links', label: t('Links'), icon: <LinkRounded />, group: 1 },
     { key: 'audit', label: t('Protokoll'), icon: <ReceiptLongRounded />, group: 1 },
@@ -187,6 +191,7 @@ export function AdminPage() {
           </Typography>
           {section === 'overview' && <OverviewSection />}
           {section === 'people' && <PeopleSection />}
+          {section === 'groups' && <GroupsSection />}
           {section === 'invites' && <InvitesSection registration={registration} />}
           {section === 'links' && <LinksSection />}
           {section === 'audit' && <AuditSection />}

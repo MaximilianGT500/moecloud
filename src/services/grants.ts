@@ -98,6 +98,7 @@ export function presentGrant(grant: GrantRow) {
     permission: grant.permission,
     createdAt: grant.created_at,
     user: target ? { id: target.id, name: target.name, username: target.username, initials: initials(target.name) } : null,
+    group: null,
   };
 }
 

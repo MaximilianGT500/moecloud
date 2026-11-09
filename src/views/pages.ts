@@ -127,18 +127,60 @@ export function loginPage(request: FastifyRequest, view: LoginView) {
   );
 }
 
-export function secondFactorPage(request: FastifyRequest, view: { csrf: string; next: string; error?: string | null }) {
+export interface SecondFactorView {
+  csrf: string;
+  next: string;
+  error?: string | null;
+  totp: boolean;
+  passkey: boolean;
+}
+
+export function secondFactorPage(request: FastifyRequest, view: SecondFactorView) {
   const lang = request.lang;
   return shell(
     request,
     html`<h1>${t(lang, 'Bestätige die Anmeldung')}</h1>
-      <p class="auth__lead">${t(lang, 'Gib den Code aus deiner Authenticator-App ein. Ein Wiederherstellungscode geht auch.')}</p>
+      <p class="auth__lead">
+        ${
+          view.totp
+            ? t(lang, 'Gib den Code aus deiner Authenticator-App ein. Ein Wiederherstellungscode geht auch.')
+            : t(lang, 'Die Verwaltung verlangt einen zweiten Faktor. Bestätige die Anmeldung mit deinem Passkey.')
+        }
+      </p>
       ${alert('error', view.error)}
-      <form method="post" action="/login/2fa" class="form">
-        ${hidden('_csrf', view.csrf)} ${hidden('next', view.next)}
-        ${field({ name: 'code', label: t(lang, 'Code'), autocomplete: 'one-time-code', autofocus: true, maxlength: 20 })}
-        <button class="button button--filled" type="submit">${t(lang, 'Bestätigen')}</button>
-      </form>
+      ${
+        view.totp
+          ? html`<form method="post" action="/login/2fa" class="form">
+              ${hidden('_csrf', view.csrf)} ${hidden('next', view.next)}
+              ${field({ name: 'code', label: t(lang, 'Code'), autocomplete: 'one-time-code', autofocus: true, maxlength: 20 })}
+              <button class="button button--filled" type="submit">${t(lang, 'Bestätigen')}</button>
+            </form>`
+          : null
+      }
+      ${
+        view.passkey
+          ? html`<div class="auth__passkey" data-passkey hidden>
+                ${view.totp ? html`<div class="divider"><span>${t(lang, 'oder')}</span></div>` : null}
+                <button
+                  type="button"
+                  class=${view.totp ? 'button button--tonal' : 'button button--filled'}
+                  data-passkey-confirm
+                  data-csrf=${view.csrf}
+                  data-next=${view.next}
+                >
+                  ${icon('key', 'icon button__icon')}<span>${t(lang, 'Mit Passkey bestätigen')}</span>
+                </button>
+                <p class="field__hint field__hint--center" data-passkey-error hidden role="alert"></p>
+              </div>
+              ${
+                view.totp
+                  ? null
+                  : html`<p class="field__hint field__hint--center" data-passkey-missing>
+                      ${t(lang, 'Dieser Browser kann keine Passkeys nutzen. Nimm ein Gerät mit deinem Passkey oder bitte die Verwaltung um Hilfe.')}
+                    </p>`
+              }`
+          : null
+      }
       <p class="auth__alt"><a href="/login">${icon('arrowBack', 'icon icon--small')} ${t(lang, 'Zurück zur Anmeldung')}</a></p>`
   );
 }

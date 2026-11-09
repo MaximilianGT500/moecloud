@@ -18,3 +18,4 @@ docker/Caddyfile
 install.sh
 tools
 docker/clamav.yml
+docker/moecloud-host

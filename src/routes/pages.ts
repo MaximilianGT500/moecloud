@@ -10,6 +10,7 @@ import { isSetUp } from '../services/setup.ts';
 import { CHUNK_SIZE } from '../services/uploads.ts';
 import { tools } from '../services/media.ts';
 import { scanEnabled } from '../services/scan.ts';
+import { needsSecondFactor } from '../services/auth.ts';
 import { publicUser, storageOf } from '../services/users.ts';
 
 function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
@@ -30,6 +31,7 @@ export function userBoot(request: FastifyRequest) {
     user: publicUser(user),
     storage: storageOf(user),
     webdav: `${baseUrl(request)}/dav/`,
+    setup2fa: needsSecondFactor(user),
   };
 }
 

@@ -6,6 +6,7 @@ import defaultPalette from '../lib/default-palette.json' with { type: 'json' };
 export type Palette = { dark: Record<string, string>; light: Record<string, string> };
 export type Registration = 'closed' | 'open' | 'invite';
 export type MailSecurity = 'tls' | 'starttls' | 'none';
+export type SecondFactorPolicy = 'off' | 'admins' | 'all';
 
 export interface UpdateInfo {
   version: string;
@@ -31,6 +32,7 @@ const DEFAULTS = {
   'site.privacy': '',
   'auth.registration': 'closed' as Registration,
   'auth.passkeys': true,
+  'auth.require2fa': 'off' as SecondFactorPolicy,
   'storage.defaultQuota': 0,
   'storage.maxUpload': 0,
   'storage.trashDays': 30,
@@ -130,6 +132,7 @@ export const PUBLIC_KEYS = [
   'site.privacy',
   'auth.registration',
   'auth.passkeys',
+  'auth.require2fa',
   'storage.defaultQuota',
   'storage.maxUpload',
   'storage.trashDays',

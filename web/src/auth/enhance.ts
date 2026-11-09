@@ -36,19 +36,21 @@ async function post<T>(url: string, csrf: string, body: unknown): Promise<T> {
 
 function passkeys() {
   const box = document.querySelector<HTMLElement>('[data-passkey]');
-  const button = document.querySelector<HTMLButtonElement>('[data-passkey-login]');
+  const button = document.querySelector<HTMLButtonElement>('[data-passkey-login], [data-passkey-confirm]');
   const error = document.querySelector<HTMLElement>('[data-passkey-error]');
   if (!box || !button || !browserSupportsWebAuthn() || !window.isSecureContext) return;
   box.hidden = false;
+  document.querySelector<HTMLElement>('[data-passkey-missing]')?.setAttribute('hidden', '');
   const csrf = button.dataset.csrf ?? '';
   const next = button.dataset.next ?? '/files';
+  const base = 'passkeyConfirm' in button.dataset ? '/login/2fa/passkey' : '/api/auth/passkey';
   button.addEventListener('click', async () => {
     button.disabled = true;
     if (error) error.hidden = true;
     try {
-      const options = await post<Parameters<typeof startAuthentication>[0]['optionsJSON']>('/api/auth/passkey/options', csrf, {});
+      const options = await post<Parameters<typeof startAuthentication>[0]['optionsJSON']>(`${base}/options`, csrf, {});
       const response = await startAuthentication({ optionsJSON: options });
-      const result = await post<{ redirect: string }>('/api/auth/passkey/verify', csrf, { response, next });
+      const result = await post<{ redirect: string }>(`${base}/verify`, csrf, { response, next });
       location.href = result.redirect;
     } catch (reason) {
       const name = (reason as Error).name;

@@ -36,6 +36,7 @@ export interface Boot {
   storage?: Storage;
   webdav?: string;
   unread?: number;
+  setup2fa?: boolean;
 }
 
 let cached: Boot | null = null;

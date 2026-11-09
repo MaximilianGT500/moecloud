@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
@@ -29,7 +29,9 @@ import AccountCircleOutlined from '@mui/icons-material/AccountCircleOutlined';
 import AccountCircleRounded from '@mui/icons-material/AccountCircleRounded';
 import ManageAccountsRounded from '@mui/icons-material/ManageAccountsRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import KeyboardRounded from '@mui/icons-material/KeyboardRounded';
 import { BrandMark, SkipLink, StorageMeter, UserAvatar } from '../common/bits';
+import { ShortcutsDialog } from '../common/Shortcuts';
 import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { api, logout } from '../../lib/api';
 import { boot, type SessionUser, type Storage } from '../../lib/boot';
@@ -51,6 +53,7 @@ interface NavItem {
 }
 
 function railItems(user: SessionUser): NavItem[] {
+  if (boot().setup2fa) return [];
   return [
     { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
     { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
@@ -73,6 +76,9 @@ function railItems(user: SessionUser): NavItem[] {
 }
 
 function bottomItems(): NavItem[] {
+  if (boot().setup2fa) {
+    return [{ key: 'account', href: '/account', label: t('Ich'), icon: <AccountCircleOutlined />, activeIcon: <AccountCircleRounded /> }];
+  }
   return [
     { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
     { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
@@ -241,6 +247,17 @@ function AccountMenu({
         </ListItemIcon>
         {t('Konto und Sicherheit')}
       </MenuItem>
+      <MenuItem
+        onClick={() => {
+          onClose();
+          window.dispatchEvent(new Event('moe:shortcuts'));
+        }}
+      >
+        <ListItemIcon>
+          <KeyboardRounded />
+        </ListItemIcon>
+        {t('Tastenkürzel')}
+      </MenuItem>
       <MenuItem onClick={() => void logout()}>
         <ListItemIcon>
           <LogoutRounded />
@@ -283,12 +300,36 @@ interface ShellProps {
   children: ReactNode;
 }
 
+function useShortcuts() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const show = () => setOpen(true);
+    const key = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.key !== '?' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      if (document.querySelector('.MuiDialog-root, .MuiMenu-root')) return;
+      event.preventDefault();
+      setOpen(true);
+    };
+    window.addEventListener('moe:shortcuts', show);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('moe:shortcuts', show);
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+  return [open, setOpen] as const;
+}
+
 export function AppShell({ active, topBar, railAction, mobileAction, aside, storage, onNavigate, framed = true, children }: ShellProps) {
   const user = boot().user!;
   const site = boot().site;
+  const [shortcuts, setShortcuts] = useShortcuts();
   return (
     <Box sx={{ minHeight: '100dvh' }}>
       <SkipLink />
+      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
       <Box
         component="nav"
         aria-label={t('Hauptnavigation')}
@@ -358,7 +399,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
         >
           {topBar}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flex: 'none' }}>
-            <NotificationBell onNavigate={onNavigate} />
+            {!boot().setup2fa && <NotificationBell onNavigate={onNavigate} />}
             <Box sx={{ display: { md: 'none' } }}>
               <AccountButton size={36} storage={storage} />
             </Box>

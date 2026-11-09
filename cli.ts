@@ -54,7 +54,7 @@ function help() {
     ['users', 'Alle Konten anzeigen'],
     ['create-admin <name> [--email] [--name]', 'Admin-Konto mit neuem Passwort anlegen'],
     ['reset-password <name>', 'Neues Passwort setzen und alle Sitzungen beenden'],
-    ['reset-2fa <name>', 'Authenticator-App eines Kontos entfernen'],
+    ['reset-2fa <name> [--passkeys]', 'Authenticator-App entfernen, mit --passkeys auch alle Passkeys'],
     ['setup-link [--new]', 'Link für die Einrichtung anzeigen, mit --new einen neuen Code erzeugen'],
     ['backup [ordner]', 'Datenbank sichern, ohne den Server anzuhalten'],
     ['cleanup', 'Papierkorb, Uploads und verwaiste Dateien aufräumen'],
@@ -120,7 +120,14 @@ async function main() {
     case 'reset-2fa': {
       const user = requireUser(positional()[0]);
       resetTotp(user.id);
-      out(`Die Authenticator-App von „${user.username}“ ist entfernt. Passkeys bleiben erhalten.`);
+      if (args.includes('--passkeys')) {
+        const removed = run('DELETE FROM passkeys WHERE user_id = ?', user.id).changes;
+        audit('admin_2fa_reset', { subject: user.id, details: { totp: true, passkeys: removed, via: 'cli' } });
+        out(`Die Authenticator-App und ${removed} Passkeys von „${user.username}“ sind entfernt.`);
+      } else {
+        audit('admin_2fa_reset', { subject: user.id, details: { via: 'cli' } });
+        out(`Die Authenticator-App von „${user.username}“ ist entfernt. Passkeys bleiben erhalten, --passkeys entfernt auch sie.`);
+      }
       break;
     }
     case 'setup-link': {

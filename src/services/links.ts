@@ -24,6 +24,8 @@ export interface LinkRow {
   created_at: number;
   last_access_at: number | null;
   notify: number;
+  max_downloads: number | null;
+  paused: number;
 }
 
 export interface LinkInput {
@@ -34,14 +36,27 @@ export interface LinkInput {
   allowUpload?: boolean;
   uploadOnly?: boolean;
   notify?: boolean;
+  maxDownloads?: number | null;
+  paused?: boolean;
 }
 
 export const getLink = (id: string) => one<LinkRow>('SELECT * FROM links WHERE id = ?', id);
 
+export const exhausted = (link: LinkRow) => Boolean(link.max_downloads && link.downloads >= link.max_downloads);
+
+export function linkState(link: LinkRow): 'active' | 'expired' | 'paused' | 'exhausted' {
+  if (link.expires_at && link.expires_at <= Date.now()) return 'expired';
+  if (link.paused) return 'paused';
+  if (exhausted(link)) return 'exhausted';
+  return 'active';
+}
+
+export const linkByToken = (token: string) =>
+  /^[0-9A-Za-z]{10,40}$/.test(token) ? one<LinkRow>('SELECT * FROM links WHERE token = ?', token) : undefined;
+
 export function resolveToken(token: string) {
-  if (!/^[0-9A-Za-z]{10,40}$/.test(token)) return null;
-  const link = one<LinkRow>('SELECT * FROM links WHERE token = ?', token);
-  if (!link || (link.expires_at && link.expires_at <= Date.now())) return null;
+  const link = linkByToken(token);
+  if (!link || linkState(link) !== 'active') return null;
   const node = getNode(link.node_id);
   if (!node || node.trashed_at) return null;
   return { link, node };
@@ -95,8 +110,8 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
   const id = randomId(16);
   const uploads = folder && Boolean(input.allowUpload || input.uploadOnly);
   run(
-    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, max_downloads, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     randomId(22),
     node.id,
@@ -109,6 +124,7 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
     uploads,
     folder && Boolean(input.uploadOnly),
     uploads && (input.notify ?? true),
+    input.maxDownloads ?? null,
     Date.now()
   );
   record({ owner: node.owner_id, actor: user.id, node: node.id, parent: node.parent_id, action: 'share_link', name: node.name });
@@ -127,7 +143,7 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
   const uploadOnly = folder && (input.uploadOnly ?? Boolean(link.upload_only));
   const uploads = folder && (uploadOnly || (input.allowUpload ?? Boolean(link.allow_upload)));
   run(
-    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ? WHERE id = ?`,
+    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ?, max_downloads = ?, paused = ? WHERE id = ?`,
     input.label === undefined ? link.label : input.label?.trim() || null,
     passwordHash,
     input.expiresAt === undefined ? link.expires_at : expiry(input.expiresAt),
@@ -135,6 +151,8 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
     uploads,
     uploadOnly,
     uploads && (input.notify ?? Boolean(link.notify)),
+    input.maxDownloads === undefined ? link.max_downloads : input.maxDownloads,
+    input.paused === undefined ? link.paused : input.paused,
     id
   );
   return getLink(id)!;
@@ -153,12 +171,19 @@ export const linksBy = (user: UserRow) =>
   all<LinkRow>('SELECT * FROM links WHERE created_by = ? OR owner_id = ? ORDER BY created_at DESC', user.id, user.id);
 
 export function countAccess(link: LinkRow, kind: 'views' | 'downloads') {
-  run(
-    `UPDATE links SET ${kind === 'views' ? 'views = views + 1' : 'downloads = downloads + 1'}, last_access_at = ? WHERE id = ?`,
+  if (kind === 'views') {
+    run('UPDATE links SET views = views + 1, last_access_at = ? WHERE id = ?', Date.now(), link.id);
+    return;
+  }
+  const { changes } = run(
+    'UPDATE links SET downloads = downloads + 1, last_access_at = ? WHERE id = ? AND (max_downloads IS NULL OR downloads < max_downloads)',
     Date.now(),
     link.id
   );
+  if (changes === 0) throw notFound('Dieser Link wurde schon so oft genutzt wie erlaubt');
 }
+
+export const downloadsLeft = (link: LinkRow) => (link.max_downloads ? Math.max(0, link.max_downloads - link.downloads) : null);
 
 export function baseUrl(request: FastifyRequest) {
   const configured = settings.get('site.url').replace(/\/+$/, '');
@@ -181,6 +206,9 @@ export function presentLink(link: LinkRow, request: FastifyRequest) {
     notify: Boolean(link.notify),
     views: link.views,
     downloads: link.downloads,
+    maxDownloads: link.max_downloads,
+    paused: Boolean(link.paused),
+    exhausted: exhausted(link),
     createdAt: link.created_at,
     lastAccessAt: link.last_access_at,
   };

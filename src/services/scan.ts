@@ -20,7 +20,7 @@ export interface Verdict {
 export interface ScanContext {
   userId: number | null;
   name: string;
-  via: 'upload' | 'link' | 'dav' | 'editor' | 'api';
+  via: 'upload' | 'link' | 'dav' | 'editor' | 'api' | 'archive';
 }
 
 const TIMEOUT = 120_000;

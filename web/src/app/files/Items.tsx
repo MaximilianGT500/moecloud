@@ -104,7 +104,10 @@ function detail(item: Item) {
 
 function columnText(item: Item, column: ItemsProps['column']) {
   if (column === 'location') return item.location === '' ? t('Meine Dateien') : (item.location ?? '');
-  if (column === 'owner') return item.owner?.name ?? t('Du');
+  if (column === 'owner')
+    return item.viaGroup && item.owner
+      ? t('{name} über {group}', { name: item.owner.name, group: item.viaGroup })
+      : (item.owner?.name ?? t('Du'));
   if (column === 'trashed') return formatDate(item.trashedAt ?? item.modifiedAt);
   return formatDate(item.modifiedAt);
 }

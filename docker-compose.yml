@@ -1,6 +1,6 @@
 services:
   moecloud:
-    image: ghcr.io/maximiliangt500/moecloud:latest
+    image: ghcr.io/maximiliangt500/moecloud:${MOECLOUD_VERSION:-latest}
     build: .
     container_name: moecloud
     restart: unless-stopped
@@ -63,6 +63,8 @@ services:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       moecloud:
         condition: service_healthy

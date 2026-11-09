@@ -32,35 +32,6 @@ jobs:
       - name: Buildx einrichten
         uses: docker/setup-buildx-action@v4
 
-      - name: Image für den Test bauen
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          load: true
-          tags: moecloud:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Programme für Vorschauen prüfen
-        run: |
-          docker run --rm --entrypoint ffmpeg moecloud:test -hide_banner -version
-          docker run --rm --entrypoint ffprobe moecloud:test -hide_banner -version
-          docker run --rm --entrypoint pdftoppm moecloud:test -v
-          docker run --rm --entrypoint pdftotext moecloud:test -v
-
-      - name: Start im Container prüfen
-        run: |
-          docker run -d --name moecloud-test -p 3000:3000 moecloud:test
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3000/healthz && docker logs moecloud-test 2>&1 | grep -q 'setup?code='; then
-              docker logs moecloud-test
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs moecloud-test
-          exit 1
-
       - name: Tags bestimmen
         id: meta
         uses: docker/metadata-action@v6
@@ -72,6 +43,43 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,format=short
+
+      - name: Image für den Test bauen
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: moecloud:test
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Größe des Images
+        run: docker image ls moecloud:test --format '{{.Repository}}:{{.Tag}} {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Programme für Vorschauen prüfen
+        run: |
+          docker run --rm --entrypoint ffmpeg moecloud:test -hide_banner -version
+          docker run --rm --entrypoint ffprobe moecloud:test -hide_banner -version
+          docker run --rm --entrypoint pdftoppm moecloud:test -v
+          docker run --rm --entrypoint pdftotext moecloud:test -v
+          docker run --rm --entrypoint node moecloud:test -e "import('sharp').then(() => import('argon2')).then(() => console.log('sharp und argon2 laden'))"
+
+      - name: Start im Container prüfen
+        run: |
+          docker run -d --name moecloud-test -p 3000:3000 moecloud:test
+          for attempt in $(seq 1 45); do
+            health="$(docker inspect -f '{{.State.Health.Status}}' moecloud-test)"
+            if [ "$health" = "healthy" ] && docker logs moecloud-test 2>&1 | grep -q 'setup?code='; then
+              curl -fsS http://127.0.0.1:3000/healthz
+              docker exec moecloud-test moecloud users
+              docker logs moecloud-test
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs moecloud-test
+          exit 1
 
       - name: Bei der GitHub Container Registry anmelden
         if: github.event_name != 'pull_request'
@@ -90,5 +98,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max

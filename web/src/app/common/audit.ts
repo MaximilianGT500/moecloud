@@ -1,5 +1,5 @@
 import { formatBytes } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { t, tn } from '../../lib/i18n';
 
 export interface AuditEntry {
   id: number;
@@ -93,6 +93,12 @@ export function auditLabel(action: string) {
       return t('Sicherung fehlgeschlagen');
     case 'maintenance':
       return t('Wartungsmodus');
+    case 'group_created':
+      return t('Gruppe angelegt');
+    case 'group_updated':
+      return t('Gruppe geändert');
+    case 'group_deleted':
+      return t('Gruppe gelöscht');
     default:
       return action;
   }
@@ -154,11 +160,28 @@ export function auditDetail(entry: AuditEntry) {
     case 'maintenance':
       return d.enabled ? t('eingeschaltet') : t('ausgeschaltet');
     case 'webhook_changed':
+    case 'group_created':
+    case 'group_deleted':
       return text('name');
+    case 'group_updated':
+      return [
+        text('before') ? `${text('before')} → ${text('name')}` : text('name'),
+        Array.isArray(d.added) && d.added.length ? `+ ${(d.added as string[]).join(', ')}` : '',
+        Array.isArray(d.removed) && d.removed.length ? `− ${(d.removed as string[]).join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'link_removed':
       return text('label');
     case 'invite_created':
       return d.email ? t('per E-Mail') : '';
+    case 'admin_2fa_reset':
+      return [
+        typeof d.passkeys !== 'number' || d.totp ? t('Authenticator-App') : '',
+        typeof d.passkeys === 'number' ? tn(d.passkeys, 'ein Passkey entfernt', '{count} Passkeys entfernt') : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
     default:
       return Array.isArray(d.keys) ? (d.keys as string[]).join(', ') : Array.isArray(d.fields) ? (d.fields as string[]).join(', ') : '';
   }

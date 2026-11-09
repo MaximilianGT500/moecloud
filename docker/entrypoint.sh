@@ -16,7 +16,10 @@ esac
 
 dir="${DATA_DIR:-/data}"
 mkdir -p "$dir"
-find "$dir" \( ! -user "$uid" -o ! -group "$gid" \) -exec chown -h "$uid:$gid" {} + 2>/dev/null || true
+if [ -n "$(find "$dir" -maxdepth 2 \( ! -user "$uid" -o ! -group "$gid" \) -print -quit 2>/dev/null)" ]; then
+  echo "Passe die Besitzrechte in $dir an $uid:$gid an, das kann bei vielen Dateien etwas dauern." >&2
+  find "$dir" \( ! -user "$uid" -o ! -group "$gid" \) -exec chown -h "$uid:$gid" {} + 2>/dev/null || true
+fi
 if ! setpriv --reuid="$uid" --regid="$gid" --clear-groups test -w "$dir"; then
   echo "MoeCloud kann nicht in $dir schreiben. Gib dem Ordner auf dem Host die Rechte von $uid:$gid oder setze PUID und PGID passend." >&2
 fi

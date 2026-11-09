@@ -4,7 +4,7 @@ import { badRequest, notFound } from '../lib/errors.ts';
 
 const MAX_ENTRIES = 5000;
 
-function open(path: string): Promise<ZipFile> {
+export function openZip(path: string): Promise<ZipFile> {
   return new Promise((resolve, reject) => {
     yauzl.open(path, { lazyEntries: true, autoClose: false, decodeStrings: true, validateEntrySizes: true }, (error, zipfile) => {
       if (error || !zipfile) reject(error ?? new Error('zip'));
@@ -13,7 +13,7 @@ function open(path: string): Promise<ZipFile> {
   });
 }
 
-function each(zip: ZipFile, visit: (entry: Entry) => Promise<boolean | void> | boolean | void): Promise<void> {
+export function each(zip: ZipFile, visit: (entry: Entry) => Promise<boolean | void> | boolean | void): Promise<void> {
   return new Promise((resolve, reject) => {
     zip.on('entry', (entry: Entry) => {
       Promise.resolve(visit(entry))
@@ -40,7 +40,7 @@ function each(zip: ZipFile, visit: (entry: Entry) => Promise<boolean | void> | b
   });
 }
 
-function stream(zip: ZipFile, entry: Entry): Promise<Readable> {
+export function entryStream(zip: ZipFile, entry: Entry): Promise<Readable> {
   return new Promise((resolve, reject) => {
     zip.openReadStream(entry, (error, readable) => {
       if (error || !readable) reject(error ?? new Error('stream'));
@@ -49,7 +49,7 @@ function stream(zip: ZipFile, entry: Entry): Promise<Readable> {
   });
 }
 
-const safePath = (name: string) => !name.startsWith('/') && !name.split('/').includes('..') && !name.includes('\\');
+export const safePath = (name: string) => !name.startsWith('/') && !name.split('/').includes('..') && !name.includes('\\');
 
 export interface ArchiveEntry {
   path: string;
@@ -63,7 +63,7 @@ export interface ArchiveEntry {
 export async function listArchive(path: string) {
   let zip: ZipFile;
   try {
-    zip = await open(path);
+    zip = await openZip(path);
   } catch {
     throw badRequest('Das Archiv lässt sich nicht lesen');
   }
@@ -92,7 +92,7 @@ export async function listArchive(path: string) {
 
 export async function openEntry(path: string, name: string, maxBytes: number) {
   if (!safePath(name) || name.endsWith('/')) throw notFound('Diese Datei gibt es im Archiv nicht');
-  const zip = await open(path).catch(() => {
+  const zip = await openZip(path).catch(() => {
     throw badRequest('Das Archiv lässt sich nicht lesen');
   });
   const entry = await new Promise<Entry | null>((resolve, reject) => {
@@ -111,7 +111,7 @@ export async function openEntry(path: string, name: string, maxBytes: number) {
   if (!entry) throw fail(notFound('Diese Datei gibt es im Archiv nicht'));
   if ((entry.generalPurposeBitFlag & 1) === 1) throw fail(badRequest('Diese Datei ist verschlüsselt'));
   if (entry.uncompressedSize > maxBytes) throw fail(badRequest('Diese Datei ist zu groß, lade das ganze Archiv herunter'));
-  const readable = await stream(zip, entry).catch((error: Error) => {
+  const readable = await entryStream(zip, entry).catch((error: Error) => {
     throw fail(error);
   });
   const close = () => zip.close();
@@ -147,12 +147,12 @@ export function xmlToText(xml: string) {
 const DOCUMENT_PARTS = /^(word\/document\.xml|content\.xml|ppt\/slides\/slide\d+\.xml|xl\/sharedStrings\.xml)$/;
 
 export async function documentText(path: string, limit = 1024 * 1024) {
-  const zip = await open(path);
+  const zip = await openZip(path);
   const parts: string[] = [];
   let total = 0;
   await each(zip, async (entry) => {
     if (!DOCUMENT_PARTS.test(entry.fileName) || entry.uncompressedSize > 16 * 1024 * 1024) return false;
-    const readable = await stream(zip, entry);
+    const readable = await entryStream(zip, entry);
     const chunks: Buffer[] = [];
     for await (const chunk of readable) chunks.push(chunk as Buffer);
     const text = xmlToText(Buffer.concat(chunks).toString('utf8'));

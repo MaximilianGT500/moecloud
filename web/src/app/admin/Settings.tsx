@@ -244,6 +244,20 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           label={t('Passkeys erlauben')}
           hint={t('Anmelden mit Fingerabdruck, Gesicht oder Sicherheitsschlüssel.')}
         />
+        <TextField
+          select
+          label={t('Zwei-Faktor-Anmeldung vorschreiben')}
+          value={draft['auth.require2fa']}
+          onChange={(event) => set('auth.require2fa', event.target.value)}
+          helperText={t(
+            'Wer noch keine Authenticator-App und keinen Passkey hat, richtet das direkt nach der nächsten Anmeldung ein. Bis dahin funktionieren auch App-Passwörter nicht.'
+          )}
+          sx={{ maxWidth: 420 }}
+        >
+          <MenuItem value="off">{t('Nicht vorschreiben')}</MenuItem>
+          <MenuItem value="admins">{t('Für Admins')}</MenuItem>
+          <MenuItem value="all">{t('Für alle')}</MenuItem>
+        </TextField>
       </Section>
 
       <Section title={t('Speicher')}>

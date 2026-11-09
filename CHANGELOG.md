@@ -2,6 +2,71 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.1.0] · 2026-11-09
+
+Mit Gruppen teilst du Ordner mit mehreren Personen auf einmal, ZIP-Archive packst du direkt in der Cloud aus, und Links laufen auf Wunsch nach einer festen Zahl an Downloads ab. Admins können die Zwei-Faktor-Anmeldung vorschreiben. Das Installationsskript prüft den Server vorher, hält auf Wunsch eine Version fest und spielt Updates jede Nacht ein, das Docker-Image ist deutlich kleiner.
+
+### Teilen
+
+- Gruppen unter **Admin › Gruppen**, geteilt wird mit ihnen wie mit einzelnen Personen
+- Wer neu in eine Gruppe kommt, sieht sofort alles, was mit ihr geteilt ist, wer sie verlässt, verliert den Zugriff
+- Teilen geht nur mit Gruppen, in denen man selbst ist, Admins dürfen mit allen
+- Unter **Geteilt**, in der Liste und im Detailbereich steht, über welche Gruppe eine Freigabe kommt
+- Grenze für Downloads bei Links: nach 1 bis 100 Downloads funktioniert der Link nicht mehr, Ansehen zählt nicht mit
+- Besucher sehen auf der Seite des Links, wie viele Downloads noch übrig sind
+- Links lassen sich pausieren und wieder freigeben, die Adresse bleibt gleich
+- Mehrere Downloads gleichzeitig können die Grenze nicht überschreiten
+
+### Dateien
+
+- ZIP-Archive entpacken in einen neuen Ordner neben dem Archiv, mit Unterordnern und Änderungsdatum
+- Jede Datei aus dem Archiv geht durch den Virenscan, Schadsoftware wird übersprungen
+- Verschlüsselte Einträge, Pfade aus dem Ordner heraus, Verknüpfungen und Dateien über der Größengrenze überspringt MoeCloud ebenfalls und sagt, wie viele es waren
+- Vor dem Entpacken prüft MoeCloud den Speicher der Person und den freien Platz auf dem Server
+- Bilder in der Vorschau nach links oder rechts drehen, die alte Fassung bleibt als Version, für JPEG, PNG, WebP, AVIF und TIFF
+- Übersicht aller Tastenkürzel mit `?` oder über das Kontomenü
+
+### Sicherheit
+
+- Zwei-Faktor-Pflicht für Admins oder für alle unter **Admin › Einstellungen › Anmeldung**
+- Wer noch keinen zweiten Faktor hat, kommt nach der Anmeldung nur in die Kontoeinstellungen, bis eine Authenticator-App oder ein Passkey eingerichtet ist
+- Bis dahin funktionieren App-Passwörter und WebDAV für dieses Konto nicht
+- Passkeys zählen als zweiter Faktor, die Anmeldung mit Passwort fragt dann nach dem Passkey
+- Auch mit Authenticator-App lässt sich die Anmeldung mit einem Passkey bestätigen
+- Den letzten zweiten Faktor lässt MoeCloud nicht entfernen, solange die Pflicht gilt
+- Die Pflicht lässt sich erst einschalten, wenn das eigene Konto einen zweiten Faktor hat
+- Admins entfernen unter **Admin › Personen** alle Passkeys einer Person, auf der Kommandozeile mit `reset-2fa <name> --passkeys`
+- Die Personenliste zeigt, wem der zweite Faktor noch fehlt
+
+### Installationsskript
+
+- Prüft vorher Architektur, Arbeitsspeicher, freien Platz, Ports, DNS der Domain und die Verbindung zur Registry, mit `--check` nur das, ohne etwas zu verändern
+- `--version 1.1.0` installiert genau diese Version und hält sie fest, `--version latest` hebt das wieder auf
+- Zurück auf eine ältere Version geht das Skript nicht, weil sich die Datenbank verändert haben kann
+- `--auto-update` spielt Updates jede Nacht zwischen 4 und 5 Uhr ein
+- Vor jedem Update sichert es die Datenbank, danach wartet es, bis MoeCloud wieder antwortet, und räumt alte Images auf
+- Protokoll in `/var/log/moecloud-install.log`, bei einem Fehler zeigt das Skript die letzten Zeilen daraus
+- Ist Port 3000 mit Domain schon belegt, nimmt es den nächsten freien
+- Der Link zur Einrichtung kommt direkt aus MoeCloud statt aus den Logs
+- Neue Befehle auf dem Server: `moecloud status`, `moecloud doctor`, `moecloud auto-update` und `moecloud uninstall`
+- `moecloud logs` und `moecloud restart` nehmen auch andere Dienste wie `caddy` oder `clamav`
+
+### Docker
+
+- ffmpeg kommt als statisches Programm ins Image, die Abhängigkeiten nur für die Zielplattform und ohne Typen, Source-Maps und Dokumentation
+- Die Abhängigkeiten für arm64 werden nicht mehr emuliert installiert, das beschleunigt den Build
+- `MOECLOUD_VERSION` legt den Tag des Images fest, `.env.example` hat den neuen Eintrag
+- Der Health-Check prüft nach dem Start alle 2 Sekunden, MoeCloud und Caddy sind dadurch schneller bereit
+- Der Container geht beim Start nur noch durch alle Dateien im Datenordner, wenn bei den Besitzrechten oben etwas nicht passt
+- Caddy läuft mit `no-new-privileges`
+- Images mit SBOM und Herkunftsnachweis, die CI prüft außerdem Compose-Dateien, das Installationsskript und den Start im Container
+
+### Update von 1.0.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, dabei kommt auch der neue Befehl `moecloud` mit `status`, `doctor` und `auto-update`. Mit Docker Compose holst du die neue [`docker-compose.yml`](docker-compose.yml) und startest `docker compose pull` und `docker compose up -d`. Mit Git reichen `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links an.
+
 ## [1.0.0] · 2026-11-08
 
 MoeCloud prüft Uploads auf Schadsoftware, zeigt viel mehr Dateien in der Vorschau und sortiert deine Fotos nach Aufnahmedatum. Dazu kommen Kommentare, Aktivität, Benachrichtigungen und E-Mails, eine neue Verwaltung mit Protokoll und Sicherungen und ein Skript, das MoeCloud mit einem Befehl installiert.
@@ -134,5 +199,6 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.1.0
 [1.0.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.0.0
 [0.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v0.1.0

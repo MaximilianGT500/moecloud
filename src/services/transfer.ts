@@ -17,6 +17,7 @@ export function transferFiles(from: UserRow, to: UserRow, folderName: string) {
     run(`${SUBTREE} UPDATE nodes SET owner_id = ? WHERE id IN (SELECT id FROM tree)`, folder.id, to.id);
     run(`${SUBTREE} DELETE FROM grants WHERE user_id = ? AND node_id IN (SELECT id FROM tree)`, folder.id, to.id);
     run(`${SUBTREE} UPDATE grants SET owner_id = ?, created_by = ? WHERE node_id IN (SELECT id FROM tree)`, folder.id, to.id, to.id);
+    run(`${SUBTREE} UPDATE group_grants SET owner_id = ?, created_by = ? WHERE node_id IN (SELECT id FROM tree)`, folder.id, to.id, to.id);
     run(`${SUBTREE} UPDATE links SET owner_id = ?, created_by = ? WHERE node_id IN (SELECT id FROM tree)`, folder.id, to.id, to.id);
     return folder;
   });

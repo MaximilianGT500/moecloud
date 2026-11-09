@@ -6,7 +6,17 @@ import { badRequest, conflict, unauthorized } from '../lib/errors.ts';
 import { me, setLanguageCookie } from '../lib/request.ts';
 import { displayName, email, parse, password } from '../lib/validate.ts';
 import { audit, listAudit, SECURITY_ACTIONS } from '../services/audit.ts';
-import { beginTotp, disableTotp, enableTotp, newRecoveryCodes, remainingRecoveryCodes, verifySecondFactor } from '../services/auth.ts';
+import {
+  beginTotp,
+  disableTotp,
+  enableTotp,
+  needsSecondFactor,
+  newRecoveryCodes,
+  passkeyCount,
+  remainingRecoveryCodes,
+  secondFactorRequired,
+  verifySecondFactor,
+} from '../services/auth.ts';
 import { mailReady } from '../services/mail.ts';
 import { clearNotifications, listNotifications, markRead, unreadCount } from '../services/notify.ts';
 import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword } from '../services/apppasswords.ts';
@@ -43,6 +53,8 @@ export async function accountRoutes(app: FastifyInstance) {
       mail: mailReady(),
       prefs: prefsOf(user),
       security: {
+        required: secondFactorRequired(user),
+        setupRequired: needsSecondFactor(user),
         hasPassword: Boolean(user.password_hash),
         totp: Boolean(user.totp_enabled),
         recoveryCodes: user.totp_enabled ? remainingRecoveryCodes(user.id) : 0,
@@ -154,7 +166,13 @@ export async function accountRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/api/account/passkeys/:id', async (request) => {
-    deletePasskey(me(request), request.params.id);
+    const user = me(request);
+    if (secondFactorRequired(user) && !user.totp_enabled && settings.get('auth.passkeys') && passkeyCount(user.id) <= 1) {
+      throw badRequest(
+        'Die Verwaltung verlangt einen zweiten Faktor. Richte zuerst die Authenticator-App ein, bevor du deinen letzten Passkey entfernst.'
+      );
+    }
+    deletePasskey(user, request.params.id);
     audit('passkey_removed', { actor: me(request).id, request });
     return { ok: true };
   });

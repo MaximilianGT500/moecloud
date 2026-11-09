@@ -234,6 +234,7 @@ function InfoTab({
         <Fact label={t('Geändert')}>{formatDateTime(item.modifiedAt)}</Fact>
         {item.createdAt && <Fact label={t('Erstellt')}>{formatDateTime(item.createdAt)}</Fact>}
         <Fact label={t('Gehört')}>{item.owner ? item.owner.name : t('Dir')}</Fact>
+        {item.viaGroup && <Fact label={t('Geteilt über')}>{t('Gruppe {name}', { name: item.viaGroup })}</Fact>}
         {item.role && item.role !== 'owner' && (
           <Fact label={t('Deine Rechte')}>{item.role === 'edit' ? t('Kann bearbeiten') : t('Kann ansehen')}</Fact>
         )}

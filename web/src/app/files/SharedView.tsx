@@ -103,7 +103,11 @@ export function SharedByMe({
                   />
                 )}
                 {group.grants.length > 0 && (
-                  <Chip size="small" icon={<PeopleRounded />} label={group.grants.map((grant) => grant.user?.name ?? '?').join(', ')} />
+                  <Chip
+                    size="small"
+                    icon={<PeopleRounded />}
+                    label={group.grants.map((grant) => grant.user?.name ?? grant.group?.name ?? '?').join(', ')}
+                  />
                 )}
               </Box>
             </Box>

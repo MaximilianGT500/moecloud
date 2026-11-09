@@ -35,6 +35,9 @@ export interface SharedLink {
   notify?: boolean;
   views: number;
   downloads: number;
+  maxDownloads?: number | null;
+  paused?: boolean;
+  exhausted?: boolean;
   createdAt: number;
   node?: Item;
 }
@@ -45,6 +48,7 @@ export interface SharedGrant {
   permission: 'view' | 'edit';
   createdAt: number;
   user: { id: number; name: string; username: string; initials: string } | null;
+  group?: { id: number; name: string; members: number } | null;
   node?: Item;
 }
 

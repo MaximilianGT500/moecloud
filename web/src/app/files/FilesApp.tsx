@@ -25,6 +25,7 @@ import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
 import DeleteForeverRounded from '@mui/icons-material/DeleteForeverRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import UnarchiveRounded from '@mui/icons-material/UnarchiveRounded';
 import DriveFileMoveRounded from '@mui/icons-material/DriveFileMoveRounded';
 import DriveFileRenameOutlineRounded from '@mui/icons-material/DriveFileRenameOutlineRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
@@ -65,6 +66,7 @@ import {
   deleteForever,
   download,
   emptyTrash,
+  extract,
   leaveShare,
   renameItem,
   restoreItems,
@@ -75,7 +77,7 @@ import type { ActivityEntry } from './activity';
 import { ActivityView } from './ActivityView';
 import { Details, type DetailsTab } from './Details';
 import { DRAG_TYPE, Items } from './Items';
-import { FOLDER_COLOR_OPTIONS, type Item } from './kinds';
+import { FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
 import { Photos } from './Photos';
 import { StorageView } from './Storage';
 import { canEdit, folderHref, parseView, sortItems, useListing, viewKey, type View } from './model';
@@ -339,7 +341,7 @@ export function FilesApp() {
         },
       ];
     }
-    const editable = targets.every((item) => canEdit(item) && !item.grantId && item.parentId);
+    const editable = targets.every((item) => canEdit(item) && !item.grantId && !item.viaGroup && item.parentId);
     const list: Action[] = [];
     if (single) {
       list.push({
@@ -350,6 +352,27 @@ export function FilesApp() {
       });
     }
     list.push({ key: 'download', label: t('Herunterladen'), icon: <DownloadRounded />, onClick: () => download(targets), primary: true });
+    if (
+      single &&
+      single.type === 'file' &&
+      !single.infected &&
+      previewType(single) === 'zip' &&
+      canEdit(single) &&
+      !single.grantId &&
+      !single.viaGroup
+    ) {
+      list.push({
+        key: 'extract',
+        label: t('Entpacken'),
+        icon: <UnarchiveRounded />,
+        onClick: () =>
+          void extract(single).then((done) => {
+            if (!done) return;
+            refresh();
+            toast(done.message, { action: { label: t('Öffnen'), onClick: () => navigate(folderHref(done.result.folderId, rootId)) } });
+          }),
+      });
+    }
     if (single && (single.role === 'owner' || single.role === 'edit') && data.share && (data.share.links || data.share.users)) {
       list.push({ key: 'share', label: t('Teilen'), icon: <ShareRounded />, onClick: () => setShare(single), primary: true });
     }
