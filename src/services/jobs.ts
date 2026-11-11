@@ -12,6 +12,8 @@ import { notifyAdmins, purgeNotifications } from './notify.ts';
 import { purgeResets } from './resets.ts';
 import { rescan, scanEnabled } from './scan.ts';
 import { purgeExpiredSessions } from './sessions.ts';
+import { expireGrants } from './grants.ts';
+import { expireGroupGrants } from './groups.ts';
 import * as settings from './settings.ts';
 import { checkForUpdates, updatesEnabled } from './updates.ts';
 import { cleanupUploads, formatBytes } from './uploads.ts';
@@ -73,6 +75,8 @@ export function startJobs(log: FastifyBaseLogger) {
   };
   const frequent = async () => {
     try {
+      expireGrants();
+      expireGroupGrants();
       await autoBackup();
       await checkDisk();
       checkLogins();

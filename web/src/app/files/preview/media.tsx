@@ -7,6 +7,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Slider from '@mui/material/Slider';
 import TextField from '@mui/material/TextField';
@@ -17,6 +18,7 @@ import { formatDuration } from '../../../lib/format';
 import { t } from '../../../lib/i18n';
 import { c, elevation, fonts, radius } from '../../../theme/tokens';
 import { contentUrl, previewUrl, thumbUrl, type Item } from '../kinds';
+import { useResume, useSubtitles } from '../playback';
 import { Fallback } from './Fallback';
 
 export interface NodeMeta {
@@ -192,25 +194,78 @@ export function CoverPreview({ item, base, inline, action }: MediaProps) {
 
 export function VideoPreview({ item, base, inline, action }: MediaProps) {
   const [failed, setFailed] = useState(false);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const subtitles = useSubtitles(item, base);
+  const resume = useResume(item, video, base === '/api', 60);
+  const { resumedAt } = resume;
+
   if (failed) return <Fallback item={item} text={t('Dein Browser kann dieses Video nicht abspielen.')} action={action} />;
   return (
     <Box
-      component="video"
-      src={contentUrl(item, base)}
-      controls
-      autoPlay={!inline}
-      playsInline
-      poster={item.thumb ? thumbUrl(item, base) : undefined}
-      onError={() => setFailed(true)}
       sx={{
+        position: 'relative',
+        display: 'flex',
+        justifyContent: 'center',
         maxWidth: '100%',
-        maxHeight: inline ? '70vh' : '100%',
+        maxHeight: '100%',
         width: inline ? '100%' : undefined,
-        borderRadius: `${radius.md}px`,
-        bgcolor: c.scrim,
-        outline: 'none',
       }}
-    />
+    >
+      <Box
+        component="video"
+        ref={setVideo}
+        src={contentUrl(item, base)}
+        controls
+        autoPlay={!inline}
+        playsInline
+        poster={item.thumb ? thumbUrl(item, base) : undefined}
+        onError={() => setFailed(true)}
+        sx={{
+          maxWidth: '100%',
+          maxHeight: inline ? '70vh' : '100%',
+          width: inline ? '100%' : undefined,
+          borderRadius: `${radius.md}px`,
+          bgcolor: c.scrim,
+          outline: 'none',
+        }}
+      >
+        {subtitles.list.map((track, index) => (
+          <track
+            key={track.id}
+            kind="subtitles"
+            src={`${base}/nodes/${track.id}/vtt`}
+            srcLang={track.code}
+            label={track.label}
+            default={index === subtitles.preferred}
+          />
+        ))}
+      </Box>
+      {resumedAt !== null && (
+        <Box
+          role="status"
+          sx={{
+            position: 'absolute',
+            top: 12,
+            left: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pl: 1.5,
+            pr: 0.5,
+            py: 0.5,
+            borderRadius: `${radius.full}px`,
+            bgcolor: c.inverseSurface,
+            color: c.inverseOnSurface,
+            boxShadow: elevation[2],
+          }}
+        >
+          <Typography variant="body2">{t('Weiter bei {time}', { time: formatDuration(resumedAt) })}</Typography>
+          <Button size="small" onClick={resume.restart} sx={{ color: c.inversePrimary }}>
+            {t('Von vorn')}
+          </Button>
+        </Box>
+      )}
+    </Box>
   );
 }
 

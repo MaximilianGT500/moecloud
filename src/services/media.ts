@@ -213,8 +213,10 @@ export async function probe(path: string): Promise<Probe> {
   };
 }
 
-export const pdfPage = (path: string) =>
-  execute(config.tools.pdftoppm, ['-f', '1', '-l', '1', '-png', '-scale-to', '640', '-singlefile', path], { timeout: 45_000 });
+export const pdfPage = (path: string, page = 1, size = 640) =>
+  execute(config.tools.pdftoppm, ['-f', String(page), '-l', String(page), '-png', '-scale-to', String(size), '-singlefile', path], {
+    timeout: 45_000,
+  });
 
 export async function pdfText(path: string, limit = 1024 * 1024) {
   const output = await execute(config.tools.pdftotext, ['-l', '60', '-enc', 'UTF-8', '-q', path, '-'], {

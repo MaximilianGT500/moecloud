@@ -48,8 +48,8 @@ class Session {
     this.csrf = (await this.json<{ csrf: string }>('GET', '/api/session')).csrf;
   }
 
-  async upload(parentId: string, name: string, data: Buffer, modifiedAt?: number) {
-    const init = await this.json<{ id: string }>('POST', '/api/uploads', { parentId, name, size: data.length, modifiedAt });
+  async upload(parentId: string, name: string, data: Buffer, modifiedAt?: number, conflict?: 'replace') {
+    const init = await this.json<{ id: string }>('POST', '/api/uploads', { parentId, name, size: data.length, modifiedAt, conflict });
     if (data.length) {
       await this.fetch(`/api/uploads/${init.id}?offset=0`, {
         method: 'PUT',
@@ -324,11 +324,28 @@ await emi.upload(
 );
 await emi.upload(
   projects,
+  'README.md',
+  Buffer.from(
+    '# Projekte\n\nHier liegt alles, woran Emi, Mia und Lea gerade gemeinsam arbeiten.\n\n- **Ideen.md** sammelt Pläne für das nächste Jahr\n- **Skripte** enthält kleine Helfer für zu Hause\n- **Website.zip** ist der Entwurf für die Familienseite\n\nNeue Ideen gern direkt in Ideen.md eintragen.\n'
+  ),
+  now - 6 * day
+);
+await emi.upload(
+  projects,
+  'Ideen.md',
+  Buffer.from(
+    '# Ideen für 2027\n\n## Wohnung\n\n- [ ] Regal im Flur\n- [ ] Neue Lampe fürs Bad\n\n## Reisen\n\n| Ziel | Wann | Mit |\n| --- | --- | --- |\n| Lissabon | Mai | Mia |\n\n> Weniger planen, mehr machen.\n\n```bash\nnpm run build\n```\n'
+  ),
+  now - 2 * day
+);
+await emi.upload(
+  projects,
   'Ideen.md',
   Buffer.from(
     '# Ideen für 2027\n\n## Wohnung\n\n- [x] Regal im Flur\n- [ ] Pflanzen für den Balkon\n\n## Reisen\n\n| Ziel | Wann | Mit |\n| --- | --- | --- |\n| Lissabon | Mai | Mia |\n| Hokkaido | Februar | Lea |\n\n> Weniger planen, mehr machen.\n\n```bash\nnpm run build\n```\n'
   ),
-  now - 3 * 3600_000
+  now - 3 * 3600_000,
+  'replace'
 );
 
 await emi.json('PUT', '/api/nodes/color', { ids: [photos], color: 'pink' });

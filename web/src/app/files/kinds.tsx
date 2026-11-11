@@ -38,6 +38,7 @@ export interface Item {
   thumb: boolean;
   rendition?: boolean;
   starred?: boolean;
+  tags?: string[];
   shared?: boolean;
   role?: 'owner' | 'edit' | 'view';
   owner?: { id: number; name: string } | null;
@@ -50,6 +51,9 @@ export interface Item {
   width?: number | null;
   height?: number | null;
   snippet?: string | null;
+  progress?: number | null;
+  shareEnds?: number | null;
+  watching?: boolean;
 }
 
 export type PreviewType =

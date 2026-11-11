@@ -11,6 +11,7 @@ export type NotifyKind =
   | 'shared'
   | 'request_upload'
   | 'comment'
+  | 'watch'
   | 'virus'
   | 'storage'
   | 'admin_user'
@@ -55,6 +56,26 @@ const KINDS: Record<NotifyKind, Kind> = {
     text: (_lang, p) => String(p.text ?? ''),
     pref: 'mailComments',
     action: 'Ansehen',
+  },
+  watch: {
+    title: (lang, p) => (p.by ? t(lang, '{by} hat in „{folder}“ etwas geändert', p) : t(lang, 'In „{folder}“ hat sich etwas geändert', p)),
+    text: (lang, p) => {
+      const added = Number(p.added);
+      const changed = Number(p.changed);
+      const removed = Number(p.removed);
+      if (added + changed + removed === 1) {
+        return added ? t(lang, 'Neu: {name}', p) : changed ? t(lang, 'Geändert: {name}', p) : t(lang, 'Gelöscht: {name}', p);
+      }
+      return [
+        added ? many(lang, added, 'Ein neues Element', '{count} neue Elemente', { count: added }) : '',
+        changed ? many(lang, changed, 'Ein Element geändert', '{count} Elemente geändert', { count: changed }) : '',
+        removed ? many(lang, removed, 'Ein Element gelöscht', '{count} Elemente gelöscht', { count: removed }) : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
+    },
+    pref: 'mailWatch',
+    action: 'Zum Ordner',
   },
   virus: {
     title: (lang, p) => t(lang, '„{name}“ enthält Schadsoftware', p),

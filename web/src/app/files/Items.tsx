@@ -12,11 +12,12 @@ import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import { m } from 'motion/react';
-import { formatBytes, formatDate } from '../../lib/format';
+import { formatBytes, formatDate, formatDay } from '../../lib/format';
 import { t, tn, tp } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
 import { c, curve, layer, mix, radius } from '../../theme/tokens';
 import { FileIcon, Thumb, kindColor, type Item } from './kinds';
+import { TagDots } from './tags';
 
 export const DRAG_TYPE = 'application/x-moecloud-nodes';
 
@@ -104,16 +105,44 @@ function detail(item: Item) {
 
 function columnText(item: Item, column: ItemsProps['column']) {
   if (column === 'location') return item.location === '' ? t('Meine Dateien') : (item.location ?? '');
-  if (column === 'owner')
-    return item.viaGroup && item.owner
-      ? t('{name} über {group}', { name: item.owner.name, group: item.viaGroup })
-      : (item.owner?.name ?? t('Du'));
+  if (column === 'owner') {
+    const owner =
+      item.viaGroup && item.owner
+        ? t('{name} über {group}', { name: item.owner.name, group: item.viaGroup })
+        : (item.owner?.name ?? t('Du'));
+    return item.shareEnds ? `${owner} · ${t('bis {date}', { date: formatDay(item.shareEnds) })}` : owner;
+  }
   if (column === 'trashed') return formatDate(item.trashedAt ?? item.modifiedAt);
   return formatDate(item.modifiedAt);
 }
 
 const columnTitle = (column: ItemsProps['column']) =>
   column === 'location' ? t('Ort') : column === 'owner' ? t('Gehört') : column === 'trashed' ? t('Gelöscht') : t('Geändert');
+
+function Progress({ value }: { value: number }) {
+  const percent = Math.round(value * 100);
+  return (
+    <Box
+      role="progressbar"
+      aria-label={t('Schon gesehen')}
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      sx={{
+        position: 'absolute',
+        left: 8,
+        right: 8,
+        bottom: 8,
+        height: 4,
+        borderRadius: 2,
+        bgcolor: mix(c.scrim, 55),
+        overflow: 'hidden',
+      }}
+    >
+      <Box sx={{ width: `${percent}%`, height: '100%', bgcolor: c.primary }} />
+    </Box>
+  );
+}
 
 export function Items(props: ItemsProps) {
   const { items, layout, selected, onSelect, onOpen, onMenu } = props;
@@ -338,6 +367,7 @@ export function Items(props: ItemsProps) {
                 <Typography role="gridcell" variant="body2" noWrap sx={{ flex: 1, fontWeight: 500 }} title={item.name}>
                   {item.name}
                 </Typography>
+                <TagDots ids={item.tags} />
                 {item.owner && (
                   <PeopleRounded
                     sx={{ fontSize: 18, color: c.onSurfaceVariant }}
@@ -371,10 +401,12 @@ export function Items(props: ItemsProps) {
                     {item.name}
                     {item.infected && <Locked />}
                   </Typography>
+                  <TagDots ids={item.tags} />
                   {actions(item, true)}
                 </Box>
                 <Box
                   sx={{
+                    position: 'relative',
                     aspectRatio: '4 / 3',
                     borderRadius: `${radius.tile}px`,
                     overflow: 'hidden',
@@ -386,6 +418,7 @@ export function Items(props: ItemsProps) {
                   }}
                 >
                   <Thumb item={item} size="100%" base={props.base} />
+                  {item.progress ? <Progress value={item.progress} /> : null}
                 </Box>
               </Box>
             ))}
@@ -501,10 +534,13 @@ export function Items(props: ItemsProps) {
               />
             </Box>
             <Box role="gridcell" sx={{ minWidth: 0, pr: 2 }}>
-              <Typography variant="body2" noWrap sx={{ fontWeight: 500 }} title={item.name}>
-                {item.name}
-                {item.infected && <Locked />}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <Typography variant="body2" noWrap sx={{ fontWeight: 500, minWidth: 0 }} title={item.name}>
+                  {item.name}
+                  {item.infected && <Locked />}
+                </Typography>
+                <TagDots ids={item.tags} />
+              </Box>
               <Typography variant="caption" noWrap component="p" sx={{ color: 'inherit', opacity: 0.75, display: { sm: 'none' } }}>
                 {[columnText(item, column), detail(item)].filter(Boolean).join(' · ')}
               </Typography>

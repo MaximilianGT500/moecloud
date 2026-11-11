@@ -1,9 +1,12 @@
 import { api, errorText } from '../../lib/api';
+import { boot } from '../../lib/boot';
 import { splitExtension } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
+import { navigate } from '../../lib/router';
 import { confirm, prompt } from '../common/dialogs';
 import { toast } from '../common/toast';
 import { contentUrl, type Item } from './kinds';
+import { folderHref } from './model';
 
 export async function attempt<T>(fn: () => Promise<T>): Promise<T | undefined> {
   try {
@@ -12,6 +15,13 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<T | undefined> {
     toast(errorText(error));
     return undefined;
   }
+}
+
+export function savedToast(node: Item, message = t('Gespeichert als „{name}“', { name: node.name })) {
+  const rootId = boot().user?.rootId;
+  const href = node.parentId && rootId ? folderHref(node.parentId, rootId) : null;
+  if (!href || location.pathname.replace(/\/+$/, '') === href) return toast(message);
+  toast(message, { action: { label: t('Zeigen'), onClick: () => navigate(`${href}?select=${node.id}`) } });
 }
 
 export function triggerDownload(url: string) {

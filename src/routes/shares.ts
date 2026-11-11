@@ -120,25 +120,31 @@ export async function shareRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>('/api/nodes/:id/grants', async (request) => {
+    const expiresAt = z.number().int().positive().nullable().optional();
     const input = parse(
       z.union([
-        z.object({ userId: z.number().int().positive(), permission }),
-        z.object({ groupId: z.number().int().positive(), permission }),
+        z.object({ userId: z.number().int().positive(), permission, expiresAt }),
+        z.object({ groupId: z.number().int().positive(), permission, expiresAt }),
       ]),
       request.body
     );
     if ('groupId' in input) {
-      return { grant: presentGroupGrant(shareWithGroup(me(request), request.params.id, input.groupId, input.permission)) };
+      return {
+        grant: presentGroupGrant(shareWithGroup(me(request), request.params.id, input.groupId, input.permission, input.expiresAt ?? null)),
+      };
     }
-    return { grant: presentGrant(shareWith(me(request), request.params.id, input.userId, input.permission)) };
+    return { grant: presentGrant(shareWith(me(request), request.params.id, input.userId, input.permission, input.expiresAt ?? null)) };
   });
 
   app.patch<{ Params: { id: string } }>('/api/grants/:id', async (request) => {
-    const input = parse(z.object({ permission }), request.body);
+    const input = parse(
+      z.object({ permission: permission.optional(), expiresAt: z.number().int().positive().nullable().optional() }),
+      request.body
+    );
     if (!getGrant(request.params.id) && getGroupGrant(request.params.id)) {
-      return { grant: presentGroupGrant(updateGroupGrant(me(request), request.params.id, input.permission)) };
+      return { grant: presentGroupGrant(updateGroupGrant(me(request), request.params.id, input)) };
     }
-    return { grant: presentGrant(updateGrant(me(request), request.params.id, input.permission)) };
+    return { grant: presentGrant(updateGrant(me(request), request.params.id, input)) };
   });
 
   app.delete<{ Params: { id: string } }>('/api/grants/:id', async (request) => {
@@ -164,11 +170,16 @@ export async function shareRoutes(app: FastifyInstance) {
     };
     const nodes = present([...withMe.map((entry) => entry.node), ...viaGroups.map((entry) => entry.node)], user, (node) =>
       permissionOf(node.id)
-    ).map((node) => ({
-      ...node,
-      grantId: withMe.find((entry) => entry.node.id === node.id)?.grant.id,
-      viaGroup: viaGroups.find((entry) => entry.node.id === node.id)?.grant.group_name,
-    }));
+    ).map((node) => {
+      const direct = withMe.find((entry) => entry.node.id === node.id)?.grant;
+      const group = viaGroups.find((entry) => entry.node.id === node.id)?.grant;
+      return {
+        ...node,
+        grantId: direct?.id,
+        viaGroup: group?.group_name,
+        shareEnds: direct?.expires_at ?? group?.expires_at ?? null,
+      };
+    });
     const links = linksBy(user)
       .map((link) => ({ link, node: getNode(link.node_id) }))
       .filter((entry) => entry.node && !entry.node.trashed_at);

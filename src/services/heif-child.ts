@@ -79,9 +79,8 @@ await new Promise<void>((resolve, reject) => {
 
 let pipeline = sharp(tiff, { limitInputPixels: MAX_PIXELS });
 if (!alpha) pipeline = pipeline.removeAlpha();
-await pipeline
-  .resize(max, max, { fit: 'inside', withoutEnlargement: true })
-  .webp({ quality: Number(quality), effort: max > 480 ? 2 : 3 })
-  .toFile(output);
+pipeline = pipeline.resize(max, max, { fit: 'inside', withoutEnlargement: true });
+if (output.endsWith('.tif')) await pipeline.tiff({ compression: 'deflate' }).toFile(output);
+else await pipeline.webp({ quality: Number(quality), effort: max > 480 ? 2 : 3 }).toFile(output);
 
 process.stdout.write(JSON.stringify({ width, height }));

@@ -12,6 +12,7 @@ import { forNode, forUser, record } from '../services/activity.ts';
 import { isZip, listArchive, openEntry } from '../services/archive.ts';
 import { extractArchive } from '../services/extract.ts';
 import { rotateImage } from '../services/rotate.ts';
+import { editImage, OUTPUTS } from '../services/editor.ts';
 import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
 import { addComment, deleteComment, listComments } from '../services/comments.ts';
 import { ingest } from '../services/ingest.ts';
@@ -28,6 +29,7 @@ import {
   getNode,
   recent,
   rename,
+  renameMany,
   requireAccess,
   requireFolder,
   resolveAccess,
@@ -143,8 +145,8 @@ export async function sendPreview(request: FastifyRequest, reply: FastifyReply, 
   });
 }
 
-export function sendZip(request: FastifyRequest, reply: FastifyReply, roots: NodeRow[]) {
-  const name = zipName(roots, t(request.lang, 'Dateien'));
+export function sendZip(request: FastifyRequest, reply: FastifyReply, roots: NodeRow[], fixed?: string) {
+  const name = fixed ?? zipName(roots, t(request.lang, 'Dateien'));
   reply.header('Content-Type', 'application/zip');
   reply.header('Content-Disposition', contentDisposition(name, 'attachment'));
   reply.header('Cache-Control', 'no-store');
@@ -190,6 +192,20 @@ export async function fileRoutes(app: FastifyInstance) {
     const { name } = parse(nameSchema, request.body);
     const node = rename(user, request.params.id, name);
     return { node: present([node], user, requireAccess(user, node.id).role)[0] };
+  });
+
+  app.post('/api/nodes/rename', async (request) => {
+    const user = me(request);
+    const input = parse(
+      z.object({
+        items: z
+          .array(z.object({ id, name: z.string().max(1000) }))
+          .min(1, 'Wähle mindestens ein Element aus')
+          .max(1000, 'Höchstens 1000 Elemente auf einmal'),
+      }),
+      request.body
+    );
+    return { items: present(renameMany(user, input.items), user) };
   });
 
   app.post('/api/nodes/move', async (request) => {
@@ -242,9 +258,22 @@ export async function fileRoutes(app: FastifyInstance) {
     return { items: present(trashed(user), user), days: settings.get('storage.trashDays') };
   });
 
-  app.get<{ Querystring: { q?: string; kind?: string } }>('/api/search', async (request) => {
+  app.get<{ Querystring: Record<string, string | undefined> }>('/api/search', async (request) => {
     const user = me(request);
-    return { items: present(search(user, String(request.query.q ?? ''), request.query.kind), user) };
+    const query = request.query;
+    const number = (value: string | undefined) => {
+      const parsed = Number(value);
+      return value !== undefined && value !== '' && Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    };
+    const filters = {
+      kind: query.kind || undefined,
+      after: number(query.after),
+      before: number(query.before),
+      minSize: number(query.minSize),
+      maxSize: number(query.maxSize),
+      tag: query.tag && /^[0-9A-Za-z]{8,40}$/.test(query.tag) ? query.tag : undefined,
+    };
+    return { items: present(search(user, String(query.q ?? ''), filters), user) };
   });
 
   app.get('/api/storage', async (request) => storageOf(me(request)));
@@ -283,6 +312,29 @@ export async function fileRoutes(app: FastifyInstance) {
     const { node } = requireAccess(user, request.params.id, 'edit');
     const updated = await rotateImage(user, node, input.degrees);
     return { node: present([updated], user, requireAccess(user, updated.id).role)[0] };
+  });
+
+  app.post<IdParams>('/api/nodes/:id/edit', async (request) => {
+    const user = me(request);
+    const unit = z.number().min(0).max(1);
+    const input = parse(
+      z.object({
+        rotate: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+        flipH: z.boolean().default(false),
+        flipV: z.boolean().default(false),
+        crop: z
+          .object({ x: unit, y: unit, width: unit.gt(0), height: unit.gt(0) })
+          .nullable()
+          .default(null),
+        maxEdge: z.number().int().min(16).max(16_384).nullable().default(null),
+        format: z.enum(['original', ...OUTPUTS]).default('original'),
+        quality: z.number().int().min(1).max(100).default(90),
+        save: z.enum(['version', 'copy']).default('copy'),
+      }),
+      request.body
+    );
+    const node = await editImage(user, request.params.id, input, t(request.lang, '{name} (bearbeitet)'));
+    return { node: present([node], user, (entry) => resolveAccess(user, entry.id)?.role ?? 'view')[0] };
   });
 
   app.get<IdParams>('/api/nodes/:id/thumb', { compress: false }, async (request, reply) => {

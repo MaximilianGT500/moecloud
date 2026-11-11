@@ -17,7 +17,7 @@
 [GitHub Issues]: https://img.shields.io/github/issues/MaximilianGT500/moecloud?color=059669&label=Issues&style=for-the-badge
 [GitHub Sterne]: https://img.shields.io/github/stars/MaximilianGT500/moecloud?color=059669&label=Sterne&style=for-the-badge
 
-MoeCloud ist eine Cloud für deine Dateien, die du selbst betreibst, als schlanke Alternative zu Nextcloud und Google Drive. Du lädst Dateien und ganze Ordner im Browser hoch, siehst dir Bilder, Videos, PDFs, Markdown, Code, Tabellen und Office-Dokumente direkt an und teilst Ordner mit anderen Konten oder über einen Link, auf Wunsch mit Passwort und Ablaufdatum. Fotos sortiert MoeCloud nach Aufnahmedatum, mit [ClamAV](https://www.clamav.net) prüft es jeden Upload auf Schadsoftware, und per WebDAV bindest du alles als Laufwerk ein. MoeCloud läuft in einem Container mit SQLite, deine Dateien liegen in einem Ordner auf deinem Server. Eingerichtet wird im Browser: Beim ersten Start führt dich ein Assistent durch Name, Adresse, Farben und Admin-Konto, eine `.env` brauchst du nicht.
+MoeCloud ist eine Cloud für deine Dateien, die du selbst betreibst, als schlanke Alternative zu Nextcloud und Google Drive. Du lädst Dateien und ganze Ordner im Browser hoch, siehst dir Bilder, Videos, PDFs, Markdown, Code, Tabellen und Office-Dokumente direkt an und teilst Ordner mit anderen Konten oder über einen Link, auf Wunsch mit Passwort und Ablaufdatum. Fotos sortiert MoeCloud nach Aufnahmedatum und in Alben, Bilder und PDFs bearbeitest du direkt in der Cloud, und Musik läuft in einem eigenen Player. Mit [ClamAV](https://www.clamav.net) prüft MoeCloud jeden Upload auf Schadsoftware, und per WebDAV bindest du alles als Laufwerk ein. MoeCloud läuft in einem Container mit SQLite, deine Dateien liegen in einem Ordner auf deinem Server. Eingerichtet wird im Browser: Beim ersten Start führt dich ein Assistent durch Name, Adresse, Farben und Admin-Konto, eine `.env` brauchst du nicht.
 
 Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](https://moecloud.moestudio.net). Was sich in jeder Version geändert hat, steht im [Changelog](CHANGELOG.md).
 
@@ -40,7 +40,9 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - [Erster Start und Einrichtung](#erster-start-und-einrichtung)
 - [Dateien](#dateien)
 - [Vorschau](#vorschau)
-- [Fotos](#fotos)
+- [Bearbeiten](#bearbeiten)
+- [Musik und Video](#musik-und-video)
+- [Fotos und Alben](#fotos-und-alben)
 - [Teilen](#teilen)
 - [Kommentare, Aktivität und Benachrichtigungen](#kommentare-aktivität-und-benachrichtigungen)
 - [Als Laufwerk einbinden](#als-laufwerk-einbinden)
@@ -64,18 +66,22 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **Hochladen** per Drag & Drop, über „Neu“ oder mit Strg+V aus der Zwischenablage, einzelne Dateien und ganze Ordner samt Unterordnern
 - **Große Dateien** gehen in Teilen von 16 MB hoch. Bricht die Verbindung ab, setzt der Upload an derselben Stelle wieder an
 - **Vorschau** für Bilder, Videos, Audio, PDFs, Markdown, Code mit Hervorhebung, CSV, JSON, Word, Excel, ZIP-Archive und Schriften. Dazu gehören Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF und Photoshop-Dateien. Textdateien bearbeitest du direkt im Browser, Bilder drehst du mit einem Klick
-- **ZIP-Archive entpacken** direkt in der Cloud, mit Virenscan für jede Datei darin
+- **Bearbeiten** direkt in der Cloud: Bilder zuschneiden, drehen, spiegeln und als JPEG, PNG, WebP oder AVIF speichern, PDF-Seiten ordnen, drehen und PDFs zusammenfügen, Textversionen Zeile für Zeile vergleichen
+- **Musik** im Player am unteren Rand mit Warteschlange und Medientasten, **Videos** mit Untertiteln aus SRT und VTT, die an der letzten Stelle weiterlaufen
+- **ZIP-Archive** entpacken und packen direkt in der Cloud, mit Virenscan für jede Datei darin
+- **Schlagwörter** in zehn Farben für Dateien und Ordner, auch für Geteiltes, und eine eigene Ansicht dafür
+- **Viele Dateien auf einmal umbenennen**: Text ersetzen oder ergänzen, durchnummerieren oder das Aufnahmedatum voranstellen, mit Vorschau
 - **Vorschaubilder** für Fotos, Rohdateien, Videos, PDFs, Musik mit Cover und Dokumente, die ein Vorschaubild mitbringen, etwa aus LibreOffice, Keynote oder als E-Book
-- **Fotos** zeigt alle Bilder und Videos nach Aufnahmedatum, die Bildansicht Kamera, Objektiv und Belichtung, dazu eine Diashow
-- **Volltextsuche** in Texten, PDFs und Office-Dokumenten, mit Filtern für Ordner, Bilder, Videos, Audio, PDFs und Dokumente
-- **Ordnerfarben**, Favoriten, Zuletzt und ein Papierkorb, aus dem Gelöschtes 30 Tage lang zurückkommt
+- **Fotos** zeigt alle Bilder und Videos nach Aufnahmedatum, die Bildansicht Kamera, Objektiv und Belichtung, dazu eine Diashow. **Alben** sammeln Fotos aus beliebigen Ordnern, ohne sie zu verschieben
+- **Volltextsuche** in Texten, PDFs und Office-Dokumenten, mit Filtern für die Art, das Änderungsdatum, die Größe und Schlagwörter
+- **Ordnerfarben**, Favoriten, Zuletzt und ein Papierkorb, aus dem Gelöschtes 30 Tage lang zurückkommt. Eine README.md im Ordner erscheint als Beschreibung über der Liste
 - **Versionen**: Ersetzt du eine Datei oder speicherst einen Text, bleibt die alte Fassung erhalten und lässt sich zurückholen
 - **Speicher** zeigt, was wie viel Platz belegt, die größten und die doppelten Dateien
 - **Grenzen** für den Speicher pro Person und die Größe einzelner Dateien, mit Hinweis, wenn der Speicher fast voll ist
-- **Teilen mit Personen und Gruppen**: Ordner und Dateien für andere Konten oder eine ganze Gruppe freigeben, zum Ansehen oder zum Bearbeiten
+- **Teilen mit Personen und Gruppen**: Ordner und Dateien für andere Konten oder eine ganze Gruppe freigeben, zum Ansehen oder zum Bearbeiten, auf Wunsch mit Ablaufdatum
 - **Öffentliche Links** mit Bezeichnung, Passwort, Ablaufdatum, Grenze für Downloads, QR-Code und Zählern für Aufrufe und Downloads, jederzeit pausierbar und direkt per E-Mail verschickt. Ordner gibt es als ZIP
 - **Dateien anfragen**: Ein Link nur zum Hochladen sammelt Dateien von anderen ein, auf Wunsch mit Benachrichtigung
-- **Kommentare und Aktivität** an jeder Datei und jedem Ordner, dazu Benachrichtigungen in der App und per E-Mail
+- **Kommentare und Aktivität** an jeder Datei und jedem Ordner, dazu Benachrichtigungen in der App und per E-Mail, auch für Änderungen in Ordnern, die du beobachtest
 - **Virenscan** mit ClamAV für alle Uploads, mit gesperrten Dateien und erneuter Prüfung
 - **WebDAV** zum Einbinden als Laufwerk, mit eigenen App-Passwörtern pro Gerät
 - **Live**: Änderungen erscheinen sofort auf allen Geräten, auf denen MoeCloud offen ist
@@ -148,7 +154,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.2.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
@@ -160,7 +166,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.2.0`, `1.2` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.0`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -271,16 +277,23 @@ Unter **Dateien** liegen deine Ordner und Dateien, als Liste oder als Kacheln mi
 - **Neue Textdatei** und **Neuer Ordner** findest du ebenfalls unter **Neu**.
 - **Ordnen**: Zieh Elemente auf einen Ordner oder in die Pfadleiste, oder verschieben und kopieren über das Menü. Mehrere wählst du mit Strg, ⌘ oder Umschalt aus.
 - **Ordnerfarben**: Im Menü eines Ordners gibt **Farbe** ihm eine von zehn Farben, auch für mehrere Ordner auf einmal.
+- **Schlagwörter**: Im Menü oder in den Details vergibst du Schlagwörter in zehn Farben, auch für mehrere Elemente auf einmal und für Dinge, die andere mit dir teilen. Sie erscheinen als Punkte hinter dem Namen und nur bei dir. Unter **Schlagwörter** in der Navigation siehst du alle mit Anzahl, benennst sie um, färbst sie neu und öffnest, was dazugehört.
+- **Mehrere umbenennen**: Wählst du mehrere Elemente und drückst F2 oder **Umbenennen**, ersetzt du Text, ergänzt Text vor oder nach dem Namen, nummerierst durch (wie in der Liste oder nach Aufnahmedatum) oder stellst das Aufnahmedatum voran. Eine Vorschau zeigt jeden neuen Namen, Endungen bleiben, wie sie sind. Gibt es einen Namen schon, sagt MoeCloud das, bevor sich etwas ändert.
+- **Als ZIP packen**: Eine Auswahl aus Dateien und Ordnern wird ein ZIP-Archiv im selben Ordner, ohne Download und Upload. Darfst du dort nichts anlegen, landet es in deinen eigenen Dateien.
+- **Ordnerbeschreibung**: Liegt in einem Ordner eine `README.md` oder `LIESMICH.md`, zeigt MoeCloud sie formatiert über der Liste, zuerst eingeklappt. Auf öffentlichen Ordner-Links gilt das ebenso.
 - **Herunterladen**: Dateien einzeln, Ordner und mehrere Elemente als ZIP. Unter **Konto** lädst du alle eigenen Dateien als ein ZIP herunter.
 - **Entpacken**: Im Menü eines ZIP-Archivs packt **Entpacken** den Inhalt in einen neuen Ordner daneben, samt Unterordnern und Änderungsdatum. Jede Datei geht durch den Virenscan. Schadsoftware, verschlüsselte Einträge, Pfade, die aus dem Ordner herausführen, und Dateien über der Größengrenze überspringt MoeCloud und sagt, wie viele es waren. Vorher prüft es, ob dein Speicher und der Platz auf dem Server reichen.
 - **Zuletzt** zeigt, was du zuletzt hochgeladen oder geändert hast, daneben die **Aktivität** in all deinen Ordnern. **Favoriten** sammelt alles mit Stern.
-- **Suche**: Die Suchleiste findet Dateien und Ordner nach Namen und Wörter im Inhalt von Texten, PDFs und Office-Dokumenten. Filter grenzen auf Ordner, Bilder, Videos, Audio, PDFs oder Dokumente ein, Treffer im Inhalt erscheinen mit der passenden Stelle.
+- **Suche**: Die Suchleiste findet Dateien und Ordner nach Namen und Wörter im Inhalt von Texten, PDFs und Office-Dokumenten. Filter grenzen auf Ordner, Bilder, Videos, Audio, PDFs oder Dokumente ein, dazu auf das Änderungsdatum, die Größe und ein Schlagwort. Die Filter gehen auch ohne Suchbegriff, der Knopf rechts in der Suchleiste öffnet sie. Treffer im Inhalt erscheinen mit der passenden Stelle.
 - **Speicher** zeigt, was wie viel Platz belegt, die größten Dateien und Dateien mit genau gleichem Inhalt. Du erreichst die Seite über dein Bild unten links und unter **Konto**. Ist dein Speicher zu 90 % voll, bekommst du eine Benachrichtigung.
 - **Papierkorb**: Gelöschtes bleibt dort 30 Tage, danach räumt MoeCloud es weg. Ordner kommen samt Inhalt zurück. Die Frist stellst du unter **Admin › Einstellungen › Speicher** ein.
 
 <p align="center">
   <img src="docs/screenshots/grid.png" alt="Ein Ordner mit Fotos als Kacheln" width="49%">
   <img src="docs/screenshots/storage.png" alt="Speicher mit Aufteilung nach Art, den größten und den doppelten Dateien" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/rename.png" alt="Sieben Fotos werden nach Aufnahmedatum durchnummeriert, mit Vorschau der neuen Namen" width="80%">
 </p>
 
 Mit der Tastatur:
@@ -294,7 +307,7 @@ Mit der Tastatur:
 | Strg+A                  | Alles auswählen                  |
 | Strg+V                  | Aus der Zwischenablage hochladen |
 | Entf                    | In den Papierkorb                |
-| F2                      | Umbenennen                       |
+| F2                      | Umbenennen, auch mehrere         |
 | Esc                     | Auswahl aufheben                 |
 | Umschalt+F10            | Menü des Elements                |
 | `?`                     | Alle Tastenkürzel zeigen         |
@@ -314,7 +327,7 @@ Ein Doppelklick öffnet eine Datei in der Vollbildansicht, mit den Pfeiltasten o
 | -------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Bilder                     | Zoomen, Kamera, Objektiv, Belichtung und Aufnahmedatum, Diashow, nach links und rechts drehen         |
 | Rohformate, HEIC und TIFF  | Ein großes Vorschaubild vom Server, weil Browser diese Formate nicht selbst zeigen                    |
-| Videos und Audio           | Player, bei Musik mit Cover, Titel, Interpret und Album                                               |
+| Videos und Audio           | Player mit Untertiteln, Musik im Player am unteren Rand mit Cover, Titel, Interpret und Album         |
 | PDFs                       | Im Browser mit allen Seiten                                                                           |
 | Markdown                   | Gesetzt mit Überschriften, Tabellen und Aufgabenlisten, auf Wunsch als Quelltext                      |
 | Code und Texte             | Hervorhebung für mehr als 30 Sprachen und Zeilennummern, bis 2 MB bearbeiten und mit Strg+S speichern |
@@ -350,15 +363,40 @@ Sagt die Endung nichts über den Inhalt, schaut MoeCloud in den Anfang der Datei
   <img src="docs/screenshots/viewer.png" alt="Bildansicht im Vollbild mit Knöpfen für Diashow, Informationen, Herunterladen und Teilen" width="80%">
 </p>
 
-## Fotos
+## Bearbeiten
+
+- **Bilder**: **Bild bearbeiten** im Menü öffnet den Editor. Du schneidest frei oder in einem festen Seitenverhältnis zu, drehst, spiegelst und verkleinerst auf eine längste Seite. Gespeichert wird als JPEG, PNG, WebP oder AVIF, als Kopie neben dem Original oder als neue Version, dann bleibt die alte unter **Versionen**. Das klappt auch mit HEIC und dem Bild in Rohdateien, Aufnahmedatum und Kamera bleiben erhalten. Bilder bis 100 Megapixel und 300 MB.
+- **PDFs**: **Seiten bearbeiten** zeigt alle Seiten als Kacheln. Du sortierst sie per Ziehen oder mit den Pfeilen um, drehst und entfernst Seiten und speicherst ausgewählte Seiten als eigene PDF. Wählst du mehrere PDFs aus, fügt **PDFs zusammenfügen** sie in der Reihenfolge deiner Wahl zu einer zusammen. Lesezeichen und ausfüllbare Felder übernimmt MoeCloud dabei nicht. PDFs bis 200 MB und 2000 Seiten, verschlüsselte PDFs bleiben unverändert.
+- **Versionen vergleichen**: Bei Text, Markdown, Code, CSV und JSON zeigt **Version vergleichen** unter **Versionen**, welche Zeilen dazugekommen und welche weggefallen sind, auf Wunsch mit dem ganzen Text.
+- **Texte** bearbeitest du in der Vorschau und speicherst mit Strg+S, **Bilder drehen** geht mit einem Klick in der Bildansicht.
+
+<p align="center">
+  <img src="docs/screenshots/editor.png" alt="Bildeditor mit Zuschnitt im Format 16:9" width="49%">
+  <img src="docs/screenshots/pdf.png" alt="Seiten einer PDF als Kacheln mit umsortierter und gedrehter Seite" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/diff.png" alt="Vergleich zweier Versionen einer Markdown-Datei mit hinzugefügten und entfernten Zeilen" width="80%">
+</p>
+
+## Musik und Video
+
+- **Musik**: Ein Doppelklick auf eine Audiodatei spielt sie im Player am unteren Rand ab, danach folgen die anderen Titel der Ansicht. **Alle abspielen** in der Kopfzeile, **Abspielen** und **Zur Warteschlange hinzufügen** im Menü stellen zusammen, was läuft. Der Player zeigt Cover, Titel, Interpret und Album aus den Tags, spielt auf Wunsch zufällig oder wiederholt, und lässt sich über Medientasten und den Sperrbildschirm steuern. Er läuft beim Wechseln der Ansichten weiter und merkt sich die Warteschlange, bis du ihn schließt.
+- **Untertitel**: Liegt neben einem Video eine Datei mit demselben Namen und der Endung `.srt` oder `.vtt`, etwa `Film.srt`, `Film.de.srt` oder `Film.en.vtt`, bietet die Wiedergabe sie als Spur an. Passt eine zur Sprache der Oberfläche, ist sie eingeschaltet. SRT wandelt der Server in WebVTT um, auch Dateien mit Umlauten aus älteren Programmen.
+- **Weiterschauen**: Videos ab einer Minute und Audio ab zehn Minuten merken sich, wo du aufgehört hast, pro Person und über Geräte hinweg. Beim nächsten Öffnen geht es dort weiter, **Von vorn** startet neu. In den Kacheln zeigt ein Balken, wie weit du gekommen bist.
+
+## Fotos und Alben
 
 **Fotos** zeigt alle Bilder und Videos aus deinen Ordnern, nach Monaten gruppiert und sortiert nach dem Aufnahmedatum aus den EXIF-Daten. Fehlt es, zählt das Änderungsdatum. Ein Klick öffnet die Bildansicht, ▶ startet dort eine Diashow mit allen Bildern.
+
+**Alben** findest du unter **Fotos › Alben**. Mit dem Kästchen auf einem Foto oder langem Drücken wählst du aus und legst die Auswahl in ein Album, in Dateien heißt der Menüpunkt **Zum Album hinzufügen**. Die Fotos bleiben dabei, wo sie sind. Jedes Album hat ein Titelbild, eine Diashow und einen Download als ZIP, Alben gehören nur dir.
 
 ## Teilen
 
 Über **Teilen** im Menü eines Elements gibst du Ordner und Dateien frei. Unter **Geteilt** siehst du, was andere mit dir teilen und was du selbst teilst.
 
 **Mit Personen**: Du suchst ein Konto nach Name oder Benutzername und wählst „Kann ansehen“ oder „Kann bearbeiten“. Bei der anderen Person erscheint die Freigabe unter **Geteilt**, dazu eine Benachrichtigung. Mit Bearbeiten darf sie hochladen, umbenennen, verschieben und löschen, der Speicher zählt bei dir. Sie kann die Freigabe jederzeit verlassen.
+
+**Ablaufdatum**: Über die Uhr neben einer Person oder Gruppe legst du fest, wie lange eine Freigabe gilt, für einen Tag, eine Woche, einen Monat oder bis zu einem Datum. Danach endet der Zugriff, und die Aktivität vermerkt das. Unter **Geteilt** steht, bis wann eine Freigabe gilt.
 
 **Mit Gruppen**: Admins legen unter **Admin › Gruppen** Gruppen wie „Familie“ oder „Team“ an. Im Dialog zum Teilen findest du sie neben den Personen und teilst mit allen Mitgliedern auf einmal. Wer neu in die Gruppe kommt, sieht sofort alles, was mit ihr geteilt ist, wer sie verlässt, verliert den Zugriff. Unter **Geteilt** steht bei jeder Freigabe, über welche Gruppe sie kommt. Teilen kannst du nur mit Gruppen, in denen du selbst bist, Admins mit allen.
 
@@ -378,7 +416,8 @@ Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abs
 
 - **Kommentare**: Im Detailbereich unter **Kommentare** schreiben alle, die Zugriff haben, an Dateien und Ordner. Alle anderen mit Zugriff und alle, die dort schon kommentiert haben, bekommen eine Benachrichtigung.
 - **Aktivität**: Der Reiter **Aktivität** zeigt für jede Datei und jeden Ordner, wer etwas hochgeladen, bearbeitet, umbenannt, verschoben, kopiert, geteilt, kommentiert oder gelöscht hat. Unter **Zuletzt › Aktivität** steht alles aus deinen Ordnern, nach Tagen sortiert. Mit wem ein Ordner geteilt ist, steht nur in deiner eigenen Aktivität. Andere mit Zugriff sehen das dort nicht, und Links sehen nur Personen, die bearbeiten dürfen.
-- **Benachrichtigungen**: Die Glocke oben rechts sammelt neue Freigaben, Kommentare, Uploads über deine Links und Hinweise zu deinem Speicher, Admins sehen dort auch Meldungen zum System. Unter **Konto › E-Mail-Benachrichtigungen** wählt jede Person, was zusätzlich per E-Mail kommt.
+- **Ordner beobachten**: Über **Beobachten** im Menü eines Ordners oder die Glocke in seiner Kopfzeile bekommst du eine Nachricht, wenn andere darin etwas hochladen, ändern oder löschen, auch in Unterordnern. Mehrere Änderungen kommen nach einer Minute Ruhe gesammelt.
+- **Benachrichtigungen**: Die Glocke oben rechts sammelt neue Freigaben, Kommentare, Uploads über deine Links, Änderungen in beobachteten Ordnern und Hinweise zu deinem Speicher, Admins sehen dort auch Meldungen zum System. Unter **Konto › E-Mail-Benachrichtigungen** wählt jede Person, was zusätzlich per E-Mail kommt.
 
 <p align="center">
   <img src="docs/screenshots/notifications.png" alt="Benachrichtigungen zu Kommentaren und einer neuen Freigabe" width="80%">
@@ -538,7 +577,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
 | `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.2.0`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.0`. Das Installationsskript trägt hier die installierte Version ein                               |
 | `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
 | `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
@@ -564,9 +603,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "date": "2026-11-11",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.2.0",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.0",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -643,40 +682,50 @@ curl -u emi:APP-PASSWORT https://cloud.example.com/api/session
 curl -u emi:APP-PASSWORT -F "file=@rechnung.pdf" https://cloud.example.com/api/nodes/ORDNER-ID/upload
 ```
 
-| Methode | Pfad                                                          | Beschreibung                                                                                                                                          |
-| ------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`   | `/api/session`                                                | Angemeldete Person, `user.rootId` ist die ID deines Hauptordners                                                                                      |
-| `GET`   | `/api/nodes/:id`                                              | Ein Element mit Pfad                                                                                                                                  |
-| `GET`   | `/api/nodes/:id/children`                                     | Inhalt eines Ordners, mit `?folders=1` nur die Unterordner                                                                                            |
-| `POST`  | `/api/nodes/:id/folders`                                      | Ordner anlegen, JSON `{ "name" }`                                                                                                                     |
-| `POST`  | `/api/nodes/:id/upload`                                       | Dateien als `multipart/form-data` hochladen, mit `?conflict=replace` vorhandene ersetzen                                                              |
-| `GET`   | `/api/nodes/:id/content`                                      | Datei herunterladen, auch in Teilen per `Range`                                                                                                       |
-| `PUT`   | `/api/nodes/:id/content`                                      | Inhalt einer Datei als `application/octet-stream` ersetzen, die alte Fassung wird zur Version                                                         |
-| `GET`   | `/api/nodes/:id/meta`                                         | Abmessungen, Aufnahmedatum, Bildinfos, Musik-Tags und Ergebnis des Virenscans                                                                         |
-| `GET`   | `/api/nodes/:id/thumb`, `/api/nodes/:id/preview`              | Vorschaubild mit 480 Pixeln und großes Vorschaubild mit bis zu 2560 Pixeln als WebP, das große nur für Formate, die Browser nicht zeigen              |
-| `PATCH` | `/api/nodes/:id`                                              | Umbenennen, JSON `{ "name" }`                                                                                                                         |
-| `PUT`   | `/api/nodes/color`                                            | Ordner einfärben, JSON `{ "ids": [], "color" }` mit `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `brown`, `gray` oder `null` |
-| `POST`  | `/api/nodes/move`, `/api/nodes/copy`                          | Verschieben oder kopieren, JSON `{ "ids": [], "target" }`                                                                                             |
-| `POST`  | `/api/nodes/trash`, `/api/nodes/restore`, `/api/nodes/delete` | In den Papierkorb, zurückholen oder endgültig löschen, JSON `{ "ids": [] }`                                                                           |
-| `GET`   | `/api/search?q=&kind=`                                        | Suche nach Namen und im Inhalt, `kind` ist `folder`, `image`, `video`, `audio`, `pdf` oder `document`                                                 |
-| `GET`   | `/api/recent`, `/api/starred`, `/api/trash`                   | Zuletzt, Favoriten und Papierkorb                                                                                                                     |
-| `GET`   | `/api/photos`                                                 | Fotos und Videos nach Aufnahmedatum, weitere Seiten mit `?at=&seq=` aus `next`                                                                        |
-| `GET`   | `/api/activity`, `/api/nodes/:id/activity`                    | Aktivität in deinen Ordnern oder an einem Element, ältere mit `?before=`                                                                              |
-| `GET`   | `/api/nodes/:id/comments`                                     | Kommentare, `POST` mit JSON `{ "text" }` schreibt einen neuen                                                                                         |
-| `GET`   | `/api/nodes/:id/archive`                                      | Inhalt eines ZIP-Archivs, eine einzelne Datei daraus mit `/archive/entry?path=`                                                                       |
-| `GET`   | `/api/nodes/:id/versions`                                     | Ältere Fassungen einer Datei                                                                                                                          |
-| `GET`   | `/api/zip?ids=`                                               | Elemente als ZIP, IDs durch Kommas getrennt                                                                                                           |
-| `POST`  | `/api/nodes/:id/extract`                                      | ZIP-Archiv in einen neuen Ordner daneben entpacken, die Antwort nennt Ordner, Zahl der Dateien und was übersprungen wurde                             |
-| `POST`  | `/api/nodes/:id/rotate`                                       | Bild drehen, JSON `{ "degrees" }` mit `90`, `180` oder `270`, die alte Fassung wird zur Version                                                       |
-| `POST`  | `/api/nodes/:id/grants`                                       | Teilen, JSON `{ "userId", "permission" }` oder `{ "groupId", "permission" }` mit `view` oder `edit`                                                   |
-| `POST`  | `/api/nodes/:id/links`                                        | Öffentlichen Link anlegen, JSON mit `label`, `password`, `expiresAt`, `maxDownloads`, `allowDownload`, `allowUpload`, `uploadOnly`, `notify`          |
-| `PATCH` | `/api/links/:id`                                              | Link ändern, dieselben Felder und `paused` zum Pausieren                                                                                              |
-| `POST`  | `/api/links/:id/send`                                         | Link per E-Mail verschicken, JSON `{ "email" }`. Braucht den eingerichteten E-Mail-Versand                                                            |
-| `GET`   | `/api/shared`                                                 | Was mit dir geteilt ist und was du teilst                                                                                                             |
-| `GET`   | `/api/storage`, `/api/storage/report`                         | Belegter Speicher und Grenze, dazu die Aufteilung nach Art, die größten und die doppelten Dateien                                                     |
-| `GET`   | `/api/notifications`                                          | Benachrichtigungen, `POST /api/notifications/read` markiert sie als gelesen                                                                           |
-| `GET`   | `/api/events`                                                 | Änderungen live als Server-Sent Events                                                                                                                |
-| `GET`   | `/api/admin/groups`                                           | Nur Admins: Gruppen mit Mitgliedern, `POST` legt eine an, `PATCH` und `DELETE` unter `/api/admin/groups/:id` ändern und löschen                       |
+| Methode | Pfad                                                          | Beschreibung                                                                                                                                                  |
+| ------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/session`                                                | Angemeldete Person, `user.rootId` ist die ID deines Hauptordners                                                                                              |
+| `GET`   | `/api/nodes/:id`                                              | Ein Element mit Pfad                                                                                                                                          |
+| `GET`   | `/api/nodes/:id/children`                                     | Inhalt eines Ordners, mit `?folders=1` nur die Unterordner                                                                                                    |
+| `POST`  | `/api/nodes/:id/folders`                                      | Ordner anlegen, JSON `{ "name" }`                                                                                                                             |
+| `POST`  | `/api/nodes/:id/upload`                                       | Dateien als `multipart/form-data` hochladen, mit `?conflict=replace` vorhandene ersetzen                                                                      |
+| `GET`   | `/api/nodes/:id/content`                                      | Datei herunterladen, auch in Teilen per `Range`                                                                                                               |
+| `PUT`   | `/api/nodes/:id/content`                                      | Inhalt einer Datei als `application/octet-stream` ersetzen, die alte Fassung wird zur Version                                                                 |
+| `GET`   | `/api/nodes/:id/meta`                                         | Abmessungen, Aufnahmedatum, Bildinfos, Musik-Tags und Ergebnis des Virenscans                                                                                 |
+| `GET`   | `/api/nodes/:id/thumb`, `/api/nodes/:id/preview`              | Vorschaubild mit 480 Pixeln und großes Vorschaubild mit bis zu 2560 Pixeln als WebP, das große nur für Formate, die Browser nicht zeigen                      |
+| `PATCH` | `/api/nodes/:id`                                              | Umbenennen, JSON `{ "name" }`                                                                                                                                 |
+| `POST`  | `/api/nodes/rename`                                           | Mehrere umbenennen, JSON `{ "items": [{ "id", "name" }] }`, MoeCloud prüft alle Namen vorher                                                                  |
+| `PUT`   | `/api/nodes/color`                                            | Ordner einfärben, JSON `{ "ids": [], "color" }` mit `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `brown`, `gray` oder `null`         |
+| `POST`  | `/api/nodes/move`, `/api/nodes/copy`                          | Verschieben oder kopieren, JSON `{ "ids": [], "target" }`                                                                                                     |
+| `POST`  | `/api/nodes/trash`, `/api/nodes/restore`, `/api/nodes/delete` | In den Papierkorb, zurückholen oder endgültig löschen, JSON `{ "ids": [] }`                                                                                   |
+| `GET`   | `/api/search?q=&kind=`                                        | Suche nach Namen und im Inhalt, `kind` ist `folder`, `image`, `video`, `audio`, `pdf` oder `document`, dazu `after`, `before`, `minSize`, `maxSize` und `tag` |
+| `GET`   | `/api/recent`, `/api/starred`, `/api/trash`                   | Zuletzt, Favoriten und Papierkorb                                                                                                                             |
+| `GET`   | `/api/photos`                                                 | Fotos und Videos nach Aufnahmedatum, weitere Seiten mit `?at=&seq=` aus `next`                                                                                |
+| `GET`   | `/api/activity`, `/api/nodes/:id/activity`                    | Aktivität in deinen Ordnern oder an einem Element, ältere mit `?before=`                                                                                      |
+| `GET`   | `/api/nodes/:id/comments`                                     | Kommentare, `POST` mit JSON `{ "text" }` schreibt einen neuen                                                                                                 |
+| `GET`   | `/api/nodes/:id/archive`                                      | Inhalt eines ZIP-Archivs, eine einzelne Datei daraus mit `/archive/entry?path=`                                                                               |
+| `GET`   | `/api/nodes/:id/versions`                                     | Ältere Fassungen einer Datei                                                                                                                                  |
+| `GET`   | `/api/zip?ids=`                                               | Elemente als ZIP, IDs durch Kommas getrennt                                                                                                                   |
+| `POST`  | `/api/nodes/zip`                                              | Elemente als ZIP-Archiv in der Cloud anlegen, JSON `{ "ids": [], "name" }`                                                                                    |
+| `POST`  | `/api/nodes/:id/extract`                                      | ZIP-Archiv in einen neuen Ordner daneben entpacken, die Antwort nennt Ordner, Zahl der Dateien und was übersprungen wurde                                     |
+| `POST`  | `/api/nodes/:id/rotate`                                       | Bild drehen, JSON `{ "degrees" }` mit `90`, `180` oder `270`, die alte Fassung wird zur Version                                                               |
+| `POST`  | `/api/nodes/:id/edit`                                         | Bild bearbeiten, JSON mit `rotate`, `flipH`, `flipV`, `crop` (relativ von 0 bis 1), `maxEdge`, `format`, `quality` und `save` (`copy` oder `version`)         |
+| `GET`   | `/api/nodes/:id/pdf`                                          | Seiten einer PDF mit Größe und Drehung, `POST` mit JSON `{ "pages": [{ "page", "rotate" }], "save", "name" }` speichert eine neue Fassung                     |
+| `POST`  | `/api/pdf/merge`                                              | PDFs zusammenfügen, JSON `{ "ids": [], "name" }`                                                                                                              |
+| `GET`   | `/api/nodes/:id/subtitles`                                    | Untertitel neben einem Video, als WebVTT unter `/api/nodes/:id/vtt`                                                                                           |
+| `GET`   | `/api/nodes/:id/position`                                     | Gemerkte Stelle in Video oder Audio, `PUT` mit JSON `{ "seconds", "duration" }` speichert sie                                                                 |
+| `GET`   | `/api/tags`                                                   | Deine Schlagwörter, `POST` legt eins an, `PUT /api/nodes/tags` mit JSON `{ "ids", "add", "remove" }` vergibt sie                                              |
+| `GET`   | `/api/albums`                                                 | Deine Alben, `POST` legt eins an, `POST /api/albums/:id/items` nimmt Fotos auf                                                                                |
+| `PUT`   | `/api/nodes/:id/watch`                                        | Ordner beobachten, JSON `{ "watching" }`                                                                                                                      |
+| `POST`  | `/api/nodes/:id/grants`                                       | Teilen, JSON `{ "userId", "permission" }` oder `{ "groupId", "permission" }` mit `view` oder `edit`, optional `expiresAt` in Millisekunden                    |
+| `POST`  | `/api/nodes/:id/links`                                        | Öffentlichen Link anlegen, JSON mit `label`, `password`, `expiresAt`, `maxDownloads`, `allowDownload`, `allowUpload`, `uploadOnly`, `notify`                  |
+| `PATCH` | `/api/links/:id`                                              | Link ändern, dieselben Felder und `paused` zum Pausieren                                                                                                      |
+| `POST`  | `/api/links/:id/send`                                         | Link per E-Mail verschicken, JSON `{ "email" }`. Braucht den eingerichteten E-Mail-Versand                                                                    |
+| `GET`   | `/api/shared`                                                 | Was mit dir geteilt ist und was du teilst                                                                                                                     |
+| `GET`   | `/api/storage`, `/api/storage/report`                         | Belegter Speicher und Grenze, dazu die Aufteilung nach Art, die größten und die doppelten Dateien                                                             |
+| `GET`   | `/api/notifications`                                          | Benachrichtigungen, `POST /api/notifications/read` markiert sie als gelesen                                                                                   |
+| `GET`   | `/api/events`                                                 | Änderungen live als Server-Sent Events                                                                                                                        |
+| `GET`   | `/api/admin/groups`                                           | Nur Admins: Gruppen mit Mitgliedern, `POST` legt eine an, `PATCH` und `DELETE` unter `/api/admin/groups/:id` ändern und löschen                               |
 
 Öffentlich erreichbar sind `/s/:token` (geteilte Links), `/dav/` (WebDAV), `/forgot` und `/reset` (Passwort vergessen), `/impressum`, `/datenschutz`, `/metrics` mit Token und `/healthz` für Health-Checks.
 

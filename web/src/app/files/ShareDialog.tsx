@@ -15,6 +15,7 @@ import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Switch from '@mui/material/Switch';
+import Menu from '@mui/material/Menu';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -33,6 +34,8 @@ import PersonAddRounded from '@mui/icons-material/PersonAddRounded';
 import PersonRemoveRounded from '@mui/icons-material/PersonRemoveRounded';
 import QrCode2Rounded from '@mui/icons-material/QrCode2Rounded';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
+import TimerOutlined from '@mui/icons-material/TimerOutlined';
+import TimerRounded from '@mui/icons-material/TimerRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
 import UploadRounded from '@mui/icons-material/UploadRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
@@ -411,6 +414,69 @@ function LinkCard({
   );
 }
 
+function GrantExpiry({ grant, name, onChange }: { grant: SharedGrant; name: string; onChange: (grant: SharedGrant) => void }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [day, setDay] = useState(dayValue(grant.expiresAt ?? null));
+  const today = dayValue(Date.now());
+  const save = async (expiresAt: number | null) => {
+    try {
+      const result = await api.patch<{ grant: SharedGrant }>(`/api/grants/${grant.id}`, { expiresAt });
+      onChange(result.grant);
+      setAnchor(null);
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+  const inDays = (days: number) => endOfDay(dayValue(Date.now() + days * 86_400_000));
+  const label = grant.expiresAt ? t('Endet am {date}', { date: formatDay(grant.expiresAt) }) : t('Ohne Ablauf');
+  return (
+    <>
+      <Tooltip title={label}>
+        <IconButton
+          aria-label={t('Ablauf der Freigabe für {name}', { name })}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            setDay(dayValue(grant.expiresAt ?? null));
+            setAnchor(event.currentTarget);
+          }}
+          sx={{ color: grant.expiresAt ? c.primary : c.onSurfaceVariant }}
+        >
+          {grant.expiresAt ? <TimerRounded /> : <TimerOutlined />}
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+        <MenuItem selected={!grant.expiresAt} onClick={() => void save(null)}>
+          {t('Ohne Ablauf')}
+        </MenuItem>
+        <MenuItem onClick={() => void save(inDays(1))}>{t('Bis morgen')}</MenuItem>
+        <MenuItem onClick={() => void save(inDays(7))}>{t('Eine Woche')}</MenuItem>
+        <MenuItem onClick={() => void save(inDays(30))}>{t('Einen Monat')}</MenuItem>
+        <Box
+          component="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (day) void save(endOfDay(day));
+          }}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5 }}
+        >
+          <TextField
+            size="small"
+            type="date"
+            label={t('Bis zum')}
+            value={day}
+            onChange={(event) => setDay(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
+            slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today } }}
+          />
+          <Button type="submit" disabled={!day || day < today}>
+            {t('Übernehmen')}
+          </Button>
+        </Box>
+      </Menu>
+    </>
+  );
+}
+
 function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[]; onChange: (grants: SharedGrant[]) => void }) {
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<Recipient[]>([]);
@@ -524,11 +590,21 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
               {grant.group?.name ?? grant.user?.name ?? t('Gelöschtes Konto')}
             </Typography>
             <Typography variant="caption" noWrap component="p" sx={{ color: c.onSurfaceVariant }}>
-              {grant.group
-                ? tn(grant.group.members, 'Gruppe mit {count} Person', 'Gruppe mit {count} Personen')
-                : `@${grant.user?.username ?? ''}`}
+              {[
+                grant.group
+                  ? tn(grant.group.members, 'Gruppe mit {count} Person', 'Gruppe mit {count} Personen')
+                  : `@${grant.user?.username ?? ''}`,
+                grant.expiresAt ? t('bis {date}', { date: formatDay(grant.expiresAt) }) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </Typography>
           </Box>
+          <GrantExpiry
+            grant={grant}
+            name={grant.group?.name ?? grant.user?.name ?? ''}
+            onChange={(next) => onChange(grants.map((entry) => (entry.id === grant.id ? next : entry)))}
+          />
           <Select
             size="small"
             value={grant.permission}

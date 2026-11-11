@@ -30,6 +30,13 @@ import DriveFileMoveRounded from '@mui/icons-material/DriveFileMoveRounded';
 import DriveFileRenameOutlineRounded from '@mui/icons-material/DriveFileRenameOutlineRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import FolderOpenRounded from '@mui/icons-material/FolderOpenRounded';
+import FolderZipRounded from '@mui/icons-material/FolderZipRounded';
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+import NotificationsNoneRounded from '@mui/icons-material/NotificationsNoneRounded';
+import NotificationsOffRounded from '@mui/icons-material/NotificationsOffRounded';
+import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
+import PlayCircleRounded from '@mui/icons-material/PlayCircleRounded';
+import QueueMusicRounded from '@mui/icons-material/QueueMusicRounded';
 import GridViewRounded from '@mui/icons-material/GridViewRounded';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import InfoRounded from '@mui/icons-material/InfoRounded';
@@ -39,6 +46,13 @@ import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import RestoreFromTrashRounded from '@mui/icons-material/RestoreFromTrashRounded';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
+import SellRounded from '@mui/icons-material/SellRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import AutoStoriesRounded from '@mui/icons-material/AutoStoriesRounded';
+import MergeRounded from '@mui/icons-material/MergeRounded';
+import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import ShareRounded from '@mui/icons-material/ShareRounded';
 import SortRounded from '@mui/icons-material/SortRounded';
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
@@ -48,10 +62,10 @@ import ViewListRounded from '@mui/icons-material/ViewListRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
 import { api } from '../../lib/api';
 import { boot, type Boot, type Storage } from '../../lib/boot';
-import { t, tn, tp } from '../../lib/i18n';
+import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { setPrefs, usePrefs, type Prefs } from '../../lib/prefs';
-import { navigate, setQuery, useLocation } from '../../lib/router';
+import { navigate, useLocation } from '../../lib/router';
 import { Uploader, entriesFromDrop, entriesFromInput, entriesFromPaste, hasFiles, type UploadEntry } from '../../lib/upload';
 import { c, folderColor, radius } from '../../theme/tokens';
 import { AppShell, type Destination } from '../shell/AppShell';
@@ -75,17 +89,26 @@ import {
 } from './actions';
 import type { ActivityEntry } from './activity';
 import { ActivityView } from './ActivityView';
+import { AlbumContent, AlbumList, AlbumMenu, AlbumPicker, newAlbum, albumHref } from './Albums';
 import { Details, type DetailsTab } from './Details';
+import { canEditImage, ImageEditor } from './ImageEditor';
+import { PackDialog, RenameManyDialog } from './Bulk';
+import { MiniPlayer } from './MiniPlayer';
+import { enqueue, forget, playItems, usePlayer } from './player';
+import { FolderReadme, readmeOf } from './Readme';
+import { SearchFilters } from './SearchFilters';
+import { canMergePdfs, canOrganizePdf, PdfMergeDialog, PdfPagesDialog } from './PdfTools';
 import { DRAG_TYPE, Items } from './Items';
 import { FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
 import { Photos } from './Photos';
 import { StorageView } from './Storage';
-import { canEdit, folderHref, parseView, sortItems, useListing, viewKey, type View } from './model';
+import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
 import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewMenu } from './Panels';
 import { SearchBar } from './SearchBar';
 import { ShareDialog } from './ShareDialog';
 import { SharedByMe } from './SharedView';
+import { TagDialog, TagMenu, TagsView, useTagSync } from './tags';
 import { Viewer } from './Viewer';
 
 interface FilesBoot extends Boot {
@@ -95,28 +118,23 @@ interface FilesBoot extends Boot {
   versions: number;
 }
 
-const SEARCH_FILTERS = [
-  { value: '', label: 'Alles' },
-  { value: 'folder', label: 'Ordner' },
-  { value: 'image', label: 'Bilder' },
-  { value: 'video', label: 'Videos' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'pdf', label: 'PDFs' },
-  { value: 'document', label: 'Dokumente' },
-];
-
 function destinationOf(view: View): Destination {
   if (view.kind === 'folder' || view.kind === 'search') return 'files';
   if (view.kind === 'activity') return 'recent';
+  if (view.kind === 'tag') return 'tags';
+  if (view.kind === 'albums' || view.kind === 'album') return 'photos';
   return view.kind;
 }
 
-const SPECIAL = new Set<View['kind']>(['photos', 'activity', 'storage']);
+const SPECIAL = new Set<View['kind']>(['photos', 'activity', 'storage', 'tags', 'albums']);
 
 function titleOf(view: View) {
   switch (view.kind) {
     case 'photos':
+    case 'albums':
       return t('Fotos');
+    case 'album':
+      return t('Album');
     case 'recent':
     case 'activity':
       return t('Zuletzt');
@@ -128,6 +146,9 @@ function titleOf(view: View) {
       return t('Geteilt');
     case 'trash':
       return t('Papierkorb');
+    case 'tags':
+    case 'tag':
+      return t('Schlagwörter');
     case 'search':
       return view.q ? t('Suche nach „{query}“', { query: view.q }) : t('Suche');
     default:
@@ -157,12 +178,20 @@ export function FilesApp() {
   const key = viewKey(view);
   const listing = useListing(view);
   const prefs = usePrefs();
+  const player = usePlayer();
   const theme = useTheme();
   const wide = useMediaQuery(theme.breakpoints.up('lg'));
   const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({ key, ids: new Set() });
   const [menu, setMenu] = useState<{ items: Item[]; anchor: Anchor } | null>(null);
   const [viewer, setViewer] = useState<{ id: string; editing: boolean } | null>(null);
   const [share, setShare] = useState<Item | null>(null);
+  const [tagging, setTagging] = useState<Item[] | null>(null);
+  const [albumPick, setAlbumPick] = useState<Item[] | null>(null);
+  const [imageEdit, setImageEdit] = useState<Item | null>(null);
+  const [pdfPages, setPdfPages] = useState<Item | null>(null);
+  const [pdfMerge, setPdfMerge] = useState<Item[] | null>(null);
+  const [renaming, setRenaming] = useState<Item[] | null>(null);
+  const [packing, setPacking] = useState<Item[] | null>(null);
   const [move, setMove] = useState<MoveRequest | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [detailsTab, setDetailsTab] = useState<DetailsTab>('info');
@@ -180,7 +209,7 @@ export function FilesApp() {
   const special = SPECIAL.has(view.kind);
   const selected = selection.key === key ? selection.ids : new Set<string>();
   const setSelected = (ids: Set<string>) => setSelection({ key, ids });
-  const sortable = view.kind === 'folder' || view.kind === 'starred' || view.kind === 'search';
+  const sortable = view.kind === 'folder' || view.kind === 'starred' || view.kind === 'search' || view.kind === 'tag';
   const rawItems = listing.data?.items ?? [];
   const items = sortable ? sortItems(rawItems, prefs.sort, prefs.order) : rawItems;
   const chosen = items.filter((item) => selected.has(item.id));
@@ -208,6 +237,12 @@ export function FilesApp() {
 
   useEffect(() => {
     uploader.onDone = () => refresh();
+  });
+
+  useEffect(() => {
+    const handler = () => refresh();
+    window.addEventListener('moe:position', handler);
+    return () => window.removeEventListener('moe:position', handler);
   });
 
   useEffect(() => {
@@ -247,6 +282,8 @@ export function FilesApp() {
     reveal({ id: entry.nodeId, parentId: entry.parentId }, entry.action === 'comment' ? 'comments' : undefined);
   };
 
+  useTagSync();
+
   useLive((event, payload) => {
     if (event === 'shared') {
       toast(t('{name} hat „{item}“ mit dir geteilt', { name: String(payload.by ?? ''), item: String(payload.name ?? '') }), {
@@ -255,7 +292,7 @@ export function FilesApp() {
       if (view.kind === 'shared') refresh();
       return;
     }
-    if (event === 'reconnect') {
+    if (event === 'reconnect' || (event === 'albums' && view.kind === 'album')) {
       refresh();
       return;
     }
@@ -266,10 +303,16 @@ export function FilesApp() {
     else refreshStorage();
   });
 
+  const playable = (item: Item) => item.type === 'file' && item.kind === 'audio' && !item.infected && !item.trashedAt;
+
   const open = (item: Item) => {
     if (item.trashedAt) return;
     if (item.type === 'folder') {
       navigate(folderHref(item.id, rootId));
+      return;
+    }
+    if (playable(item)) {
+      playItems(items, item);
       return;
     }
     setViewer({ id: item.id, editing: false });
@@ -320,6 +363,17 @@ export function FilesApp() {
     }
   };
 
+  const toggleWatch = async (target: Item) => {
+    const result = await attempt(() => api.put<{ watching: boolean }>(`/api/nodes/${target.id}/watch`, { watching: !target.watching }));
+    if (!result) return;
+    toast(
+      result.watching
+        ? t('Du bekommst eine Nachricht, wenn andere in „{name}“ etwas ändern', { name: target.name })
+        : t('Du beobachtest „{name}“ nicht mehr', { name: target.name })
+    );
+    refresh();
+  };
+
   const actionsFor = (targets: Item[]): Action[] => {
     if (targets.length === 0) return [];
     const single = targets.length === 1 ? targets[0] : null;
@@ -347,9 +401,26 @@ export function FilesApp() {
     if (single) {
       list.push({
         key: 'open',
-        label: single.type === 'folder' ? t('Öffnen') : t('Vorschau'),
-        icon: single.type === 'folder' ? <FolderOpenRounded /> : <VisibilityRounded />,
+        label: single.type === 'folder' ? t('Öffnen') : playable(single) ? t('Abspielen') : t('Vorschau'),
+        icon: single.type === 'folder' ? <FolderOpenRounded /> : playable(single) ? <PlayArrowRounded /> : <VisibilityRounded />,
         onClick: () => open(single),
+      });
+    } else if (targets.every(playable)) {
+      list.push({ key: 'play', label: t('Abspielen'), icon: <PlayArrowRounded />, onClick: () => playItems(targets) });
+    }
+    if (targets.every(playable) && player.queue.length > 0) {
+      list.push({
+        key: 'enqueue',
+        label: t('Zur Warteschlange hinzufügen'),
+        icon: <QueueMusicRounded />,
+        onClick: () => {
+          const added = enqueue(targets);
+          toast(
+            added
+              ? tn(added, 'Ein Titel kommt in die Warteschlange', '{count} Titel kommen in die Warteschlange')
+              : t('Schon in der Warteschlange')
+          );
+        },
       });
     }
     list.push({ key: 'download', label: t('Herunterladen'), icon: <DownloadRounded />, onClick: () => download(targets), primary: true });
@@ -374,6 +445,18 @@ export function FilesApp() {
           }),
       });
     }
+    if (targets.every((item) => !item.infected)) {
+      list.push({ key: 'zip', label: t('Als ZIP packen'), icon: <FolderZipRounded />, onClick: () => setPacking(targets) });
+    }
+    if (single && canEditImage(single)) {
+      list.push({ key: 'edit-image', label: t('Bild bearbeiten'), icon: <TuneRounded />, onClick: () => setImageEdit(single) });
+    }
+    if (single && canOrganizePdf(single)) {
+      list.push({ key: 'pdf-pages', label: t('Seiten bearbeiten'), icon: <AutoStoriesRounded />, onClick: () => setPdfPages(single) });
+    }
+    if (canMergePdfs(targets)) {
+      list.push({ key: 'pdf-merge', label: t('PDFs zusammenfügen'), icon: <MergeRounded />, onClick: () => setPdfMerge(targets) });
+    }
     if (single && (single.role === 'owner' || single.role === 'edit') && data.share && (data.share.links || data.share.users)) {
       list.push({ key: 'share', label: t('Teilen'), icon: <ShareRounded />, onClick: () => setShare(single), primary: true });
     }
@@ -383,6 +466,14 @@ export function FilesApp() {
         label: t('Umbenennen'),
         icon: <DriveFileRenameOutlineRounded />,
         onClick: () => void renameItem(single).then((done) => done && refresh()),
+        divider: true,
+      });
+    } else if (editable) {
+      list.push({
+        key: 'rename',
+        label: t('Umbenennen'),
+        icon: <DriveFileRenameOutlineRounded />,
+        onClick: () => setRenaming(targets),
         divider: true,
       });
     }
@@ -410,6 +501,25 @@ export function FilesApp() {
       icon: starred ? <StarRounded /> : <StarOutlineRounded />,
       onClick: () => void starItems(targets, !starred).then(refresh),
     });
+    if (targets.every((item) => item.parentId)) {
+      list.push({ key: 'tags', label: t('Schlagwörter'), icon: <SellRounded />, onClick: () => setTagging(targets) });
+    }
+    if (single && single.type === 'folder' && single.parentId) {
+      list.push({
+        key: 'watch',
+        label: single.watching ? t('Nicht mehr beobachten') : t('Beobachten'),
+        icon: single.watching ? <NotificationsOffRounded /> : <NotificationsActiveRounded />,
+        onClick: () => void toggleWatch(single),
+      });
+    }
+    if (view.kind !== 'album' && targets.every((item) => item.type === 'file' && (item.kind === 'image' || item.kind === 'video'))) {
+      list.push({
+        key: 'album',
+        label: t('Zum Album hinzufügen'),
+        icon: <AddPhotoAlternateRounded />,
+        onClick: () => setAlbumPick(targets),
+      });
+    }
     if (editable && targets.every((item) => item.type === 'folder')) {
       list.push({
         key: 'color',
@@ -454,6 +564,7 @@ export function FilesApp() {
         onClick: () =>
           void trashItems(targets, refresh).then((done) => {
             if (!done) return;
+            forget(targets.map((item) => item.id));
             setSelected(new Set());
             refresh();
           }),
@@ -478,7 +589,7 @@ export function FilesApp() {
       } else if (event.key === 'Delete' && chosen.length) {
         const trash = actionsFor(chosen).find((action) => action.key === 'trash' || action.key === 'delete');
         trash?.onClick();
-      } else if (event.key === 'F2' && chosen.length === 1) {
+      } else if (event.key === 'F2' && chosen.length) {
         actionsFor(chosen)
           .find((action) => action.key === 'rename')
           ?.onClick();
@@ -575,6 +686,32 @@ export function FilesApp() {
     }
     const tools = (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 'none' }}>
+        {(view.kind === 'photos' || view.kind === 'albums') && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={view.kind}
+            aria-label={t('Ansicht')}
+            onChange={(_event, value: string | null) => value && navigate(value === 'photos' ? '/files/photos' : '/files/photos/albums')}
+          >
+            <ToggleButton value="photos">{t('Zeitleiste')}</ToggleButton>
+            <ToggleButton value="albums">{t('Alben')}</ToggleButton>
+          </ToggleButtonGroup>
+        )}
+        {view.kind === 'albums' && (
+          <Tooltip title={t('Neues Album')}>
+            <IconButton
+              aria-label={t('Neues Album')}
+              onClick={() =>
+                void newAlbum().then((album) => {
+                  if (album) navigate(albumHref(album.id));
+                })
+              }
+            >
+              <AddRounded />
+            </IconButton>
+          </Tooltip>
+        )}
         {(view.kind === 'recent' || view.kind === 'activity') && (
           <ToggleButtonGroup
             exclusive
@@ -596,6 +733,25 @@ export function FilesApp() {
           >
             {t('Papierkorb leeren')}
           </Button>
+        )}
+        {view.kind === 'folder' && folder?.parentId && (
+          <Tooltip title={folder.watching ? t('Du beobachtest diesen Ordner') : t('Ordner beobachten')}>
+            <IconButton
+              aria-label={t('Ordner beobachten')}
+              aria-pressed={Boolean(folder.watching)}
+              onClick={() => void toggleWatch(folder)}
+              sx={{ color: folder.watching ? c.primary : undefined }}
+            >
+              {folder.watching ? <NotificationsActiveRounded /> : <NotificationsNoneRounded />}
+            </IconButton>
+          </Tooltip>
+        )}
+        {sortable && items.filter(playable).length > 1 && (
+          <Tooltip title={t('Alle abspielen')}>
+            <IconButton aria-label={t('Alle abspielen')} onClick={() => playItems(items)}>
+              <PlayCircleRounded />
+            </IconButton>
+          </Tooltip>
         )}
         {sortable && (
           <>
@@ -642,7 +798,7 @@ export function FilesApp() {
             </Menu>
           </>
         )}
-        {view.kind !== 'shared' && !special && (
+        {view.kind !== 'shared' && view.kind !== 'album' && !special && (
           <Tooltip title={prefs.view === 'list' ? t('Kacheln') : t('Liste')}>
             <IconButton
               aria-label={prefs.view === 'list' ? t('Als Kacheln zeigen') : t('Als Liste zeigen')}
@@ -657,7 +813,7 @@ export function FilesApp() {
             aria-label={prefs.details && wide ? t('Details ausblenden') : t('Details zeigen')}
             aria-pressed={prefs.details && wide}
             onClick={() => (wide ? setPrefs({ details: !prefs.details }) : setDrawer(true))}
-            sx={{ display: view.kind === 'shared' || special ? 'none' : 'inline-flex' }}
+            sx={{ display: view.kind === 'shared' || view.kind === 'album' || special ? 'none' : 'inline-flex' }}
           >
             {prefs.details && wide ? <InfoRounded /> : <InfoOutlined />}
           </IconButton>
@@ -674,6 +830,51 @@ export function FilesApp() {
           onDrop={role !== 'view' ? (id, transfer) => void moveInto(id, transfer) : undefined}
           actions={tools}
         />
+      );
+    }
+    if (view.kind === 'album' && listing.data?.album) {
+      const album = listing.data.album;
+      return (
+        <PageTitle actions={<AlbumMenu album={album} onChanged={refresh} />}>
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+            <Tooltip title={t('Alle Alben')}>
+              <IconButton
+                aria-label={t('Alle Alben')}
+                href="/files/photos/albums"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate('/files/photos/albums');
+                }}
+                sx={{ ml: -1 }}
+              >
+                <ArrowBackRounded />
+              </IconButton>
+            </Tooltip>
+            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {album.name}
+            </Box>
+          </Box>
+        </PageTitle>
+      );
+    }
+    if (view.kind === 'tag' && listing.data?.tag) {
+      const tag = listing.data.tag;
+      return (
+        <PageTitle
+          actions={
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {tools}
+              <TagMenu tag={{ ...tag, count: items.length }} onDeleted={() => navigate('/files/tags')} />
+            </Box>
+          }
+        >
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+            <Box component="span" sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: folderColor(tag.color), flex: 'none' }} />
+            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {tag.name}
+            </Box>
+          </Box>
+        </PageTitle>
       );
     }
     return <PageTitle actions={tools}>{view.kind === 'folder' ? t('Meine Dateien') : titleOf(view)}</PageTitle>;
@@ -697,6 +898,14 @@ export function FilesApp() {
             text={t('Markiere Dateien mit dem Stern, dann findest du sie hier schnell wieder.')}
           />
         );
+      case 'tag':
+        return (
+          <EmptyState
+            icon={<SellRounded />}
+            title={t('Nichts mit diesem Schlagwort')}
+            text={t('Gib Dateien und Ordnern dieses Schlagwort über das Menü oder die Details.')}
+          />
+        );
       case 'trash':
         return (
           <EmptyState
@@ -706,14 +915,18 @@ export function FilesApp() {
           />
         );
       case 'search':
-        return view.q ? (
+        return searchQuery(view) ? (
           <EmptyState
             icon={<SearchRounded />}
             title={t('Nichts gefunden')}
             text={t('Probier einen anderen Suchbegriff oder einen anderen Filter.')}
           />
         ) : (
-          <EmptyState icon={<SearchRounded />} title={t('Wonach suchst du?')} text={t('Tipp oben einen Namen ein.')} />
+          <EmptyState
+            icon={<SearchRounded />}
+            title={t('Wonach suchst du?')}
+            text={t('Tipp oben einen Namen ein oder wähl einen Filter.')}
+          />
         );
       default:
         return role === 'view' ? (
@@ -760,16 +973,20 @@ export function FilesApp() {
     />
   );
 
+  const readme = view.kind === 'folder' ? readmeOf(items) : null;
+
   const content = (): ReactNode => {
     if (view.kind === 'photos') {
       return (
         <Photos
-          actions={(item) => actionsFor([item]).filter((action) => action.key === 'share' || action.key === 'trash')}
+          actions={(item) => actionsFor([item]).filter((action) => ['share', 'trash', 'edit-image'].includes(action.key))}
           onChanged={refresh}
         />
       );
     }
     if (view.kind === 'activity') return <ActivityView onOpen={openActivity} />;
+    if (view.kind === 'tags') return <TagsView />;
+    if (view.kind === 'albums') return <AlbumList />;
     if (view.kind === 'storage') return <StorageView onReveal={(item) => reveal(item)} />;
     if (listing.error) {
       return (
@@ -789,6 +1006,7 @@ export function FilesApp() {
       );
     }
     if (listing.loading || !listing.data) return <LoadingRows />;
+    if (view.kind === 'album' && listing.data.album) return <AlbumContent album={listing.data.album} items={items} onChanged={refresh} />;
     if (view.kind === 'shared') {
       return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4, px: { xs: 1.5, md: 3 }, pb: 4 }}>
@@ -823,25 +1041,12 @@ export function FilesApp() {
     }
     return (
       <>
-        {view.kind === 'search' && (
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', px: { xs: 1.5, md: 2 }, pb: 1.5 }} role="group" aria-label={t('Filter')}>
-            {SEARCH_FILTERS.map((filter) => (
-              <Chip
-                key={filter.value}
-                label={tp(filter.label)}
-                variant={view.filter === filter.value ? 'filled' : 'outlined'}
-                icon={view.filter === filter.value ? <CheckRounded /> : undefined}
-                onClick={() => setQuery('type', filter.value || null)}
-                sx={view.filter === filter.value ? { bgcolor: c.secondaryContainer, color: c.onSecondaryContainer } : undefined}
-                aria-pressed={view.filter === filter.value}
-              />
-            ))}
-          </Box>
-        )}
+        {view.kind === 'search' && <SearchFilters view={view} />}
         {view.kind === 'folder' && view.id === rootId && (
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, px: 1.5, pb: 1.5, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {[
               { href: '/files/starred', label: t('Favoriten'), icon: <StarRounded /> },
+              { href: '/files/tags', label: t('Schlagwörter'), icon: <SellRounded /> },
               { href: '/files/activity', label: t('Aktivität'), icon: <HistoryRounded /> },
               { href: '/files/storage', label: t('Speicher'), icon: <DataUsageRounded /> },
               { href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlineRounded /> },
@@ -857,6 +1062,7 @@ export function FilesApp() {
             ))}
           </Box>
         )}
+        {readme && <FolderReadme item={readme} onOpen={() => open(readme)} />}
         {view.kind === 'trash' && items.length > 0 && (
           <Alert severity="info" sx={{ mx: { xs: 1.5, md: 2 }, mb: 1.5 }}>
             {tn(
@@ -871,13 +1077,17 @@ export function FilesApp() {
           : itemsView(
               items,
               view.kind === 'folder' ? t('Dateien und Ordner') : titleOf(view),
-              view.kind === 'trash' ? 'trashed' : view.kind === 'recent' || view.kind === 'search' ? 'location' : 'modified'
+              view.kind === 'trash'
+                ? 'trashed'
+                : view.kind === 'recent' || view.kind === 'search' || view.kind === 'tag'
+                  ? 'location'
+                  : 'modified'
             )}
       </>
     );
   };
 
-  const showAside = wide && prefs.details && view.kind !== 'shared' && !special;
+  const showAside = wide && prefs.details && view.kind !== 'shared' && view.kind !== 'album' && !special;
   const location =
     view.kind === 'folder' ? (listing.data?.breadcrumbs?.map((crumb) => crumb.name || t('Meine Dateien')).join(' › ') ?? '') : undefined;
   const details = (
@@ -887,6 +1097,7 @@ export function FilesApp() {
       tab={detailsTab}
       onTab={setDetailsTab}
       onShare={setShare}
+      onTags={(item) => setTagging([item])}
       onChanged={refresh}
       onUploadVersion={(item) => {
         versionTarget.current = item;
@@ -964,6 +1175,7 @@ export function FilesApp() {
           />
         </Box>
       </AppShell>
+      <MiniPlayer />
 
       <input
         ref={fileInput}
@@ -1010,6 +1222,24 @@ export function FilesApp() {
         onSaved={() => refresh()}
       />
       <ShareDialog item={share} onClose={() => setShare(null)} onChanged={refresh} />
+      {tagging && <TagDialog items={tagging} onClose={() => setTagging(null)} onDone={refresh} />}
+      {pdfPages && <PdfPagesDialog item={pdfPages} onClose={() => setPdfPages(null)} onDone={() => refresh()} />}
+      {pdfMerge && <PdfMergeDialog items={pdfMerge} onClose={() => setPdfMerge(null)} onDone={() => refresh()} />}
+      {renaming && (
+        <RenameManyDialog
+          items={renaming}
+          siblings={view.kind === 'folder' ? items : []}
+          suggestion={view.kind === 'folder' && folder?.parentId ? folder.name : ''}
+          onClose={() => setRenaming(null)}
+          onDone={() => {
+            setSelected(new Set());
+            refresh();
+          }}
+        />
+      )}
+      {packing && <PackDialog items={packing} onClose={() => setPacking(null)} onDone={() => refresh()} />}
+      {imageEdit && <ImageEditor item={imageEdit} onClose={() => setImageEdit(null)} onSaved={() => refresh()} />}
+      {albumPick && <AlbumPicker items={albumPick} onClose={() => setAlbumPick(null)} onDone={() => setSelected(new Set())} />}
       <MoveDialog
         request={move}
         startId={view.kind === 'folder' ? view.id : undefined}

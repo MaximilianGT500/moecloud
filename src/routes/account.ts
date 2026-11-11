@@ -95,7 +95,15 @@ export async function accountRoutes(app: FastifyInstance) {
 
   app.patch('/api/account/prefs', async (request) => {
     const input = parse(
-      z.object({ mailShares: z.boolean(), mailUploads: z.boolean(), mailComments: z.boolean(), mailAdmin: z.boolean() }).partial(),
+      z
+        .object({
+          mailShares: z.boolean(),
+          mailUploads: z.boolean(),
+          mailComments: z.boolean(),
+          mailWatch: z.boolean(),
+          mailAdmin: z.boolean(),
+        })
+        .partial(),
       request.body
     );
     return { prefs: updatePrefs(me(request).id, input) };

@@ -194,6 +194,9 @@ export function activityText(entry: ActivityEntry) {
   if (entry.action === 'link_upload' || (entry.viaLink && entry.action === 'upload')) {
     return tn(entry.count, '{name} kam über einen Link an', '{count} Dateien kamen über einen Link an', p);
   }
+  if (entry.details?.expired && entry.action === 'unshare_user') return t('Die Freigabe von {name} für {with} ist abgelaufen', p);
+  if (entry.details?.expired && entry.action === 'unshare_group')
+    return t('Die Freigabe von {name} für die Gruppe {with} ist abgelaufen', p);
   return entry.self ? own(entry, p) : other(entry, p);
 }
 

@@ -29,6 +29,7 @@ import { ThemeToggleButton } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
 import { triggerDownload } from '../files/actions';
 import { Items } from '../files/Items';
+import { FolderReadme, readmeOf } from '../files/Readme';
 import { FileIcon, contentUrl, kindColor, kindLabel, thumbUrl, type Item } from '../files/kinds';
 import { DropOverlay, UploadPanel } from '../files/Panels';
 import { Preview } from '../files/preview/Preview';
@@ -154,6 +155,7 @@ export function SharePage() {
   }, [base, share.downloadsLeft]);
 
   const current = listing?.id === folderId ? listing : null;
+  const readme = current ? readmeOf(current.items) : null;
   const files = current?.items.filter((item) => item.type === 'file') ?? [];
   const viewerIndex = viewer ? files.findIndex((item) => item.id === viewer) : -1;
   const canUpload = share.allowUpload && root.type === 'folder';
@@ -382,6 +384,7 @@ export function SharePage() {
                     </IconButton>
                   </Tooltip>
                 </Box>
+                {readme && <FolderReadme item={readme} base={base} sx={{ mx: 0, mt: 1, mb: 0 }} onOpen={() => setViewer(readme.id)} />}
                 {current.items.length === 0 ? (
                   <EmptyState compact icon={<FolderOpenRounded />} title={t('Dieser Ordner ist leer')} />
                 ) : (

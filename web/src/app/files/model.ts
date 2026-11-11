@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../lib/api';
 import { compareNames } from '../../lib/format';
+import { t } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
+import type { Album } from './Albums';
 import type { Item } from './kinds';
 
 export type View =
@@ -13,7 +15,11 @@ export type View =
   | { kind: 'starred' }
   | { kind: 'shared' }
   | { kind: 'trash' }
-  | { kind: 'search'; q: string; filter: string };
+  | { kind: 'tags' }
+  | { kind: 'tag'; id: string }
+  | { kind: 'albums' }
+  | { kind: 'album'; id: string }
+  | { kind: 'search'; q: string; filter: string; date: string; size: string; tag: string };
 
 export interface Crumb {
   id: string;
@@ -47,6 +53,7 @@ export interface SharedGrant {
   nodeId: string;
   permission: 'view' | 'edit';
   createdAt: number;
+  expiresAt?: number | null;
   user: { id: number; name: string; username: string; initials: string } | null;
   group?: { id: number; name: string; members: number } | null;
   node?: Item;
@@ -61,26 +68,80 @@ export interface Listing {
   links?: SharedLink[];
   grants?: SharedGrant[];
   trashDays?: number;
+  tag?: { id: string; name: string; color: string };
+  album?: Album;
 }
 
 export function parseView(path: string, query: URLSearchParams, rootId: string): View {
   const folder = /^\/files\/folder\/([0-9A-Za-z]+)$/.exec(path);
   if (folder) return { kind: 'folder', id: folder[1] };
   if (path === '/files/photos') return { kind: 'photos' };
+  if (path === '/files/photos/albums') return { kind: 'albums' };
+  const album = /^\/files\/photos\/albums\/([0-9A-Za-z]+)$/.exec(path);
+  if (album) return { kind: 'album', id: album[1] };
   if (path === '/files/recent') return { kind: 'recent' };
   if (path === '/files/activity') return { kind: 'activity' };
   if (path === '/files/storage') return { kind: 'storage' };
   if (path === '/files/starred') return { kind: 'starred' };
   if (path === '/files/shared') return { kind: 'shared' };
   if (path === '/files/trash') return { kind: 'trash' };
-  if (path === '/files/search') return { kind: 'search', q: query.get('q') ?? '', filter: query.get('type') ?? '' };
+  if (path === '/files/tags') return { kind: 'tags' };
+  const tag = /^\/files\/tags\/([0-9A-Za-z]+)$/.exec(path);
+  if (tag) return { kind: 'tag', id: tag[1] };
+  if (path === '/files/search') {
+    return {
+      kind: 'search',
+      q: query.get('q') ?? '',
+      filter: query.get('type') ?? '',
+      date: query.get('date') ?? '',
+      size: query.get('size') ?? '',
+      tag: query.get('tag') ?? '',
+    };
+  }
   return { kind: 'folder', id: rootId };
 }
 
 export const viewKey = (view: View) =>
-  view.kind === 'folder' ? `folder:${view.id}` : view.kind === 'search' ? `search:${view.q}:${view.filter}` : view.kind;
+  view.kind === 'folder' || view.kind === 'tag' || view.kind === 'album'
+    ? `${view.kind}:${view.id}`
+    : view.kind === 'search'
+      ? `search:${view.q}:${view.filter}:${view.date}:${view.size}:${view.tag}`
+      : view.kind;
 
 export const folderHref = (id: string, rootId: string) => (id === rootId ? '/files' : `/files/folder/${id}`);
+
+const DAY = 86_400_000;
+const MB = 1024 * 1024;
+
+export const DATE_FILTERS: { value: string; label: string; range: () => { after?: number; before?: number } }[] = [
+  { value: 'today', label: t('Heute'), range: () => ({ after: new Date().setHours(0, 0, 0, 0) }) },
+  { value: 'week', label: t('Letzte 7 Tage'), range: () => ({ after: Date.now() - 7 * DAY }) },
+  { value: 'month', label: t('Letzte 30 Tage'), range: () => ({ after: Date.now() - 30 * DAY }) },
+  { value: 'year', label: t('Dieses Jahr'), range: () => ({ after: new Date(new Date().getFullYear(), 0, 1).getTime() }) },
+  { value: 'older', label: t('Älter als ein Jahr'), range: () => ({ before: Date.now() - 365 * DAY }) },
+];
+
+export const SIZE_FILTERS: { value: string; label: string; minSize?: number; maxSize?: number }[] = [
+  { value: 'small', label: t('Unter 1 MB'), maxSize: MB },
+  { value: 'medium', label: t('1 bis 100 MB'), minSize: MB, maxSize: 100 * MB },
+  { value: 'large', label: t('Über 100 MB'), minSize: 100 * MB },
+  { value: 'huge', label: t('Über 1 GB'), minSize: 1024 * MB },
+];
+
+export function searchQuery(view: Extract<View, { kind: 'search' }>) {
+  const query = new URLSearchParams();
+  if (view.q.trim()) query.set('q', view.q.trim());
+  if (view.filter) query.set('kind', view.filter);
+  const date = DATE_FILTERS.find((entry) => entry.value === view.date)?.range();
+  if (date?.after !== undefined) query.set('after', String(date.after));
+  if (date?.before !== undefined) query.set('before', String(date.before));
+  const size = SIZE_FILTERS.find((entry) => entry.value === view.size);
+  if (size?.minSize !== undefined) query.set('minSize', String(size.minSize));
+  if (size?.maxSize !== undefined) query.set('maxSize', String(size.maxSize));
+  if (view.tag) query.set('tag', view.tag);
+  if (!query.has('q') && !view.filter && !date && !size && !view.tag) return null;
+  return query;
+}
 
 async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
   switch (view.kind) {
@@ -103,7 +164,17 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
     case 'photos':
     case 'activity':
     case 'storage':
+    case 'tags':
+    case 'albums':
       return { items: [], role: 'owner' };
+    case 'album': {
+      const data = await api.get<{ album: Album; items: Item[] }>(`/api/albums/${view.id}`, signal);
+      return { items: data.items, role: 'owner', album: data.album };
+    }
+    case 'tag': {
+      const data = await api.get<{ tag: Listing['tag']; items: Item[] }>(`/api/tags/${view.id}/nodes`, signal);
+      return { items: data.items, role: 'owner', tag: data.tag };
+    }
     case 'recent':
       return { items: (await api.get<{ items: Item[] }>('/api/recent', signal)).items, role: 'owner' };
     case 'starred':
@@ -117,9 +188,8 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
       return { items: data.withMe, links: data.links, grants: data.grants, role: 'view' };
     }
     case 'search': {
-      if (!view.q.trim()) return { items: [], role: 'owner' };
-      const query = new URLSearchParams({ q: view.q });
-      if (view.filter) query.set('kind', view.filter);
+      const query = searchQuery(view);
+      if (!query) return { items: [], role: 'owner' };
       return { items: (await api.get<{ items: Item[] }>(`/api/search?${query}`, signal)).items, role: 'owner' };
     }
   }

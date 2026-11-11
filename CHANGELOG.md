@@ -2,6 +2,71 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.0] · 2026-11-11
+
+Mit dieser Version ordnest du Dateien mit Schlagwörtern und Alben, bearbeitest Bilder und PDFs direkt in der Cloud und hörst Musik in einem eigenen Player mit Warteschlange. Videos zeigen Untertitel und merken sich die Stelle, an der du aufgehört hast. Dazu kommen Suchfilter, Freigaben mit Ablaufdatum, beobachtete Ordner, das Umbenennen vieler Dateien auf einmal, ZIP-Archive aus der Cloud, ein Vergleich von Textversionen und Ordnerbeschreibungen aus einer README.md.
+
+### Ordnen
+
+- Schlagwörter: Eigene Schlagwörter in zehn Farben, vergeben über das Menü oder die Details, auch für mehrere Elemente auf einmal und für Dinge, die andere mit dir teilen. Nur du siehst deine Schlagwörter
+- Farbige Punkte hinter dem Namen zeigen die Schlagwörter in Liste und Kacheln, die neue Ansicht **Schlagwörter** in der Navigation listet alle mit Anzahl und zeigt, was dazugehört. Umbenennen, Farbe ändern und Löschen gehen dort direkt
+- Alben unter **Fotos**: Bilder und Videos aus beliebigen Ordnern sammeln, ohne sie zu verschieben. Jedes Album hat ein Titelbild, eine Diashow und einen Download als ZIP
+- In der Zeitleiste wählst du Fotos jetzt mit einem Kästchen oder langem Druck aus und legst sie in ein Album. In Dateien heißt der Menüpunkt dafür „Zum Album hinzufügen“
+- Mehrere Dateien umbenennen: Wählst du mehrere Elemente und drückst F2 oder „Umbenennen“, kannst du Text ersetzen, Text ergänzen, durchnummerieren (wie in der Liste oder nach Aufnahmedatum) oder das Aufnahmedatum voranstellen. Eine Vorschau zeigt jeden neuen Namen, Endungen bleiben, wie sie sind
+- Der Server prüft alle neuen Namen, bevor er etwas ändert, und tauscht Namen auch untereinander
+- Als ZIP packen: Eine Auswahl aus Dateien und Ordnern wird zu einem ZIP-Archiv im selben Ordner, ganz ohne Download und Upload. Fehlt dir dort das Schreibrecht, landet das Archiv in deinen eigenen Dateien
+- Ordnerbeschreibung: Liegt in einem Ordner eine README.md oder LIESMICH.md, zeigt MoeCloud sie formatiert über der Liste, zuerst eingeklappt. Das gilt auch für öffentliche Ordner-Links
+
+### Bearbeiten
+
+- Bilder bearbeiten: Zuschneiden mit freiem oder festem Seitenverhältnis, drehen, spiegeln, verkleinern und als JPEG, PNG, WebP oder AVIF speichern, als Kopie neben dem Original oder als neue Version. Das geht auch mit HEIC und dem eingebetteten Bild von Rohdateien, die Aufnahmedaten bleiben erhalten
+- PDF-Werkzeuge: Seiten als Kacheln sehen, umsortieren, drehen, entfernen und ausgewählte Seiten als eigene PDF speichern. Mehrere PDFs fügst du in einer Reihenfolge deiner Wahl zu einer zusammen
+- Versionen vergleichen: Bei Text, Markdown, Code, CSV und JSON zeigt „Version vergleichen“ unter **Versionen**, welche Zeilen dazugekommen und welche weggefallen sind
+- Der Hinweis „Gespeichert als …“ hat einen Knopf „Zeigen“, wenn die neue Datei in einem anderen Ordner liegt
+
+### Musik und Video
+
+- Musik spielt jetzt in einem Player am unteren Rand, der beim Wechseln der Ansichten weiterläuft. Ein Doppelklick auf einen Titel spielt alle Audiodateien der Ansicht ab diesem Titel, dazu kommen „Abspielen“, „Zur Warteschlange hinzufügen“ und „Alle abspielen“
+- Der Player zeigt Titel, Interpret, Album und Cover, kann zufällig abspielen und wiederholen und hat eine Wiedergabe-Ansicht mit Warteschlange. Medientasten und Sperrbildschirm steuern ihn über die Media Session API
+- Startet ein Video, pausiert die Musik. Die Warteschlange bleibt nach dem Neuladen erhalten
+- Untertitel: Liegt neben einem Video eine Datei wie `Film.srt`, `Film.vtt`, `Film.de.srt` oder `Film.en.vtt`, bietet die Wiedergabe sie als Spur an, die zur Sprache passende zuerst. SRT wandelt der Server in WebVTT um, auch mit Umlauten aus älteren Dateien
+- Weiterschauen: Videos ab einer Minute und Audio ab zehn Minuten merken sich die Stelle pro Person, auch über Geräte hinweg. Beim nächsten Öffnen geht es dort weiter, „Von vorn“ startet neu
+- In den Kacheln zeigt ein Balken, wie weit du ein Video schon gesehen hast
+
+### Suchen und Teilen
+
+- Suchfilter für Änderungsdatum, Größe und Schlagwort, zusätzlich zu den Arten. Filter funktionieren auch ohne Suchbegriff, etwa für alle Bilder der letzten 30 Tage, und der neue Knopf in der Suchleiste öffnet sie direkt
+- Freigaben mit Ablaufdatum: Im Dialog zum Teilen bekommt jede Person und Gruppe ein Ablaufdatum, als Vorgabe oder mit eigenem Datum. Danach endet der Zugriff, und die Aktivität vermerkt das. Unter **Geteilt** steht, bis wann eine Freigabe gilt
+- Ordner beobachten: Über das Menü oder die Glocke in der Kopfzeile eines Ordners bekommst du eine Benachrichtigung, wenn andere dort etwas hochladen, ändern oder löschen. Mehrere Änderungen kommen gesammelt in einer Nachricht. Per E-Mail kommt sie nur, wenn du das unter **Konto › Benachrichtigungen** eingeschaltet lässt
+
+### Kleinigkeiten
+
+- Endungen wie `.tar.gz` gelten in der Oberfläche jetzt als eine Endung, wie schon auf dem Server
+- Das Fenster mit den Uploads blockiert keine Klicks mehr auf Knöpfe, die unter seinem Rand liegen
+- Hinweise, der Knopf „Neu“ und das Fenster mit den Uploads rücken über den Player, solange er zu sehen ist
+- Die Beispieldaten haben eine README.md in „Projekte“ und eine ältere Version von „Ideen.md“
+- 242 neue Texte mit englischer Übersetzung
+
+### API
+
+- Schlagwörter: `GET` und `POST /api/tags`, `PATCH` und `DELETE /api/tags/:id`, `GET /api/tags/:id/nodes`, `PUT /api/nodes/tags`
+- Alben: `GET` und `POST /api/albums`, `GET`, `PATCH` und `DELETE /api/albums/:id`, `POST /api/albums/:id/items`, `POST /api/albums/:id/remove`, `GET /api/albums/:id/zip`
+- Bearbeiten: `POST /api/nodes/:id/edit`, `GET /api/nodes/:id/pdf`, `GET /api/nodes/:id/pdf/:page`, `POST /api/nodes/:id/pdf`, `POST /api/pdf/merge`
+- Ordnen: `POST /api/nodes/rename`, `POST /api/nodes/zip`, `PUT /api/nodes/:id/watch`
+- Wiedergabe: `GET /api/nodes/:id/subtitles`, `GET /api/nodes/:id/vtt`, `GET` und `PUT /api/nodes/:id/position`, für öffentliche Links `GET /api/public/:token/nodes/:id/subtitles` und `/vtt`
+- `GET /api/search` versteht `after`, `before`, `minSize`, `maxSize` und `tag`, Freigaben nehmen `expiresAt`
+- Listen nennen die neuen Felder `tags`, `progress` und `watching`
+
+### Abhängigkeiten
+
+- Neu sind `@pdfme/pdf-lib` 6.2.8 für die PDF-Werkzeuge und `diff` 9.0.0 für den Vergleich von Versionen, beide unter freien Lizenzen. Alle anderen Abhängigkeiten sind aktuell
+
+### Update von 1.2.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Tabellen für Schlagwörter, Alben, Wiedergabestellen und beobachtete Ordner sowie die Spalten für das Ablaufdatum von Freigaben an. Deine Dateien bleiben unverändert.
+
 ## [1.2.0] · 2026-11-11
 
 MoeCloud zeigt jetzt Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF, Photoshop-Dateien und viele weitere Bildformate, dazu Vorschaubilder aus Dokumenten. Öffentliche Links verschickst du direkt aus dem Dialog zum Teilen per E-Mail, und Dateien und Screenshots lädst du mit Strg+V aus der Zwischenablage hoch. Dazu kommen 27 englische Texte, die bisher fehlten, mehr Zurückhaltung in der Aktivität geteilter Ordner und eine Prüfung, die alle Versionsangaben zusammenhält.
@@ -255,6 +320,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.3.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.0
 [1.2.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.2.0
 [1.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.1.0
 [1.0.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.0.0

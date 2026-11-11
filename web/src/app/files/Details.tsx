@@ -8,6 +8,7 @@ import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+import DifferenceRounded from '@mui/icons-material/DifferenceRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
@@ -29,6 +30,8 @@ import { Comments } from './Comments';
 import { Fact, MetaFacts, ScanState } from './facts';
 import { FileIcon, kindColor, kindLabel, thumbUrl, type Item } from './kinds';
 import { useMeta } from './preview/media';
+import { TagChips } from './tags';
+import { canCompare, VersionDiff } from './VersionDiff';
 
 export type DetailsTab = 'info' | 'activity' | 'comments';
 
@@ -42,6 +45,7 @@ interface Version {
 
 function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => void; onUpload?: () => void }) {
   const [versions, setVersions] = useState<{ key: string; list: Version[] } | null>(null);
+  const [comparing, setComparing] = useState<Version | null>(null);
   const editable = item.role === 'owner' || item.role === 'edit';
   const key = item.id + item.version;
 
@@ -83,6 +87,13 @@ function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => 
                 {[formatBytes(version.size), version.author].filter(Boolean).join(' · ')}
               </Typography>
             </Box>
+            {canCompare(item, version) && (
+              <Tooltip title={t('Mit der aktuellen Fassung vergleichen')}>
+                <IconButton size="small" aria-label={t('Version vergleichen')} onClick={() => setComparing(version)}>
+                  <DifferenceRounded fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={t('Herunterladen')}>
               <IconButton
                 size="small"
@@ -133,6 +144,7 @@ function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => 
           </Box>
         ))
       )}
+      {comparing && <VersionDiff item={item} version={comparing} onClose={() => setComparing(null)} />}
     </Box>
   );
 }
@@ -185,12 +197,14 @@ function InfoTab({
   item,
   location,
   onShare,
+  onTags,
   onChanged,
   onUploadVersion,
 }: {
   item: Item;
   location?: string;
   onShare?: (item: Item) => void;
+  onTags?: (item: Item) => void;
   onChanged: () => void;
   onUploadVersion?: (item: Item) => void;
 }) {
@@ -224,6 +238,11 @@ function InfoTab({
           {kindLabel(item.kind)}
         </Typography>
       </Box>
+      {onTags && item.parentId && !item.trashedAt && (
+        <Box role="group" aria-label={t('Schlagwörter')}>
+          <TagChips ids={item.tags} onEdit={() => onTags(item)} />
+        </Box>
+      )}
       <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 2, rowGap: 1, m: 0 }}>
         {item.type === 'file' ? (
           <Fact label={t('Größe')}>{formatBytes(item.size)}</Fact>
@@ -266,6 +285,7 @@ export function Details({
   onTab,
   onClose,
   onShare,
+  onTags,
   onChanged,
   onUploadVersion,
 }: {
@@ -275,6 +295,7 @@ export function Details({
   onTab?: (tab: DetailsTab) => void;
   onClose?: () => void;
   onShare?: (item: Item) => void;
+  onTags?: (item: Item) => void;
   onChanged: () => void;
   onUploadVersion?: (item: Item) => void;
 }) {
@@ -348,7 +369,14 @@ export function Details({
           </Box>
         )}
         {item && current === 'info' && (
-          <InfoTab item={item} location={location} onShare={onShare} onChanged={onChanged} onUploadVersion={onUploadVersion} />
+          <InfoTab
+            item={item}
+            location={location}
+            onShare={onShare}
+            onTags={onTags}
+            onChanged={onChanged}
+            onUploadVersion={onUploadVersion}
+          />
         )}
         {item && current === 'activity' && <NodeActivity item={item} />}
         {item && current === 'comments' && <Comments item={item} />}

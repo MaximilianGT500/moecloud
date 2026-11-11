@@ -5,9 +5,25 @@ import InputBase from '@mui/material/InputBase';
 import Tooltip from '@mui/material/Tooltip';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { c, curve, radius } from '../../theme/tokens';
+
+const FILTER_KEYS = ['type', 'date', 'size', 'tag'];
+
+const filtered = () => {
+  const params = new URLSearchParams(location.search);
+  return location.pathname.startsWith('/files/search') && FILTER_KEYS.some((key) => params.get(key));
+};
+
+function target(value: string) {
+  const params = new URLSearchParams(location.pathname.startsWith('/files/search') ? location.search : '');
+  if (value) params.set('q', value);
+  else params.delete('q');
+  const query = params.toString();
+  return `/files/search${query ? `?${query}` : ''}`;
+}
 
 export function SearchBar({ initial, active }: { initial: string; active: boolean }) {
   const [text, setText] = useState(initial);
@@ -21,7 +37,8 @@ export function SearchBar({ initial, active }: { initial: string; active: boolea
     }
     const timer = setTimeout(() => {
       const value = text.trim();
-      if (value) navigate(`/files/search?q=${encodeURIComponent(value)}`, { replace: active });
+      const filters = filtered();
+      if (value || (active && filters)) navigate(target(value), { replace: active });
       else if (active) navigate('/files', { replace: true });
     }, 280);
     return () => clearTimeout(timer);
@@ -46,7 +63,7 @@ export function SearchBar({ initial, active }: { initial: string; active: boolea
       role="search"
       onSubmit={(event) => {
         event.preventDefault();
-        if (text.trim()) navigate(`/files/search?q=${encodeURIComponent(text.trim())}`, { replace: active });
+        if (text.trim()) navigate(target(text.trim()), { replace: active });
       }}
       sx={{
         flex: 1,
@@ -83,6 +100,13 @@ export function SearchBar({ initial, active }: { initial: string; active: boolea
         <Tooltip title={t('Suche leeren')}>
           <IconButton aria-label={t('Suche leeren')} onClick={() => setText('')}>
             <CloseRounded />
+          </IconButton>
+        </Tooltip>
+      )}
+      {!active && (
+        <Tooltip title={t('Suchen mit Filtern')}>
+          <IconButton aria-label={t('Suchen mit Filtern')} onClick={() => navigate(target(text.trim()))}>
+            <TuneRounded />
           </IconButton>
         </Tooltip>
       )}

@@ -46,7 +46,12 @@ export function Toaster() {
       }}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       message={current?.message}
-      sx={{ bottom: { xs: 'calc(96px + env(safe-area-inset-bottom))', md: 24 } }}
+      sx={{
+        bottom: {
+          xs: 'calc(96px + env(safe-area-inset-bottom) + var(--moe-player, 0px))',
+          md: 'calc(24px + var(--moe-player, 0px))',
+        },
+      }}
       action={
         <>
           {current?.action && (

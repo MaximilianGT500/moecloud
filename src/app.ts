@@ -33,6 +33,9 @@ import { davRoutes } from './routes/dav.ts';
 import { systemAdminRoutes } from './routes/system-admin.ts';
 import { metricsRoutes } from './routes/metrics.ts';
 import { groupRoutes } from './routes/groups.ts';
+import { tagRoutes } from './routes/tags.ts';
+import { albumRoutes } from './routes/albums.ts';
+import { toolRoutes } from './routes/tools.ts';
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -275,6 +278,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(setupRoutes);
   await app.register(fileRoutes);
+  await app.register(tagRoutes);
+  await app.register(albumRoutes);
+  await app.register(toolRoutes);
   await app.register(uploadRoutes);
   await app.register(shareRoutes);
   await app.register(publicRoutes);

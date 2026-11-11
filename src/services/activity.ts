@@ -1,6 +1,7 @@
 import { all, one, run } from '../lib/db.ts';
 import type { Role } from './nodes.ts';
 import { initials, getUser } from './users.ts';
+import { noteActivity } from './watches.ts';
 
 export type ActivityAction =
   | 'upload'
@@ -55,6 +56,7 @@ const GRANTS = new Set<ActivityAction>(['share_user', 'unshare_user', 'share_gro
 const WINDOW = 3 * 60 * 1000;
 
 export function record(input: ActivityInput) {
+  noteActivity(input);
   const now = Date.now();
   if (GROUPED.has(input.action)) {
     const last = one<ActivityRow>(

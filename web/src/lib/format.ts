@@ -119,7 +119,11 @@ export function deviceOf(agent: string | null) {
 const collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
 export const compareNames = (a: string, b: string) => collator.compare(a, b);
 
+const DOUBLE = /\.(tar\.(gz|bz2|xz|zst))$/i;
+
 export function splitExtension(name: string): [string, string] {
+  const double = DOUBLE.exec(name);
+  if (double && double.index > 0) return [name.slice(0, double.index), name.slice(double.index)];
   const index = name.lastIndexOf('.');
   if (index <= 0) return [name, ''];
   return [name.slice(0, index), name.slice(index)];

@@ -81,7 +81,7 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function turned(image: Sharp, orientation: number) {
+export function turned(image: Sharp, orientation: number) {
   if (orientation === 2) return image.flop();
   if (orientation === 3) return image.rotate(180);
   if (orientation === 4) return image.flip();

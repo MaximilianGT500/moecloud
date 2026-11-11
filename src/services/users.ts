@@ -30,6 +30,7 @@ export interface UserPrefs {
   mailShares: boolean;
   mailUploads: boolean;
   mailComments: boolean;
+  mailWatch: boolean;
   mailAdmin: boolean;
   storageWarned: boolean;
 }
@@ -37,7 +38,14 @@ export interface UserPrefs {
 export const preferredLanguage = (user: Pick<UserRow, 'language'>): Lang =>
   user.language && isLang(user.language) ? user.language : settings.get('site.language');
 
-const PREF_DEFAULTS: UserPrefs = { mailShares: true, mailUploads: true, mailComments: true, mailAdmin: true, storageWarned: false };
+const PREF_DEFAULTS: UserPrefs = {
+  mailShares: true,
+  mailUploads: true,
+  mailComments: true,
+  mailWatch: true,
+  mailAdmin: true,
+  storageWarned: false,
+};
 
 export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
   if (!user.prefs) return { ...PREF_DEFAULTS };

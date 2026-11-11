@@ -43,6 +43,7 @@ interface ViewerProps {
   actions?: (item: Item) => Action[];
   onSaved?: (item: Item) => void;
   editing?: boolean;
+  autoplay?: boolean;
 }
 
 function InfoPanel({ item, base, onClose }: { item: Item; base: string; onClose: () => void }) {
@@ -92,11 +93,21 @@ function InfoPanel({ item, base, onClose }: { item: Item; base: string; onClose:
   );
 }
 
-export function Viewer({ items, index, onIndex, base = '/api', canDownload = true, actions, onSaved, editing = false }: ViewerProps) {
+export function Viewer({
+  items,
+  index,
+  onIndex,
+  base = '/api',
+  canDownload = true,
+  actions,
+  onSaved,
+  editing = false,
+  autoplay = false,
+}: ViewerProps) {
   const item = index === null ? null : (items[index] ?? null);
   const [dirty, setDirty] = useState(false);
   const [info, setInfo] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(autoplay);
   const [rotating, setRotating] = useState(false);
   const touch = useRef<{ x: number; y: number; at: number } | null>(null);
   const has = (step: number) => index !== null && index + step >= 0 && index + step < items.length;

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { forbidden, HttpError, notFound, unauthorized } from '../lib/errors.ts';
 import { verifyPassword } from '../lib/crypto.ts';
@@ -7,9 +8,11 @@ import { t } from '../lib/i18n.ts';
 import { checkFormCsrf, body } from '../lib/request.ts';
 import { Limiter } from '../lib/limiter.ts';
 import { kindOf } from '../lib/mime.ts';
+import { toVtt } from '../lib/subtitles.ts';
 import { parse, ids } from '../lib/validate.ts';
 import { messagePage, sharePasswordPage } from '../views/pages.ts';
-import { typeOf } from '../services/blobs.ts';
+import { blobPath, typeOf } from '../services/blobs.ts';
+import { subtitleNode, subtitlesOf } from '../services/media-state.ts';
 import { blobInfo, chain, children, type NodeRow } from '../services/nodes.ts';
 import { previews } from '../services/thumbs.ts';
 import {
@@ -29,6 +32,7 @@ import {
 import * as settings from '../services/settings.ts';
 import { getUser } from '../services/users.ts';
 import { archiveListing, nodeMeta, sendArchiveEntry, sendNode, sendPreview, sendThumb, sendZip } from './files.ts';
+import { sendVtt } from './tools.ts';
 import { uploadEndpoints } from './uploads.ts';
 import { value } from '../lib/db.ts';
 
@@ -240,6 +244,25 @@ export async function publicRoutes(app: FastifyInstance) {
       return sendNode(request, reply, node, download);
     }
   );
+
+  app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/subtitles', async (request) => {
+    const { link } = linkFor(request);
+    const node = linkNode(link, request.params.id);
+    if (node.type !== 'file' || link.upload_only || !node.parent_id) return { items: [] };
+    try {
+      linkNode(link, node.parent_id);
+    } catch {
+      return { items: [] };
+    }
+    return { items: subtitlesOf(node, children(node.parent_id)) };
+  });
+
+  app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/vtt', async (request, reply) => {
+    const { link } = linkFor(request);
+    if (link.upload_only) throw notFound();
+    const node = subtitleNode(linkNode(link, request.params.id));
+    return sendVtt(reply, toVtt(await readFile(blobPath(node.sha256!)), node.name));
+  });
 
   app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/thumb', { compress: false }, async (request, reply) => {
     const { link } = linkFor(request);

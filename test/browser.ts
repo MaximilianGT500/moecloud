@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { PDFDocument, StandardFonts, rgb } from '@pdfme/pdf-lib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import sharp from 'sharp';
 import yazl from 'yazl';
@@ -320,7 +321,7 @@ try {
     await page.getByRole('heading', { level: 2 }).first().waitFor();
     await images(page, 'main [role=list]');
     await shot(page, 'photos');
-    await page.getByRole('listitem', { name: /^Sonnenuntergang am See\.jpg/ }).click();
+    await page.getByRole('button', { name: /^Sonnenuntergang am See\.jpg/ }).click();
     await images(page, '[role=dialog]');
     await page.getByRole('button', { name: 'Informationen', exact: true }).click();
     await visible(page, 'Kamera');
@@ -511,6 +512,232 @@ try {
       };
       return listing.items.find((entry) => entry.name === 'Dokumente')?.color === 'green';
     });
+  });
+
+  await step('Schlagwörter vergeben', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Schlagwörter', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Suchen oder neu anlegen').fill('Wichtig');
+    await dialog.getByRole('radio', { name: 'Rot' }).click();
+    await dialog.getByRole('button', { name: '„Wichtig“ anlegen' }).click();
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.getByRole('grid').getByRole('img', { name: 'Schlagwörter: Wichtig' }).waitFor();
+    await page.goto(`${base}/files/tags`);
+    await page.getByRole('button', { name: /^Wichtig/ }).click();
+    await page.waitForURL('**/files/tags/**');
+    await item(page, 'Projekte').waitFor();
+  });
+
+  await step('Album aus Fotos anlegen', async () => {
+    await page.goto(`${base}/files/photos`);
+    await images(page, '[role=list]');
+    const tiles = page.locator('[role=listitem]').filter({ has: page.getByRole('button', { name: /\.jpg,/ }) });
+    await tiles.nth(0).hover();
+    await tiles.nth(0).getByRole('checkbox').check();
+    await tiles.nth(1).locator('button').first().click();
+    await page.getByRole('toolbar', { name: 'Auswahl' }).getByRole('button', { name: 'Zum Album hinzufügen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Neues Album').fill('Sommer am See');
+    await dialog.getByRole('button', { name: 'Anlegen' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.goto(`${base}/files/photos/albums`);
+    await page.getByRole('button', { name: /^Album Sommer am See, 2 Elemente/ }).click();
+    await page.waitForURL('**/files/photos/albums/**');
+    await images(page, '[role=list]');
+    await page.getByRole('button', { name: 'Diashow' }).click();
+    await page.getByRole('button', { name: 'Diashow anhalten' }).waitFor({ state: 'attached' });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('Bild bearbeiten', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Sonnenuntergang am See.jpg').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Bild bearbeiten' }).click();
+    await page.locator('canvas').waitFor();
+    await page.getByRole('button', { name: 'Nach rechts drehen' }).click();
+    await page.getByRole('button', { name: '16:9' }).click();
+    await shot(page, 'editor');
+    await page.getByLabel('Format').click();
+    await page.getByRole('option', { name: 'PNG' }).click();
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await item(page, 'Sonnenuntergang am See (bearbeitet).png').waitFor();
+  });
+
+  await step('PDF-Seiten ordnen und zusammenfügen', async () => {
+    const chapters = await PDFDocument.create();
+    const font = await chapters.embedFont(StandardFonts.HelveticaBold);
+    for (const [index, width] of [420, 595, 500].entries()) {
+      const sheet = chapters.addPage([width, 595]);
+      sheet.drawRectangle({ x: 0, y: 515, width, height: 80, color: rgb(0.55, 0.36, 0.96) });
+      sheet.drawText(`Kapitel ${index + 1}`, { x: 32, y: 300, size: 48, font, color: rgb(0.2, 0.2, 0.2) });
+    }
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const folder = page.url().split('/').pop();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (await chooser).setFiles({ name: 'Kapitel.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await chapters.save()) });
+    await item(page, 'Kapitel.pdf').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Seiten bearbeiten' }).click();
+    await images(page, '[role=dialog] [role=list]');
+    await page.getByRole('button', { name: 'Seite 1 auswählen' }).first().click();
+    await page.getByRole('toolbar', { name: 'Auswahl' }).getByRole('button', { name: 'Nach hinten schieben' }).click();
+    await page.getByRole('button', { name: 'Seite 3 drehen' }).click();
+    await shot(page, 'pdf');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await item(page, 'Kapitel (bearbeitet).pdf').waitFor();
+    const listing = await api<{ items: { id: string; name: string }[] }>(page, 'GET', `/api/nodes/${folder}/children`);
+    const edited = listing.items.find((entry) => entry.name === 'Kapitel (bearbeitet).pdf');
+    const info = await api<{ pages: { width: number; rotation: number }[] }>(page, 'GET', `/api/nodes/${edited?.id}/pdf`);
+    const order = info.pages.map((entry) => `${entry.width}:${entry.rotation}`).join(' ');
+    if (order !== '595:0 420:0 500:90') throw new Error(`Falsche Seiten: ${order}`);
+    await item(page, 'Mietvertrag.pdf').click();
+    await item(page, 'Kapitel.pdf').click({ modifiers: ['Control'] });
+    await item(page, 'Kapitel.pdf').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'PDFs zusammenfügen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Kapitel.pdf nach unten' }).click();
+    await dialog.getByLabel('Name der neuen PDF').fill('Mappe für Lea');
+    await dialog.getByRole('button', { name: 'Zusammenfügen' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Mappe für Lea.pdf').waitFor();
+    const after = await api<{ items: { id: string; name: string }[] }>(page, 'GET', `/api/nodes/${folder}/children`);
+    const merged = after.items.find((entry) => entry.name === 'Mappe für Lea.pdf');
+    const pages = await api<{ pages: { width: number }[] }>(page, 'GET', `/api/nodes/${merged?.id}/pdf`);
+    const widths = pages.pages.map((entry) => entry.width).join(' ');
+    if (widths !== '595 420 595 500') throw new Error(`Falsche Reihenfolge: ${widths}`);
+  });
+
+  await step('Mehrere umbenennen und als ZIP packen', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Bergwanderung.jpg').click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('F2');
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Nummerieren' }).click();
+    await dialog.getByLabel('Name', { exact: true }).fill('Urlaub mit Mia');
+    await dialog.getByLabel('Reihenfolge').click();
+    await page.getByRole('option', { name: 'Nach Aufnahmedatum' }).click();
+    await dialog.getByText('Urlaub mit Mia 1.jpg', { exact: true }).waitFor();
+    await shot(page, 'rename');
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.keyboard.press('Escape');
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Kapitel.pdf').click();
+    await item(page, 'Kapitel (bearbeitet).pdf').click({ modifiers: ['Control'] });
+    await page.keyboard.press('F2');
+    await dialog.getByRole('tab', { name: 'Ersetzen' }).click();
+    await dialog.getByLabel('Suchen').fill('Kapitel');
+    await dialog.getByLabel('Ersetzen durch').fill('Teil');
+    await dialog.getByRole('button', { name: 'Umbenennen' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Teil.pdf').waitFor();
+    await item(page, 'Teil (bearbeitet).pdf').click();
+    await item(page, 'Teil.pdf').click({ modifiers: ['Control'] });
+    await item(page, 'Teil.pdf').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Als ZIP packen' }).click();
+    await dialog.getByLabel('Name des Archivs').fill('Teile für Lea');
+    await dialog.getByRole('button', { name: 'Packen' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Teile für Lea.zip').waitFor();
+  });
+
+  await step('Ordnerbeschreibung und Versionen vergleichen', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const readme = page.getByRole('region', { name: 'Beschreibung des Ordners' });
+    await readme.getByRole('heading', { name: 'Projekte' }).waitFor();
+    await item(page, 'Ideen.md').click();
+    await page.getByRole('tab', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'Version vergleichen' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText('Änderungen an „Ideen.md“').waitFor();
+    await dialog.getByText('| Hokkaido | Februar | Lea |').waitFor();
+    await dialog.getByRole('cell', { name: 'Entfernt' }).first().waitFor();
+    await shot(page, 'diff');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+  });
+
+  await step('Musik und Untertitel', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Musik').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Melodie.mp3').dblclick();
+    const player = page.getByRole('region', { name: 'Musik' });
+    await player.getByRole('button', { name: 'Pause' }).waitFor();
+    await player.getByRole('button', { name: 'Warteschlange' }).click();
+    await page.getByText('Ein Titel in der Warteschlange').waitFor();
+    await page.keyboard.press('Escape');
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await player.waitFor();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: 'Zeitraffer.de.srt',
+      mimeType: 'application/x-subrip',
+      buffer: Buffer.from('1\n00:00:00,200 --> 00:00:03,800\nAbendlicht über dem See\n'),
+    });
+    await item(page, 'Zeitraffer.de.srt').waitFor();
+    await item(page, 'Zeitraffer.mp4').dblclick();
+    await page.waitForFunction(() => {
+      const track = document.querySelector<HTMLTrackElement>('video track');
+      return track?.label === 'Deutsch' && track.track.mode === 'showing';
+    });
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await player.getByRole('button', { name: 'Abspielen' }).waitFor();
+    await player.getByRole('button', { name: 'Player schließen' }).click();
+    await player.waitFor({ state: 'detached' });
+  });
+
+  await step('Suchfilter, Ablauf und Beobachten', async () => {
+    await page.goto(`${base}/files`);
+    await page.getByRole('button', { name: 'Suchen mit Filtern' }).click();
+    await page.waitForURL('**/files/search**');
+    const filters = page.getByRole('group', { name: 'Filter' });
+    await filters.getByRole('button', { name: 'Geändert' }).click();
+    await page.getByRole('menuitem', { name: 'Letzte 30 Tage' }).click();
+    await filters.getByRole('button', { name: 'Bilder' }).click();
+    await item(page, 'Fuji am Morgen.jpg').waitFor();
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog
+      .getByRole('button', { name: /^Ablauf der Freigabe für/ })
+      .first()
+      .click();
+    await page.getByRole('menuitem', { name: 'Eine Woche' }).click();
+    await dialog
+      .getByText(/· bis /)
+      .first()
+      .waitFor();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Projekte').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await page.getByRole('button', { name: 'Ordner beobachten' }).click();
+    await page.locator('button[aria-label="Ordner beobachten"][aria-pressed="true"]').waitFor();
   });
 
   await step('Verwaltung', async () => {

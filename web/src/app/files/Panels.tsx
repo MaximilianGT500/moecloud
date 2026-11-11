@@ -274,14 +274,15 @@ export function UploadPanel({ uploader }: { uploader: Uploader }) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 48, transition: { duration: 0.2 } }}
           transition={{ duration: 0.42 }}
-          style={{ position: 'fixed', zIndex: 1300, right: 16, bottom: 0 }}
+          style={{ position: 'fixed', zIndex: 1300, right: 16, bottom: 0, pointerEvents: 'none' }}
         >
           <Box
             role="region"
             aria-label={t('Uploads')}
             sx={{
+              pointerEvents: 'auto',
               width: { xs: 'calc(100vw - 32px)', sm: 380 },
-              mb: { xs: 'calc(96px + env(safe-area-inset-bottom))', md: 2 },
+              mb: { xs: 'calc(96px + env(safe-area-inset-bottom) + var(--moe-player, 0px))', md: 'calc(16px + var(--moe-player, 0px))' },
               bgcolor: c.surfaceContainerHigh,
               borderRadius: `${radius.lg}px`,
               boxShadow: elevation[3],

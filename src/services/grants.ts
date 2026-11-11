@@ -16,30 +16,41 @@ export interface GrantRow {
   permission: 'view' | 'edit';
   created_by: number;
   created_at: number;
+  expires_at: number | null;
 }
 
 export const getGrant = (id: string) => one<GrantRow>('SELECT * FROM grants WHERE id = ?', id);
 
-export function shareWith(user: UserRow, nodeId: string, targetId: number, permission: 'view' | 'edit') {
+export function checkExpiry(expiresAt: number | null | undefined) {
+  if (expiresAt === null || expiresAt === undefined) return null;
+  if (expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
+  return Math.round(expiresAt);
+}
+
+export function shareWith(user: UserRow, nodeId: string, targetId: number, permission: 'view' | 'edit', expiresAt: number | null = null) {
+  const expires = checkExpiry(expiresAt);
   if (!settings.get('share.users')) throw forbidden('Teilen mit anderen Personen ist auf diesem Server ausgeschaltet');
   const { node } = requireAccess(user, nodeId, 'owner');
   if (!node.parent_id) throw badRequest('Den Hauptordner kannst du nicht teilen');
   const target = getUser(targetId);
   if (!target || target.disabled) throw notFound('Diese Person gibt es nicht');
   if (target.id === user.id) throw badRequest('Mit dir selbst musst du nichts teilen');
-  if (one('SELECT 1 FROM grants WHERE node_id = ? AND user_id = ?', nodeId, target.id)) {
+  const existing = one<GrantRow>('SELECT * FROM grants WHERE node_id = ? AND user_id = ?', nodeId, target.id);
+  if (existing && (existing.expires_at === null || existing.expires_at > Date.now())) {
     throw conflict('Mit {name} ist das schon geteilt', { name: target.name });
   }
+  if (existing) run('DELETE FROM grants WHERE id = ?', existing.id);
   const id = randomId();
   run(
-    'INSERT INTO grants (id, node_id, owner_id, user_id, permission, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO grants (id, node_id, owner_id, user_id, permission, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     nodeId,
     node.owner_id,
     target.id,
     permission,
     user.id,
-    Date.now()
+    Date.now(),
+    expires
   );
   publish([target.id], 'shared', { nodeId, by: user.name, name: node.name });
   record({
@@ -60,10 +71,11 @@ export function shareWith(user: UserRow, nodeId: string, targetId: number, permi
   return getGrant(id)!;
 }
 
-export function updateGrant(user: UserRow, id: string, permission: 'view' | 'edit') {
+export function updateGrant(user: UserRow, id: string, change: { permission?: 'view' | 'edit'; expiresAt?: number | null }) {
   const grant = getGrant(id);
   if (!grant || grant.owner_id !== user.id) throw notFound('Diese Freigabe gibt es nicht mehr');
-  run('UPDATE grants SET permission = ? WHERE id = ?', permission, id);
+  const expires = change.expiresAt === undefined ? grant.expires_at : checkExpiry(change.expiresAt);
+  run('UPDATE grants SET permission = ?, expires_at = ? WHERE id = ?', change.permission ?? grant.permission, expires, id);
   publish([grant.user_id], 'change', { folders: [grant.node_id] });
   return getGrant(id)!;
 }
@@ -97,17 +109,45 @@ export function presentGrant(grant: GrantRow) {
     nodeId: grant.node_id,
     permission: grant.permission,
     createdAt: grant.created_at,
+    expiresAt: grant.expires_at,
     user: target ? { id: target.id, name: target.name, username: target.username, initials: initials(target.name) } : null,
     group: null,
   };
 }
 
 export function sharedWithMe(user: UserRow) {
-  return all<GrantRow & { node: string }>('SELECT * FROM grants WHERE user_id = ? ORDER BY created_at DESC', user.id)
+  return all<GrantRow & { node: string }>(
+    'SELECT * FROM grants WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC',
+    user.id,
+    Date.now()
+  )
     .map((grant) => ({ grant, node: getNode(grant.node_id) }))
     .filter((entry): entry is { grant: GrantRow & { node: string }; node: NodeRow } => Boolean(entry.node && !entry.node.trashed_at));
 }
 
 export function sharedByMe(user: UserRow) {
   return all<GrantRow>('SELECT * FROM grants WHERE owner_id = ? ORDER BY created_at DESC', user.id);
+}
+
+export function expireGrants() {
+  const now = Date.now();
+  const expired = all<GrantRow>('SELECT * FROM grants WHERE expires_at IS NOT NULL AND expires_at <= ?', now);
+  for (const grant of expired) {
+    run('DELETE FROM grants WHERE id = ?', grant.id);
+    const node = getNode(grant.node_id);
+    const target = getUser(grant.user_id);
+    if (node) {
+      record({
+        owner: grant.owner_id,
+        actor: null,
+        node: node.id,
+        parent: node.parent_id,
+        action: 'unshare_user',
+        name: node.name,
+        details: { with: target?.name ?? '', expired: true },
+      });
+    }
+    publish([grant.user_id, grant.owner_id], 'change', { folders: [grant.node_id], shared: true });
+  }
+  return expired.length;
 }

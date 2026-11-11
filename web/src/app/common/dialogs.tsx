@@ -46,6 +46,7 @@ interface ColorRequest {
   kind: 'color';
   title: string;
   value: string | null;
+  required?: boolean;
   options: { key: string; label: string; color: string }[];
   resolve: (value: string | null | undefined) => void;
 }
@@ -195,7 +196,7 @@ export function DialogHost() {
               aria-label={t('Farbe')}
               sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 1.5, pt: 0.5 }}
             >
-              {[{ key: '', label: t('Keine Farbe'), color: '' }, ...request.options].map((option) => {
+              {[...(request.required ? [] : [{ key: '', label: t('Keine Farbe'), color: '' }]), ...request.options].map((option) => {
                 const active = (request.value ?? '') === option.key;
                 return (
                   <Tooltip key={option.key || 'none'} title={option.label}>

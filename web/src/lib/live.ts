@@ -9,7 +9,7 @@ let greeted = false;
 function connect() {
   if (source || typeof EventSource === 'undefined') return;
   source = new EventSource('/api/events');
-  for (const name of ['change', 'shared', 'notification', 'comment']) {
+  for (const name of ['change', 'shared', 'notification', 'comment', 'tags', 'albums']) {
     source.addEventListener(name, (event) => {
       let data: Record<string, unknown> = {};
       try {

@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
+import IconButton from '@mui/material/IconButton';
 import Skeleton from '@mui/material/Skeleton';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import PhotoLibraryRounded from '@mui/icons-material/PhotoLibraryRounded';
-import PlayCircleRounded from '@mui/icons-material/PlayCircleRounded';
 import { api, errorText } from '../../lib/api';
-import { formatDateTime, formatMonth } from '../../lib/format';
+import { formatMonth } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
-import { c, curve, radius } from '../../theme/tokens';
+import { c, radius } from '../../theme/tokens';
 import { EmptyState } from '../common/bits';
 import type { Action } from './ActionMenu';
-import { Thumb, type Item } from './kinds';
+import { download } from './actions';
+import { AlbumPicker, PhotoGrid } from './Albums';
+import type { Item } from './kinds';
+import { SelectionBar } from './Panels';
 import { Viewer } from './Viewer';
 
 interface Cursor {
@@ -40,6 +45,8 @@ export function Photos({ actions, onChanged }: { actions: (item: Item) => Action
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [picking, setPicking] = useState<Item[] | null>(null);
   const [revision, setRevision] = useState(0);
   const sentinel = useRef<HTMLDivElement>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,9 +148,32 @@ export function Photos({ actions, onChanged }: { actions: (item: Item) => Action
     else groups.push({ key, time: timeOf(item), items: [item] });
   }
   const index = viewer ? items.findIndex((item) => item.id === viewer) : -1;
+  const chosen = items.filter((item) => selected.has(item.id));
+  const toggle = (item: Item) => {
+    const next = new Set(selected);
+    if (next.has(item.id)) next.delete(item.id);
+    else next.add(item.id);
+    setSelected(next);
+  };
 
   return (
     <Box sx={{ px: { xs: 1, md: 2 }, pb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {chosen.length > 0 && (
+        <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 2, mb: -1.5 }}>
+          <SelectionBar count={chosen.length} onClear={() => setSelected(new Set())}>
+            <Tooltip title={t('Zum Album hinzufügen')}>
+              <IconButton aria-label={t('Zum Album hinzufügen')} onClick={() => setPicking(chosen)}>
+                <AddPhotoAlternateRounded />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t('Herunterladen')}>
+              <IconButton aria-label={t('Herunterladen')} onClick={() => download(chosen)}>
+                <DownloadRounded />
+              </IconButton>
+            </Tooltip>
+          </SelectionBar>
+        </Box>
+      )}
       {groups.map((group) => (
         <Box component="section" key={group.key} aria-labelledby={`month-${group.key}`}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, px: 0.5, mb: 1.25 }}>
@@ -154,44 +184,13 @@ export function Photos({ actions, onChanged }: { actions: (item: Item) => Action
               {tn(group.items.length, '{count} Element', '{count} Elemente')}
             </Typography>
           </Box>
-          <Box
-            role="list"
-            sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(3, 1fr)', sm: 'repeat(auto-fill, minmax(150px, 1fr))' }, gap: 0.5 }}
-          >
-            {group.items.map((item) => (
-              <ButtonBase
-                key={item.id}
-                role="listitem"
-                aria-label={t('{name}, aufgenommen {date}', { name: item.name, date: formatDateTime(timeOf(item)) })}
-                onClick={() => setViewer(item.id)}
-                sx={{
-                  position: 'relative',
-                  aspectRatio: '1',
-                  overflow: 'hidden',
-                  borderRadius: `${radius.sm}px`,
-                  bgcolor: c.surfaceContainerHighest,
-                  '& img': { transition: `transform 280ms ${curve.standard}` },
-                  '&:hover img': { transform: 'scale(1.04)' },
-                  '&.Mui-focusVisible': { outline: `3px solid ${c.primary}`, outlineOffset: 2 },
-                }}
-              >
-                <Thumb item={item} size="100%" />
-                {item.kind === 'video' && (
-                  <PlayCircleRounded
-                    aria-hidden
-                    sx={{
-                      position: 'absolute',
-                      right: 6,
-                      bottom: 6,
-                      fontSize: 26,
-                      color: '#fff',
-                      filter: 'drop-shadow(0 1px 3px rgb(0 0 0 / 0.6))',
-                    }}
-                  />
-                )}
-              </ButtonBase>
-            ))}
-          </Box>
+          <PhotoGrid
+            items={group.items}
+            selected={selected}
+            onToggle={toggle}
+            onOpen={(item) => setViewer(item.id)}
+            label={formatMonth(group.time)}
+          />
         </Box>
       ))}
       <Box ref={sentinel} sx={{ display: 'grid', placeItems: 'center', minHeight: 48 }}>
@@ -208,9 +207,13 @@ export function Photos({ actions, onChanged }: { actions: (item: Item) => Action
         items={items}
         index={index >= 0 ? index : null}
         onIndex={(position) => setViewer(position === null ? null : items[position].id)}
-        actions={actions}
+        actions={(item) => [
+          ...actions(item),
+          { key: 'album', label: t('Zum Album hinzufügen'), icon: <AddPhotoAlternateRounded />, onClick: () => setPicking([item]) },
+        ]}
         onSaved={onChanged}
       />
+      {picking && <AlbumPicker items={picking} onClose={() => setPicking(null)} onDone={() => setSelected(new Set())} />}
     </Box>
   );
 }

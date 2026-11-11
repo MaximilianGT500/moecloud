@@ -18,6 +18,8 @@ import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
+import SellOutlined from '@mui/icons-material/SellOutlined';
+import SellRounded from '@mui/icons-material/SellRounded';
 import StarRounded from '@mui/icons-material/StarRounded';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
@@ -42,7 +44,7 @@ import { SiteNotice } from './SiteNotice';
 
 export const RAIL = 88;
 
-export type Destination = 'files' | 'photos' | 'recent' | 'starred' | 'shared' | 'trash' | 'storage' | 'admin' | 'account';
+export type Destination = 'files' | 'photos' | 'recent' | 'starred' | 'tags' | 'shared' | 'trash' | 'storage' | 'admin' | 'account';
 
 interface NavItem {
   key: Destination;
@@ -59,6 +61,7 @@ function railItems(user: SessionUser): NavItem[] {
     { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
     { key: 'recent', href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleOutlined />, activeIcon: <ScheduleRounded /> },
     { key: 'starred', href: '/files/starred', label: t('Favoriten'), icon: <StarOutlineRounded />, activeIcon: <StarRounded /> },
+    { key: 'tags', href: '/files/tags', label: t('Schlagwörter'), icon: <SellOutlined />, activeIcon: <SellRounded /> },
     { key: 'shared', href: '/files/shared', label: t('Geteilt'), icon: <PeopleOutlined />, activeIcon: <PeopleRounded /> },
     { key: 'trash', href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlined />, activeIcon: <DeleteRounded /> },
     ...(user.role === 'admin'
@@ -112,7 +115,7 @@ function NavButton({
       sx={{
         flexDirection: 'column',
         gap: 0.5,
-        width: compact ? 'auto' : 72,
+        width: compact ? 'auto' : 84,
         flex: compact ? 1 : 'none',
         minWidth: 0,
         py: compact ? 1.5 : 0.5,
@@ -149,7 +152,7 @@ function NavButton({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          px: 0.5,
+          px: compact ? 0.5 : 0,
         }}
       >
         {item.label}
@@ -416,7 +419,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
             gap: 2,
             px: { md: 2 },
             pl: { md: 0 },
-            pb: { xs: 'calc(80px + env(safe-area-inset-bottom))', md: 2 },
+            pb: { xs: 'calc(80px + env(safe-area-inset-bottom) + var(--moe-player, 0px))', md: 'calc(16px + var(--moe-player, 0px))' },
           }}
         >
           <Box
@@ -444,7 +447,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
           sx={{
             position: 'fixed',
             right: 16,
-            bottom: 'calc(96px + env(safe-area-inset-bottom))',
+            bottom: 'calc(96px + env(safe-area-inset-bottom) + var(--moe-player, 0px))',
             zIndex: 1150,
             display: { xs: 'block', md: 'none' },
           }}

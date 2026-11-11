@@ -365,6 +365,62 @@ const MIGRATIONS = [
   ALTER TABLE links ADD COLUMN max_downloads INTEGER;
   ALTER TABLE links ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  CREATE TABLE tags (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (owner_id, name_key)
+  );
+
+  CREATE TABLE node_tags (
+    tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (tag_id, node_id)
+  );
+  CREATE INDEX node_tags_node ON node_tags(node_id);
+
+  CREATE TABLE albums (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    cover_id TEXT REFERENCES nodes(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX albums_owner ON albums(owner_id);
+
+  CREATE TABLE album_items (
+    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (album_id, node_id)
+  );
+  CREATE INDEX album_items_node ON album_items(node_id);
+  CREATE TABLE positions (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    sha256 TEXT NOT NULL,
+    seconds REAL NOT NULL,
+    duration REAL NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, node_id)
+  );
+  CREATE INDEX positions_node ON positions(node_id);
+  ALTER TABLE grants ADD COLUMN expires_at INTEGER;
+  ALTER TABLE group_grants ADD COLUMN expires_at INTEGER;
+  CREATE TABLE watches (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, node_id)
+  );
+  CREATE INDEX watches_node ON watches(node_id);
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

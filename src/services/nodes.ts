@@ -69,15 +69,18 @@ export function resolveAccess(user: UserRow, nodeId: string): Access | null {
   if (!node) return null;
   if (node.owner_id === user.id) return { node, role: 'owner', rootId: user.root_id };
   const grants = all<{ permission: 'view' | 'edit'; node_id: string; depth: number }>(
-    `${CHAIN} SELECT g.permission, g.node_id, c.depth FROM chain c JOIN grants g ON g.node_id = c.id WHERE g.user_id = ?
+    `${CHAIN} SELECT g.permission, g.node_id, c.depth FROM chain c JOIN grants g ON g.node_id = c.id
+     WHERE g.user_id = ? AND (g.expires_at IS NULL OR g.expires_at > ?)
      UNION ALL
      SELECT gg.permission, gg.node_id, c.depth FROM chain c
      JOIN group_grants gg ON gg.node_id = c.id
      JOIN group_members m ON m.group_id = gg.group_id
-     WHERE m.user_id = ?`,
+     WHERE m.user_id = ? AND (gg.expires_at IS NULL OR gg.expires_at > ?)`,
     nodeId,
     user.id,
-    user.id
+    Date.now(),
+    user.id,
+    Date.now()
   );
   if (grants.length === 0) return null;
   let role: Role = 'view';
@@ -175,10 +178,13 @@ export function audience(nodeIds: Iterable<string | null>): number[] {
     const owner = one<{ owner_id: number }>('SELECT owner_id FROM nodes WHERE id = ?', id);
     if (owner) users.add(owner.owner_id);
     for (const row of all<{ user_id: number }>(
-      `${CHAIN} SELECT g.user_id FROM chain c JOIN grants g ON g.node_id = c.id
+      `${CHAIN} SELECT g.user_id FROM chain c JOIN grants g ON g.node_id = c.id WHERE g.expires_at IS NULL OR g.expires_at > ?
        UNION
-       SELECT m.user_id FROM chain c JOIN group_grants gg ON gg.node_id = c.id JOIN group_members m ON m.group_id = gg.group_id`,
-      id
+       SELECT m.user_id FROM chain c JOIN group_grants gg ON gg.node_id = c.id JOIN group_members m ON m.group_id = gg.group_id
+       WHERE gg.expires_at IS NULL OR gg.expires_at > ?`,
+      id,
+      Date.now(),
+      Date.now()
     )) {
       users.add(row.user_id);
     }
@@ -249,6 +255,50 @@ export function rename(user: UserRow, id: string, rawName: unknown) {
   record({ owner: node.owner_id, actor: user.id, node: id, parent: node.parent_id, action: 'rename', name, details: { from: node.name } });
   changed([node.parent_id]);
   return getNode(id)!;
+}
+
+export function renameMany(user: UserRow, changes: { id: string; name: unknown }[]) {
+  if (new Set(changes.map((change) => change.id)).size !== changes.length) throw badRequest('Jedes Element darf nur einmal vorkommen');
+  const planned = changes
+    .map((change) => ({ node: requireMutable(user, change.id).node, name: cleanName(change.name) }))
+    .filter((entry) => entry.name !== entry.node.name);
+  const parents = new Map<string, typeof planned>();
+  for (const entry of planned) parents.set(entry.node.parent_id!, [...(parents.get(entry.node.parent_id!) ?? []), entry]);
+  for (const [parentId, entries] of parents) {
+    const moving = new Set(entries.map((entry) => entry.node.id));
+    const occupied = new Set(children(parentId).flatMap((child) => (moving.has(child.id) ? [] : [child.name_key])));
+    for (const entry of entries) {
+      const key = nameKey(entry.name);
+      if (occupied.has(key)) throw conflict('Hier gibt es schon etwas mit dem Namen „{name}“', { name: entry.name });
+      occupied.add(key);
+    }
+  }
+  const now = Date.now();
+  tx(() => {
+    for (const entry of planned) run('UPDATE nodes SET name_key = ? WHERE id = ?', `/${entry.node.id}`, entry.node.id);
+    for (const entry of planned) {
+      run(
+        `UPDATE nodes SET name = ?, name_key = ?, mime = CASE WHEN type = 'file' THEN ? ELSE mime END, updated_at = ?, updated_by = ?, etag = etag + 1 WHERE id = ?`,
+        entry.name,
+        nameKey(entry.name),
+        mimeOf(entry.name),
+        now,
+        user.id,
+        entry.node.id
+      );
+      record({
+        owner: entry.node.owner_id,
+        actor: user.id,
+        node: entry.node.id,
+        parent: entry.node.parent_id,
+        action: 'rename',
+        name: entry.name,
+        details: { from: entry.node.name },
+      });
+    }
+  });
+  changed([...parents.keys()]);
+  return changes.map((change) => getNode(change.id)!);
 }
 
 export function move(user: UserRow, ids: string[], targetId: string) {
@@ -522,32 +572,79 @@ function contentQuery(text: string) {
   return words.map((word, index) => `"${word}"${index === words.length - 1 && word.length >= 2 ? '*' : ''}`).join(' ');
 }
 
-export function search(user: UserRow, query: string, kind?: string, content = true): Found[] {
+export interface SearchFilters {
+  kind?: string;
+  after?: number;
+  before?: number;
+  minSize?: number;
+  maxSize?: number;
+  tag?: string;
+}
+
+function searchFilter(user: UserRow, filters: SearchFilters) {
+  const parts: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters.kind && KIND_FILTERS[filters.kind]) parts.push(KIND_FILTERS[filters.kind]);
+  if (filters.after !== undefined) {
+    parts.push('n.modified_at >= ?');
+    params.push(filters.after);
+  }
+  if (filters.before !== undefined) {
+    parts.push('n.modified_at < ?');
+    params.push(filters.before);
+  }
+  if (filters.minSize !== undefined) {
+    parts.push("n.type = 'file' AND n.size >= ?");
+    params.push(filters.minSize);
+  }
+  if (filters.maxSize !== undefined) {
+    parts.push("n.type = 'file' AND n.size < ?");
+    params.push(filters.maxSize);
+  }
+  if (filters.tag) {
+    parts.push('n.id IN (SELECT nt.node_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id WHERE nt.tag_id = ? AND t.owner_id = ?)');
+    params.push(filters.tag, user.id);
+  }
+  return { sql: parts.map((part) => `AND ${part}`).join(' '), params, active: parts.length > 0 };
+}
+
+export function search(user: UserRow, query: string, filters: SearchFilters = {}, content = true): Found[] {
   const text = query.trim().slice(0, 200);
-  if (!text) return [];
-  const filter = kind && KIND_FILTERS[kind] ? `AND ${KIND_FILTERS[kind]}` : '';
+  const filter = searchFilter(user, filters);
+  if (!text) {
+    if (!filter.active) return [];
+    return all<Found>(
+      `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
+       WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+       ORDER BY n.modified_at DESC LIMIT 200`,
+      user.id,
+      ...filter.params
+    );
+  }
   let byName: Found[];
   if ([...text].length >= 3) {
     byName = all<Found>(
       `SELECT n.*, p.name AS parent_name FROM nodes_fts f
        JOIN nodes n ON n.seq = f.rowid
        LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE nodes_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter}
+       WHERE nodes_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
        ORDER BY rank LIMIT 100`,
       `"${text.replace(/"/g, '""')}"`,
-      user.id
+      user.id,
+      ...filter.params
     );
   } else {
     const like = `%${text.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
     byName = all<Found>(
       `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.name LIKE ? ESCAPE '\\' ${filter}
+       WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.name LIKE ? ESCAPE '\\' ${filter.sql}
        ORDER BY n.updated_at DESC LIMIT 100`,
       user.id,
-      like
+      like,
+      ...filter.params
     );
   }
-  const match = content && kind !== 'folder' ? contentQuery(text) : null;
+  const match = content && filters.kind !== 'folder' ? contentQuery(text) : null;
   if (!match) return byName;
   let inside: Found[] = [];
   try {
@@ -557,10 +654,11 @@ export function search(user: UserRow, query: string, kind?: string, content = tr
        JOIN blob_text b ON b.id = f.rowid
        JOIN nodes n ON n.sha256 = b.sha256
        LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE blob_text_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter}
+       WHERE blob_text_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
        ORDER BY rank LIMIT 60`,
       match,
-      user.id
+      user.id,
+      ...filter.params
     );
   } catch {
     inside = [];
@@ -600,6 +698,7 @@ export interface Presented {
   thumb: boolean;
   rendition: boolean;
   starred: boolean;
+  tags: string[];
   shared: boolean;
   role: Role;
   owner: { id: number; name: string } | null;
@@ -610,6 +709,8 @@ export interface Presented {
   height: number | null;
   location?: string | null;
   snippet?: string | null;
+  progress: number | null;
+  watching: boolean;
 }
 
 type BlobInfo = Pick<BlobRow, 'sha256' | 'thumb' | 'meta' | 'scan_status' | 'taken_at' | 'width' | 'height'>;
@@ -637,6 +738,29 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       )
     ).map((row) => row.node_id)
   );
+  const tagged = new Map<string, string[]>();
+  for (const row of inChunks(ids, (chunk) =>
+    all<{ node_id: string; tag_id: string }>(
+      `SELECT nt.node_id, nt.tag_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id
+       WHERE t.owner_id = ? AND nt.node_id IN (${placeholders(chunk.length)}) ORDER BY t.name_key`,
+      viewer.id,
+      ...chunk
+    )
+  )) {
+    tagged.set(row.node_id, [...(tagged.get(row.node_id) ?? []), row.tag_id]);
+  }
+  const files = new Map(nodes.filter((node) => node.sha256).map((node) => [node.id, node.sha256]));
+  const progress = new Map(
+    inChunks([...files.keys()], (chunk) =>
+      all<{ node_id: string; sha256: string; seconds: number; duration: number }>(
+        `SELECT node_id, sha256, seconds, duration FROM positions WHERE user_id = ? AND node_id IN (${placeholders(chunk.length)})`,
+        viewer.id,
+        ...chunk
+      )
+    )
+      .filter((row) => files.get(row.node_id) === row.sha256 && row.duration > 0)
+      .map((row) => [row.node_id, Math.min(1, Math.round((row.seconds / row.duration) * 1000) / 1000)])
+  );
   const shared = new Set(
     inChunks(ids, (chunk) =>
       all<{ node_id: string }>(
@@ -657,6 +781,15 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
         ...chunk
       )
     ).map((row) => [row.parent_id, row.count])
+  );
+  const watching = new Set(
+    inChunks(folderIds, (chunk) =>
+      all<{ node_id: string }>(
+        `SELECT node_id FROM watches WHERE user_id = ? AND node_id IN (${placeholders(chunk.length)})`,
+        viewer.id,
+        ...chunk
+      )
+    ).map((row) => row.node_id)
   );
   const blobs = blobInfo(nodes.filter((node) => node.sha256).map((node) => node.sha256!));
   const owners = new Map<number, string>();
@@ -682,6 +815,7 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       version: `${node.etag}${node.sha256 ? `-${node.sha256.slice(0, 12)}` : ''}`,
       ...previews(node, blob),
       starred: stars.has(node.id),
+      tags: tagged.get(node.id) ?? [],
       shared: shared.has(node.id),
       role: typeof role === 'function' ? role(node) : role,
       owner: node.owner_id === viewer.id ? null : { id: node.owner_id, name: owners.get(node.owner_id) ?? '' },
@@ -692,6 +826,8 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       height: blob?.height ?? null,
       location: 'parent_name' in node ? ((node as { parent_name: string | null }).parent_name ?? null) : undefined,
       snippet: 'snippet' in node ? ((node as { snippet?: string | null }).snippet ?? null) : undefined,
+      progress: progress.get(node.id) ?? null,
+      watching: watching.has(node.id),
     };
   });
 }

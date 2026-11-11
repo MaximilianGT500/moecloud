@@ -56,6 +56,7 @@ interface MailPrefs {
   mailShares: boolean;
   mailUploads: boolean;
   mailComments: boolean;
+  mailWatch: boolean;
   mailAdmin: boolean;
 }
 
@@ -505,6 +506,11 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
       key: 'mailComments',
       label: t('Bei neuen Kommentaren'),
       text: t('Kommentare an Dateien, die dir gehören, die mit dir geteilt sind oder die du kommentiert hast'),
+    },
+    {
+      key: 'mailWatch',
+      label: t('Bei Änderungen in beobachteten Ordnern'),
+      text: t('Für Ordner, bei denen du „Beobachten“ eingeschaltet hast'),
     },
   ];
   if (account.user.role === 'admin') {
