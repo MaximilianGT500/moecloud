@@ -4,7 +4,7 @@ import { buildApp } from './app.ts';
 import { ensureDirs } from './services/blobs.ts';
 import { startJobs } from './services/jobs.ts';
 import { detectTools } from './services/media.ts';
-import { startProcessing } from './services/processing.ts';
+import { refreshPreviews, startProcessing } from './services/processing.ts';
 import * as settings from './services/settings.ts';
 import { isSetUp, setupCode } from './services/setup.ts';
 
@@ -20,6 +20,9 @@ const missing = Object.entries(found)
   .filter(([, available]) => !available)
   .map(([name]) => name);
 if (missing.length) app.log.info(`Ohne ${missing.join(', ')} gibt es weniger Vorschaubilder und keine Volltextsuche in PDFs`);
+
+const refreshed = refreshPreviews();
+if (refreshed?.pending) app.log.info(`${refreshed.pending} Dateien bekommen im Hintergrund neue Vorschauen`);
 
 process.on('unhandledRejection', (reason) => app.log.error(reason, 'Unbehandelter Fehler'));
 

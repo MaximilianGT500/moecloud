@@ -64,6 +64,14 @@ export const formatDateTime = (time: number | null | undefined) =>
 export const formatDay = (time: number | null | undefined) =>
   time ? new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(new Date(time)) : '';
 
+export const dayValue = (time: number | null) => {
+  if (!time) return '';
+  const date = new Date(time);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+export const endOfDay = (value: string) => (value ? new Date(`${value}T23:59:59`).getTime() : null);
+
 export function formatRelative(time: number) {
   const seconds = Math.round((time - Date.now()) / 1000);
   const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });

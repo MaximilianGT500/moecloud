@@ -25,7 +25,18 @@ import { destroyUserSessions, listSessions } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { transferFiles } from '../services/transfer.ts';
 import { updateStatus } from '../services/updates.ts';
-import { adminCount, adminUser, createUser, deleteUser, getUser, initials, keyOf, listUsers, usageOf } from '../services/users.ts';
+import {
+  adminCount,
+  adminUser,
+  createUser,
+  deleteUser,
+  getUser,
+  initials,
+  keyOf,
+  listUsers,
+  preferredLanguage,
+  usageOf,
+} from '../services/users.ts';
 import { runMaintenance } from '../services/jobs.ts';
 
 const createSchema = z.object({
@@ -219,11 +230,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const transferTo = request.query.transfer ? getUser(Number(request.query.transfer)) : null;
     if (request.query.transfer && (!transferTo || transferTo.id === user.id)) throw badRequest('Wähle eine andere Person für die Dateien');
     if (transferTo) {
-      const folder = transferFiles(
-        user,
-        transferTo,
-        t(transferTo.language ?? settings.get('site.language'), 'Von {name}', { name: user.name })
-      );
+      const folder = transferFiles(user, transferTo, t(preferredLanguage(transferTo), 'Von {name}', { name: user.name }));
       audit('files_transferred', {
         actor: actor.id,
         subject: transferTo.id,

@@ -12,7 +12,7 @@ body:
     attributes:
       label: Version
       description: Steht unten links in der Seitenleiste und unter Admin › System.
-      placeholder: 1.0.0
+      placeholder: 1.2.0
     validations:
       required: true
   - type: dropdown

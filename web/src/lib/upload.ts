@@ -231,6 +231,16 @@ export function entriesFromInput(files: FileList | File[]): UploadEntry[] {
   });
 }
 
+const pad = (value: number) => String(value).padStart(2, '0');
+
+export function entriesFromPaste(transfer: DataTransfer | null, now = new Date()): UploadEntry[] {
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}.${pad(now.getSeconds())}`;
+  return [...(transfer?.files ?? [])].map((file) => {
+    const generic = /^image(\.[a-z0-9]+)$/i.exec(file.name);
+    return generic ? { file, name: `${t('Eingefügtes Bild')} ${stamp}${generic[1].toLowerCase()}` } : { file };
+  });
+}
+
 export function entriesFromDrop(transfer: DataTransfer): Promise<UploadEntry[]> {
   const roots = [...transfer.items]
     .filter((item) => item.kind === 'file')

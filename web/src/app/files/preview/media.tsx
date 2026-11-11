@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type WheelEvent as ReactWheelEvent,
+} from 'react';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Slider from '@mui/material/Slider';
@@ -9,7 +16,7 @@ import { api } from '../../../lib/api';
 import { formatDuration } from '../../../lib/format';
 import { t } from '../../../lib/i18n';
 import { c, elevation, fonts, radius } from '../../../theme/tokens';
-import { contentUrl, thumbUrl, type Item } from '../kinds';
+import { contentUrl, previewUrl, thumbUrl, type Item } from '../kinds';
 import { Fallback } from './Fallback';
 
 export interface NodeMeta {
@@ -36,18 +43,30 @@ export function useMeta(item: Item | null, base = '/api') {
   return state?.key === key ? state.meta : null;
 }
 
-export function ImagePreview({ item, base, inline }: { item: Item; base: string; inline?: boolean }) {
+interface MediaProps {
+  item: Item;
+  base: string;
+  inline?: boolean;
+  action?: ReactNode;
+}
+
+export function ImagePreview({ item, base, inline, action }: MediaProps) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const key = item.id + item.version;
   const [current, setCurrent] = useState(key);
   if (current !== key) {
     setCurrent(key);
     setZoom(1);
     setOffset({ x: 0, y: 0 });
+    setState('loading');
   }
+  const waiting = Boolean(item.rendition) && state === 'loading';
+
+  if (state === 'failed') return <Fallback item={item} text={t('Diese Datei lässt sich nicht anzeigen.')} action={action} />;
 
   const wheel = (event: ReactWheelEvent) => {
     if (inline) return;
@@ -86,8 +105,10 @@ export function ImagePreview({ item, base, inline }: { item: Item; base: string;
         setOffset({ x: 0, y: 0 });
       }}
       sx={{
+        position: 'relative',
         width: '100%',
         height: '100%',
+        minHeight: waiting ? 160 : undefined,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -96,19 +117,32 @@ export function ImagePreview({ item, base, inline }: { item: Item; base: string;
         touchAction: zoom > 1 ? 'none' : 'auto',
       }}
     >
+      {waiting && (
+        <CircularProgress
+          aria-label={t('Lädt')}
+          sx={{
+            position: 'absolute',
+            animation: 'moe-appear 200ms 400ms both',
+            '@keyframes moe-appear': { from: { opacity: 0 }, to: { opacity: 1 } },
+          }}
+        />
+      )}
       <Box
         component="img"
-        src={contentUrl(item, base)}
+        src={item.rendition ? previewUrl(item, base) : contentUrl(item, base)}
         alt={item.name}
         draggable={false}
+        onLoad={() => setState('ready')}
+        onError={() => setState('failed')}
         sx={{
           maxWidth: '100%',
           maxHeight: inline ? '70vh' : '100%',
           objectFit: 'contain',
           borderRadius: `${radius.md}px`,
           boxShadow: elevation[5],
+          opacity: waiting ? 0 : 1,
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-          transition: dragging ? 'none' : 'transform 160ms cubic-bezier(0.2, 0, 0, 1)',
+          transition: dragging ? 'none' : 'transform 160ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms',
           userSelect: 'none',
         }}
       />
@@ -116,8 +150,73 @@ export function ImagePreview({ item, base, inline }: { item: Item; base: string;
   );
 }
 
-export function AudioPreview({ item, base }: { item: Item; base: string }) {
+export function CoverPreview({ item, base, inline, action }: MediaProps) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Fallback item={item} text={t('Für diese Datei gibt es keine Vorschau.')} action={action} />;
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 2,
+        maxHeight: '100%',
+        overflowY: 'auto',
+        textAlign: 'center',
+        px: 2,
+        py: 1,
+      }}
+    >
+      <Box
+        component="img"
+        src={previewUrl(item, base)}
+        alt={t('Vorschaubild von „{name}“', { name: item.name })}
+        draggable={false}
+        onError={() => setFailed(true)}
+        sx={{
+          maxWidth: '100%',
+          maxHeight: inline ? '55vh' : '62vh',
+          objectFit: 'contain',
+          borderRadius: `${radius.md}px`,
+          boxShadow: elevation[5],
+          bgcolor: c.surfaceContainerHighest,
+        }}
+      />
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant, maxWidth: 480 }}>
+        {t('MoeCloud zeigt hier das Vorschaubild aus der Datei.')}
+      </Typography>
+      {action}
+    </Box>
+  );
+}
+
+export function VideoPreview({ item, base, inline, action }: MediaProps) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Fallback item={item} text={t('Dein Browser kann dieses Video nicht abspielen.')} action={action} />;
+  return (
+    <Box
+      component="video"
+      src={contentUrl(item, base)}
+      controls
+      autoPlay={!inline}
+      playsInline
+      poster={item.thumb ? thumbUrl(item, base) : undefined}
+      onError={() => setFailed(true)}
+      sx={{
+        maxWidth: '100%',
+        maxHeight: inline ? '70vh' : '100%',
+        width: inline ? '100%' : undefined,
+        borderRadius: `${radius.md}px`,
+        bgcolor: c.scrim,
+        outline: 'none',
+      }}
+    />
+  );
+}
+
+export function AudioPreview({ item, base, action }: MediaProps) {
   const meta = useMeta(item, base);
+  const [failed, setFailed] = useState(false);
   const tags = meta?.meta ?? {};
   const title = typeof tags.title === 'string' ? tags.title : item.name;
   const line = [tags.artist, tags.album, tags.year].filter(Boolean).join(' · ');
@@ -156,7 +255,23 @@ export function AudioPreview({ item, base }: { item: Item; base: string }) {
           </Typography>
         )}
       </Box>
-      <Box component="audio" src={contentUrl(item, base)} controls autoPlay sx={{ width: 'min(420px, 90vw)' }} />
+      {failed ? (
+        <>
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant, maxWidth: 420 }}>
+            {t('Dein Browser kann diese Audiodatei nicht abspielen.')}
+          </Typography>
+          {action}
+        </>
+      ) : (
+        <Box
+          component="audio"
+          src={contentUrl(item, base)}
+          controls
+          autoPlay
+          onError={() => setFailed(true)}
+          sx={{ width: 'min(420px, 90vw)' }}
+        />
+      )}
     </Box>
   );
 }

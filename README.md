@@ -61,11 +61,11 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 
 ## Funktionen
 
-- **Hochladen** per Drag & Drop oder über „Neu“, einzelne Dateien und ganze Ordner samt Unterordnern
+- **Hochladen** per Drag & Drop, über „Neu“ oder mit Strg+V aus der Zwischenablage, einzelne Dateien und ganze Ordner samt Unterordnern
 - **Große Dateien** gehen in Teilen von 16 MB hoch. Bricht die Verbindung ab, setzt der Upload an derselben Stelle wieder an
-- **Vorschau** für Bilder, Videos, Audio, PDFs, Markdown, Code mit Hervorhebung, CSV, JSON, Word, Excel, ZIP-Archive und Schriften. Textdateien bearbeitest du direkt im Browser, Bilder drehst du mit einem Klick
+- **Vorschau** für Bilder, Videos, Audio, PDFs, Markdown, Code mit Hervorhebung, CSV, JSON, Word, Excel, ZIP-Archive und Schriften. Dazu gehören Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF und Photoshop-Dateien. Textdateien bearbeitest du direkt im Browser, Bilder drehst du mit einem Klick
 - **ZIP-Archive entpacken** direkt in der Cloud, mit Virenscan für jede Datei darin
-- **Vorschaubilder** für Fotos, Videos, PDFs und Musik mit Cover
+- **Vorschaubilder** für Fotos, Rohdateien, Videos, PDFs, Musik mit Cover und Dokumente, die ein Vorschaubild mitbringen, etwa aus LibreOffice, Keynote oder als E-Book
 - **Fotos** zeigt alle Bilder und Videos nach Aufnahmedatum, die Bildansicht Kamera, Objektiv und Belichtung, dazu eine Diashow
 - **Volltextsuche** in Texten, PDFs und Office-Dokumenten, mit Filtern für Ordner, Bilder, Videos, Audio, PDFs und Dokumente
 - **Ordnerfarben**, Favoriten, Zuletzt und ein Papierkorb, aus dem Gelöschtes 30 Tage lang zurückkommt
@@ -73,7 +73,7 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **Speicher** zeigt, was wie viel Platz belegt, die größten und die doppelten Dateien
 - **Grenzen** für den Speicher pro Person und die Größe einzelner Dateien, mit Hinweis, wenn der Speicher fast voll ist
 - **Teilen mit Personen und Gruppen**: Ordner und Dateien für andere Konten oder eine ganze Gruppe freigeben, zum Ansehen oder zum Bearbeiten
-- **Öffentliche Links** mit Bezeichnung, Passwort, Ablaufdatum, Grenze für Downloads, QR-Code und Zählern für Aufrufe und Downloads, jederzeit pausierbar. Ordner gibt es als ZIP
+- **Öffentliche Links** mit Bezeichnung, Passwort, Ablaufdatum, Grenze für Downloads, QR-Code und Zählern für Aufrufe und Downloads, jederzeit pausierbar und direkt per E-Mail verschickt. Ordner gibt es als ZIP
 - **Dateien anfragen**: Ein Link nur zum Hochladen sammelt Dateien von anderen ein, auf Wunsch mit Benachrichtigung
 - **Kommentare und Aktivität** an jeder Datei und jedem Ordner, dazu Benachrichtigungen in der App und per E-Mail
 - **Virenscan** mit ClamAV für alle Uploads, mit gesperrten Dateien und erneuter Prüfung
@@ -148,19 +148,19 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.1.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.2.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
 - **Eigener Benutzer**: MoeCloud läuft im Container nicht als root. Beim Start bekommt `data/` den Besitzer aus `PUID` und `PGID` (Standard `1000`). Soll der Ordner auf dem Host einem anderen Benutzer gehören, trägst du beide in die `.env` ein.
-- **Vorschauen**: ffmpeg als statisches Programm und Poppler für Vorschaubilder von Videos und PDFs sind im Image schon dabei.
+- **Vorschauen**: ffmpeg als statisches Programm und Poppler für Vorschaubilder von Videos, PDFs und Bildformaten wie PSD und JPEG XL sind im Image schon dabei. Rohformate und HEIC brauchen keine Zusatzprogramme.
 - **Schlank**: Abhängigkeiten nur für die Zielplattform, ohne Typen, Source-Maps und Dokumentation.
 - **Abgesichert**: schreibgeschütztes Dateisystem bis auf `data/` und `/tmp`, keine zusätzlichen Rechte (`no-new-privileges`, nur die nötigen Capabilities).
 - **Health-Check** über `/healthz`, nach dem Start alle 2 Sekunden, danach alle 30 Sekunden. Docker zeigt den Zustand mit `docker compose ps`.
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.1.0`, `1.1` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.2.0`, `1.2` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -226,7 +226,7 @@ MoeCloud glaubt den Angaben in `X-Forwarded-For` und `X-Forwarded-Proto` nur von
 
 ### Mit Node.js
 
-Du brauchst Node.js 24 oder neuer. Für Vorschaubilder von Videos und PDFs und die Suche in PDFs installierst du zusätzlich ffmpeg und Poppler, unter Debian und Ubuntu etwa mit `apt install ffmpeg poppler-utils`. Ohne sie läuft MoeCloud trotzdem, nur mit weniger Vorschauen. Welche Programme gefunden wurden, zeigt **Admin › System**.
+Du brauchst Node.js 24 oder neuer. Für Vorschaubilder von Videos und PDFs und die Suche in PDFs installierst du zusätzlich ffmpeg und Poppler, unter Debian und Ubuntu etwa mit `apt install ffmpeg poppler-utils`. ffmpeg liest außerdem Bildformate wie PSD, JPEG XL und BMP. Ohne sie läuft MoeCloud trotzdem, nur mit weniger Vorschauen. Rohformate und HEIC gehen auch ohne. Welche Programme gefunden wurden, zeigt **Admin › System**.
 
 ```bash
 git clone https://github.com/MaximilianGT500/moecloud.git
@@ -267,6 +267,7 @@ Danach bist du angemeldet und landest in deinen Dateien. Alles lässt sich spät
 Unter **Dateien** liegen deine Ordner und Dateien, als Liste oder als Kacheln mit Vorschaubildern. Daneben zeigt der Detailbereich in drei Reitern **Info** mit Größe, Ort, Änderungsdatum, Bildinfos, Ergebnis des Virenscans, Freigaben und Versionen, die **Aktivität** und die **Kommentare**.
 
 - **Hochladen**: Zieh Dateien oder Ordner ins Fenster oder direkt auf einen Ordner, oder nimm **Neu › Dateien hochladen** und **Neu › Ordner hochladen**. Gibt es eine Datei schon, wählst du zwischen „Beide behalten“ und „Ersetzen“. Beim Ersetzen bleibt die alte Fassung als Version erhalten.
+- **Einfügen**: Strg+V oder ⌘V lädt Dateien und Bilder aus der Zwischenablage in den offenen Ordner. Ein Screenshot heißt dann „Eingefügtes Bild“ mit Datum und Uhrzeit.
 - **Neue Textdatei** und **Neuer Ordner** findest du ebenfalls unter **Neu**.
 - **Ordnen**: Zieh Elemente auf einen Ordner oder in die Pfadleiste, oder verschieben und kopieren über das Menü. Mehrere wählst du mit Strg, ⌘ oder Umschalt aus.
 - **Ordnerfarben**: Im Menü eines Ordners gibt **Farbe** ihm eine von zehn Farben, auch für mehrere Ordner auf einmal.
@@ -284,18 +285,19 @@ Unter **Dateien** liegen deine Ordner und Dateien, als Liste oder als Kacheln mi
 
 Mit der Tastatur:
 
-| Taste                   | Wirkung                         |
-| ----------------------- | ------------------------------- |
-| `/`                     | Suche öffnen                    |
-| Pfeiltasten, Pos1, Ende | Zwischen den Elementen wechseln |
-| Enter                   | Öffnen                          |
-| Leertaste               | Auswählen                       |
-| Strg+A                  | Alles auswählen                 |
-| Entf                    | In den Papierkorb               |
-| F2                      | Umbenennen                      |
-| Esc                     | Auswahl aufheben                |
-| Umschalt+F10            | Menü des Elements               |
-| `?`                     | Alle Tastenkürzel zeigen        |
+| Taste                   | Wirkung                          |
+| ----------------------- | -------------------------------- |
+| `/`                     | Suche öffnen                     |
+| Pfeiltasten, Pos1, Ende | Zwischen den Elementen wechseln  |
+| Enter                   | Öffnen                           |
+| Leertaste               | Auswählen                        |
+| Strg+A                  | Alles auswählen                  |
+| Strg+V                  | Aus der Zwischenablage hochladen |
+| Entf                    | In den Papierkorb                |
+| F2                      | Umbenennen                       |
+| Esc                     | Auswahl aufheben                 |
+| Umschalt+F10            | Menü des Elements                |
+| `?`                     | Alle Tastenkürzel zeigen         |
 
 Auf dem Handy wechselst du am unteren Rand zwischen Dateien, Fotos, Zuletzt, Geteilt und deinem Konto, Favoriten, Aktivität, Speicher und Papierkorb liegen oben in deinen Dateien. Ein Tipp öffnet, langes Drücken wählt aus.
 
@@ -308,19 +310,41 @@ Auf dem Handy wechselst du am unteren Rand zwischen Dateien, Fotos, Zuletzt, Get
 
 Ein Doppelklick öffnet eine Datei in der Vollbildansicht, mit den Pfeiltasten oder einem Wischen geht es zur nächsten. Die Taste `i` blendet die Informationen zur Datei ein.
 
-| Art              | Vorschau                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| Bilder           | Zoomen, Kamera, Objektiv, Belichtung und Aufnahmedatum, Diashow, nach links und rechts drehen         |
-| Videos und Audio | Player, bei Musik mit Cover, Titel, Interpret und Album                                               |
-| PDFs             | Im Browser mit allen Seiten                                                                           |
-| Markdown         | Gesetzt mit Überschriften, Tabellen und Aufgabenlisten, auf Wunsch als Quelltext                      |
-| Code und Texte   | Hervorhebung für mehr als 30 Sprachen und Zeilennummern, bis 2 MB bearbeiten und mit Strg+S speichern |
-| CSV, JSON        | CSV als Tabelle, JSON eingerückt und hervorgehoben                                                    |
-| Word und Excel   | Word-Dokumente mit Seiten, Excel-Tabellen mit allen Blättern                                          |
-| ZIP-Archive      | Inhalt mit Größen und Datum, durchsuchbar, einzelne Dateien daraus herunterladen                      |
-| Schriften        | TTF, OTF, WOFF und WOFF2 mit eigenem Beispieltext                                                     |
+| Art                        | Vorschau                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Bilder                     | Zoomen, Kamera, Objektiv, Belichtung und Aufnahmedatum, Diashow, nach links und rechts drehen         |
+| Rohformate, HEIC und TIFF  | Ein großes Vorschaubild vom Server, weil Browser diese Formate nicht selbst zeigen                    |
+| Videos und Audio           | Player, bei Musik mit Cover, Titel, Interpret und Album                                               |
+| PDFs                       | Im Browser mit allen Seiten                                                                           |
+| Markdown                   | Gesetzt mit Überschriften, Tabellen und Aufgabenlisten, auf Wunsch als Quelltext                      |
+| Code und Texte             | Hervorhebung für mehr als 30 Sprachen und Zeilennummern, bis 2 MB bearbeiten und mit Strg+S speichern |
+| CSV, JSON                  | CSV als Tabelle, JSON eingerückt und hervorgehoben                                                    |
+| Word und Excel             | Word-Dokumente mit Seiten, Excel-Tabellen mit allen Blättern                                          |
+| Dokumente mit Vorschaubild | Das Vorschaubild aus der Datei und der Knopf zum Herunterladen                                        |
+| ZIP-Archive                | Inhalt mit Größen und Datum, durchsuchbar, einzelne Dateien daraus herunterladen                      |
+| Schriften                  | TTF, OTF, WOFF und WOFF2 mit eigenem Beispieltext                                                     |
 
-Vorschaubilder erzeugt MoeCloud im Hintergrund, für Videos mit ffmpeg, für PDFs mit Poppler und für Musik aus dem eingebetteten Cover. Dabei liest es auch Bildinfos, Musik-Tags und den Text für die Suche aus. Für Dateien, die schon vor dem Update da waren, holt MoeCloud das nach dem Start selbst nach. Dateien, in denen der Virenscan etwas gefunden hat, öffnet die Vorschau nicht.
+Vorschaubilder erzeugt MoeCloud im Hintergrund, für Videos mit ffmpeg, für PDFs mit Poppler und für Musik aus dem eingebetteten Cover. Dabei liest es auch Bildinfos, Musik-Tags und den Text für die Suche aus. Für Dateien, die schon vor dem Update da waren, holt MoeCloud das nach dem Start selbst nach. Dateien, in denen der Virenscan etwas gefunden hat, öffnet die Vorschau nicht. Kann dein Browser ein Video oder eine Audiodatei nicht abspielen, zeigt MoeCloud einen Hinweis und den Knopf zum Herunterladen.
+
+### Bildformate
+
+| Format                                                                                                                           | Was du siehst                                                                       | Braucht |
+| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------- |
+| JPEG, PNG, GIF, WebP, AVIF, SVG                                                                                                  | Das Original                                                                        | Nichts  |
+| TIFF                                                                                                                             | Ein großes Vorschaubild                                                             | Nichts  |
+| HEIC, HEIF und HIF                                                                                                               | Das dekodierte Foto, richtig gedreht und mit umgerechneten Farben                   | Nichts  |
+| DNG, CR2, CR3, CRW, NEF, NRW, ARW, SRF, SR2, RAF, ORF, RW2, RWL, PEF, SRW, 3FR, FFF, ERF, KDC, DCR, MOS, MEF, MRW, X3F, IIQ, GPR | Das Vorschaubild, das die Kamera in die Datei gelegt hat                            | Nichts  |
+| BMP, ICO und CUR                                                                                                                 | Das Original, Vorschaubilder mit ffmpeg                                             | ffmpeg  |
+| PSD, PSB, JPEG XL, JPEG 2000, TGA, DDS, QOI, PCX, PPM, PGM, PBM und SGI                                                          | Ein großes Vorschaubild                                                             | ffmpeg  |
+| ODT, ODS, ODP, ODG, PPTX, Pages, Numbers, Keynote, EPUB, CBZ, Krita, OpenRaster, XMind, Sketch, Procreate, 3MF und GeoGebra      | Das Vorschaubild aus der Datei, wenn sie eins mitbringt, bei Comics die erste Seite | Nichts  |
+
+Bei Rohformaten wie DNG vom iPhone nimmt MoeCloud das Vorschaubild, das die Kamera eingebettet hat, und entwickelt die Rohdaten nicht selbst. Je nach Kamera ist es so groß wie das Foto oder kleiner. Abmessungen, Aufnahmedatum, Kamera und Belichtung kommen aus der Rohdatei. Das Original bleibt unangetastet, Drehen gibt es für diese Formate deshalb nicht. Rohdateien erscheinen wie andere Bilder unter **Fotos**.
+
+Große Vorschaubilder haben bis zu 2560 Pixel Kantenlänge. MoeCloud erzeugt sie beim ersten Öffnen und legt sie in `data/previews/` ab, danach kommen sie sofort. Die Bildansicht zeigt dann den Hinweis „Vorschaubild“, Herunterladen liefert immer das Original.
+
+HEIC dekodiert MoeCloud in einem eigenen Prozess. Ein Foto mit 12 Megapixeln braucht dabei kurz etwa 300 MB Arbeitsspeicher, Fotos mit mehr als 64 Megapixeln bleiben ohne Vorschau.
+
+Sagt die Endung nichts über den Inhalt, schaut MoeCloud in den Anfang der Datei. So öffnet sich `LIESMICH` als Text, ein Foto ohne Endung als Bild und eine Illustrator-Datei mit PDF-Inhalt als PDF. Dateien mit `.ts` oder `.mts` gelten als TypeScript, außer der Inhalt ist ein Video.
 
 <p align="center">
   <img src="docs/screenshots/viewer.png" alt="Bildansicht im Vollbild mit Knöpfen für Diashow, Informationen, Herunterladen und Teilen" width="80%">
@@ -340,6 +364,8 @@ Vorschaubilder erzeugt MoeCloud im Hintergrund, für Videos mit ffmpeg, für PDF
 
 **Öffentliche Links**: Wer den Link kennt, kommt ohne Konto an den Inhalt. Pro Element sind mehrere Links möglich, jeder mit eigener Bezeichnung, Passwort und Ablaufdatum. Du legst fest, ob Besucher herunterladen und hochladen dürfen, und siehst, wie oft der Link aufgerufen wurde. Mit einer Grenze für Downloads funktioniert der Link nach 1 bis 100 Downloads nicht mehr, Ansehen zählt dabei nicht mit, und Besucher sehen, wie viele noch übrig sind. **Pausieren** schaltet einen Link vorübergehend ab, ohne dass sich die Adresse ändert. Besucher sehen Ordner mit Vorschaubildern, öffnen Dateien in der Vorschau und laden alles als ZIP herunter. In Messengern zeigt der Link Titel, Absender und bei Bildern ohne Passwort eine Vorschau.
 
+**Link per E-Mail**: Ist der [E-Mail-Versand](#e-mail) eingerichtet, schickst du einen Link über das Brief-Symbol direkt an eine E-Mail-Adresse. Die E-Mail nennt deinen Namen, das geteilte Element und das Ablaufdatum. Das Passwort eines Links steht nie darin, das gibst du auf einem anderen Weg weiter.
+
 **Dateien anfragen**: Mit „Nur hochladen“ sehen Besucher nur ein Feld zum Hochladen. Die Dateien landen in deinem Ordner, gleichnamige Dateien überschreiben dabei nichts. Mit „Benachrichtigen, wenn etwas ankommt“ meldet MoeCloud neue Uploads gesammelt in der Glocke und auf Wunsch per E-Mail.
 
 Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abschalten, ein Passwort für alle Links verlangen und eine längste Gültigkeit festlegen. Ein Link ohne Passwort schützt nur durch seine Länge: Gib ihn nur Personen, die den Inhalt sehen sollen, und setz bei Bedarf ein Ablaufdatum.
@@ -351,7 +377,7 @@ Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abs
 ## Kommentare, Aktivität und Benachrichtigungen
 
 - **Kommentare**: Im Detailbereich unter **Kommentare** schreiben alle, die Zugriff haben, an Dateien und Ordner. Alle anderen mit Zugriff und alle, die dort schon kommentiert haben, bekommen eine Benachrichtigung.
-- **Aktivität**: Der Reiter **Aktivität** zeigt für jede Datei und jeden Ordner, wer etwas hochgeladen, bearbeitet, umbenannt, verschoben, kopiert, geteilt, kommentiert oder gelöscht hat. Unter **Zuletzt › Aktivität** steht alles aus deinen Ordnern, nach Tagen sortiert.
+- **Aktivität**: Der Reiter **Aktivität** zeigt für jede Datei und jeden Ordner, wer etwas hochgeladen, bearbeitet, umbenannt, verschoben, kopiert, geteilt, kommentiert oder gelöscht hat. Unter **Zuletzt › Aktivität** steht alles aus deinen Ordnern, nach Tagen sortiert. Mit wem ein Ordner geteilt ist, steht nur in deiner eigenen Aktivität. Andere mit Zugriff sehen das dort nicht, und Links sehen nur Personen, die bearbeiten dürfen.
 - **Benachrichtigungen**: Die Glocke oben rechts sammelt neue Freigaben, Kommentare, Uploads über deine Links und Hinweise zu deinem Speicher, Admins sehen dort auch Meldungen zum System. Unter **Konto › E-Mail-Benachrichtigungen** wählt jede Person, was zusätzlich per E-Mail kommt.
 
 <p align="center">
@@ -457,6 +483,7 @@ Darüber verschickt MoeCloud:
 
 - **Passwort vergessen**: einen Link, der eine Stunde gilt und einmal funktioniert. Admins schicken ihn unter **Admin › Personen** auch selbst, etwa für neue Konten, dann gilt er 24 Stunden.
 - **Einladungen**: Mit einer E-Mail-Adresse geht der Einladungslink gleich an die Person.
+- **Öffentliche Links**: Aus dem Dialog zum Teilen geht ein Link direkt an eine E-Mail-Adresse, pro Konto höchstens 30 in einer Stunde.
 - **Benachrichtigungen**: Freigaben, Uploads über Links und Kommentare, so wie jede Person es unter **Konto** eingestellt hat. Admins bekommen auf Wunsch Meldungen zu neuen Konten, Schadsoftware, Störungen des Virenscans, fehlgeschlagenen Sicherungen, knappem Speicherplatz, vielen fehlgeschlagenen Anmeldungen und neuen Versionen.
 
 ## Webhooks
@@ -511,7 +538,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
 | `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.1.0`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.2.0`. Das Installationsskript trägt hier die installierte Version ein                               |
 | `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
 | `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
@@ -537,13 +564,13 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.0.0",
-  "date": "2026-11-08",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.0.0",
+  "version": "1.2.0",
+  "date": "2026-11-11",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.2.0",
   "security": false,
   "notes": {
-    "de": ["Virenscan mit ClamAV für alle Uploads"],
-    "en": ["Virus scanning with ClamAV for every upload"]
+    "de": ["Öffentliche Links direkt per E-Mail verschicken"],
+    "en": ["Send public links straight by email"]
   }
 }
 ```
@@ -556,7 +583,7 @@ Was neu ist und worauf du achten musst, steht im [Changelog](CHANGELOG.md).
 - **Mit Docker**: `docker compose pull` und `docker compose up -d`. Hast du `MOECLOUD_VERSION` gesetzt, trägst du dort vorher die neue Version ein
 - **Mit Node.js**: `git pull`, `npm ci`, `npm run build` und MoeCloud neu starten
 
-Ändert sich mit einem Update die Datenbank, sichert MoeCloud sie beim ersten Start als `moecloud-update-…db` in `data/backups/` und bringt sie danach auf den neuen Stand. Beim Update von 1.0.0 auf 1.1.0 kommen die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links dazu, beim Update von 0.1.0 auf 1.0.0 die Tabellen für Protokoll, Aktivität, Benachrichtigungen, Kommentare, Webhooks und den Suchindex. Vorhandene Dateien liest MoeCloud danach im Hintergrund für Vorschaubilder, Fotos und Suche ein, das läuft nebenher und braucht nichts von dir. Den Fortschritt siehst du unter **Admin › System**.
+Ändert sich mit einem Update die Datenbank, sichert MoeCloud sie beim ersten Start als `moecloud-update-…db` in `data/backups/` und bringt sie danach auf den neuen Stand. Beim Update von 1.0.0 auf 1.1.0 kommen die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links dazu, beim Update von 0.1.0 auf 1.0.0 die Tabellen für Protokoll, Aktivität, Benachrichtigungen, Kommentare, Webhooks und den Suchindex. Version 1.2.0 ändert den Aufbau der Datenbank nicht. Beim ersten Start ordnet sie Rohdateien als Bilder ein und merkt Dateien, die jetzt eine Vorschau bekommen, für die Verarbeitung vor. Vorhandene Dateien liest MoeCloud danach im Hintergrund für Vorschaubilder, Fotos und Suche ein, das läuft nebenher und braucht nichts von dir. Den Fortschritt siehst du unter **Admin › System**.
 
 Wer von 0.1.0 kommt, startet für den Virenscan danach ClamAV und schaltet ihn unter **Admin › Virenscan** ein und richtet für E-Mails den Versand unter **Admin › E-Mail** ein. Wer mit dem Installationsskript von 1.0.0 kommt, bekommt beim ersten `sudo moecloud update` auch den neuen Befehl `moecloud` mit `status`, `doctor` und `auto-update`.
 
@@ -570,6 +597,7 @@ data/
   moecloud.db-wal  Änderungen, die noch nicht in der Datenbank stehen
   blobs/           die Dateien, benannt nach ihrer Prüfsumme
   thumbs/          Vorschaubilder, MoeCloud erzeugt sie bei Bedarf neu
+  previews/        Große Vorschaubilder für die Bildansicht, MoeCloud erzeugt sie bei Bedarf neu
   tmp/             laufende Uploads
   backups/         Sicherungen der Datenbank
 ```
@@ -625,6 +653,7 @@ curl -u emi:APP-PASSWORT -F "file=@rechnung.pdf" https://cloud.example.com/api/n
 | `GET`   | `/api/nodes/:id/content`                                      | Datei herunterladen, auch in Teilen per `Range`                                                                                                       |
 | `PUT`   | `/api/nodes/:id/content`                                      | Inhalt einer Datei als `application/octet-stream` ersetzen, die alte Fassung wird zur Version                                                         |
 | `GET`   | `/api/nodes/:id/meta`                                         | Abmessungen, Aufnahmedatum, Bildinfos, Musik-Tags und Ergebnis des Virenscans                                                                         |
+| `GET`   | `/api/nodes/:id/thumb`, `/api/nodes/:id/preview`              | Vorschaubild mit 480 Pixeln und großes Vorschaubild mit bis zu 2560 Pixeln als WebP, das große nur für Formate, die Browser nicht zeigen              |
 | `PATCH` | `/api/nodes/:id`                                              | Umbenennen, JSON `{ "name" }`                                                                                                                         |
 | `PUT`   | `/api/nodes/color`                                            | Ordner einfärben, JSON `{ "ids": [], "color" }` mit `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `brown`, `gray` oder `null` |
 | `POST`  | `/api/nodes/move`, `/api/nodes/copy`                          | Verschieben oder kopieren, JSON `{ "ids": [], "target" }`                                                                                             |
@@ -642,6 +671,7 @@ curl -u emi:APP-PASSWORT -F "file=@rechnung.pdf" https://cloud.example.com/api/n
 | `POST`  | `/api/nodes/:id/grants`                                       | Teilen, JSON `{ "userId", "permission" }` oder `{ "groupId", "permission" }` mit `view` oder `edit`                                                   |
 | `POST`  | `/api/nodes/:id/links`                                        | Öffentlichen Link anlegen, JSON mit `label`, `password`, `expiresAt`, `maxDownloads`, `allowDownload`, `allowUpload`, `uploadOnly`, `notify`          |
 | `PATCH` | `/api/links/:id`                                              | Link ändern, dieselben Felder und `paused` zum Pausieren                                                                                              |
+| `POST`  | `/api/links/:id/send`                                         | Link per E-Mail verschicken, JSON `{ "email" }`. Braucht den eingerichteten E-Mail-Versand                                                            |
 | `GET`   | `/api/shared`                                                 | Was mit dir geteilt ist und was du teilst                                                                                                             |
 | `GET`   | `/api/storage`, `/api/storage/report`                         | Belegter Speicher und Grenze, dazu die Aufteilung nach Art, die größten und die doppelten Dateien                                                     |
 | `GET`   | `/api/notifications`                                          | Benachrichtigungen, `POST /api/notifications/read` markiert sie als gelesen                                                                           |
@@ -688,11 +718,13 @@ npm run dev
 | Befehl                                | Zweck                                                                                                                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run typecheck`                   | TypeScript für Server und Oberfläche prüfen                                                                                                                                   |
-| `npm test`                            | Tests für API, Anmeldung, Zwei-Faktor-Pflicht, Freigaben, Gruppen, Links, Archive, WebDAV, Virenscan, E-Mail, Vorschauen und Verwaltung                                       |
 | `npm run build`                       | Oberfläche nach `dist/web` bauen                                                                                                                                              |
+| `npm test`                            | Tests für API, Anmeldung, Zwei-Faktor-Pflicht, Freigaben, Gruppen, Links, Archive, WebDAV, Virenscan, E-Mail, Vorschauen und Verwaltung. Braucht vorher `npm run build`       |
 | `npm run test:browser`                | Abläufe im Browser mit Chrome prüfen und die Screenshots in `docs/screenshots` neu erzeugen. Braucht vorher `npm run build`, mit `CHROME_PATH` gibst du den Pfad zu Chrome an |
 | `npm run format`                      | Code mit Prettier formatieren                                                                                                                                                 |
+| `npm run check`                       | Formatierung, Typen, Versionsangaben, Übersetzungen, Build und Tests in einem Durchlauf                                                                                       |
 | `node tools/i18n.ts`                  | Prüft, ob alle Texte übersetzt sind und alle Platzhalter stimmen                                                                                                              |
+| `node tools/version.ts [x.y.z]`       | Prüft, ob überall dieselbe Version steht und im Changelog nichts doppelt ist. Mit einer Version trägt es sie überall ein                                                      |
 | `node tools/demo.ts <adresse> [code]` | Legt Beispieldaten mit Emi, Mia und Lea an, mit Code auch gleich die Einrichtung                                                                                              |
 | `node tools/icons.ts`                 | Erzeugt alle Icons aus `public/favicon.svg`                                                                                                                                   |
 
@@ -711,12 +743,12 @@ Die Texte sind auf Deutsch geschrieben und dienen gleichzeitig als Schlüssel f�
 | `web/src/theme` | Farbschema aus der Grundfarbe, Tokens und MUI-Theme                                                                          |
 | `docker/`       | Startskript, Kommandozeile im Container, der Befehl `moecloud` für den Server, Caddyfile und die Ergänzung für ClamAV        |
 | `test/`         | API-Tests und der Ablauf im Browser                                                                                          |
-| `tools/`        | Übersetzungen prüfen, Beispieldaten und Icons                                                                                |
+| `tools/`        | Übersetzungen und Versionsangaben prüfen, Beispieldaten und Icons                                                            |
 | `cli.ts`        | Befehle für die Kommandozeile                                                                                                |
 | `install.sh`    | Installationsskript, das auch unter moecloud.moestudio.net/install.sh liegt                                                  |
 
 ## Support, Mitwirken und Lizenz
 
-Fehler und Ideen gerne als [Issue](https://github.com/MaximilianGT500/moecloud/issues/new/choose) oder Pull Request, siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken meldest du bitte nicht öffentlich, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Kontakt gibt es auch über meine [Website](https://mm-s.gg).
+Fehler und Ideen gerne als [Issue](https://github.com/MaximilianGT500/moecloud/issues/new/choose) oder Pull Request, siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken meldest du bitte nicht öffentlich, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Kontakt gibt es auch über meine [Website](https://m-s.gg).
 
-MoeCloud steht unter der [MIT-Lizenz](LICENSE).
+MoeCloud steht unter der [MIT-Lizenz](LICENSE). Für HEIC nutzt MoeCloud das Paket [libheif-js](https://github.com/catdad-experiments/libheif-js) mit libheif und libde265 unter der LGPL 3.0. Es wird unverändert als eigenes Paket installiert und lässt sich austauschen.

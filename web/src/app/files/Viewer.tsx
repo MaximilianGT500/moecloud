@@ -234,6 +234,7 @@ export function Viewer({ items, index, onIndex, base = '/api', canDownload = tru
               </Typography>
               <Typography variant="caption" sx={{ color: c.onSurfaceVariant }} component="p" noWrap>
                 {kindLabel(item.kind)} · {formatBytes(item.size)}
+                {item.rendition && !item.infected ? ` · ${t('Vorschaubild')}` : ''}
                 {items.length > 1 && index !== null ? ` · ${index + 1} / ${items.length}` : ''}
               </Typography>
             </Box>

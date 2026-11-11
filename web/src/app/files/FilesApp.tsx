@@ -52,7 +52,7 @@ import { t, tn, tp } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { setPrefs, usePrefs, type Prefs } from '../../lib/prefs';
 import { navigate, setQuery, useLocation } from '../../lib/router';
-import { Uploader, entriesFromDrop, entriesFromInput, hasFiles, type UploadEntry } from '../../lib/upload';
+import { Uploader, entriesFromDrop, entriesFromInput, entriesFromPaste, hasFiles, type UploadEntry } from '../../lib/upload';
 import { c, folderColor, radius } from '../../theme/tokens';
 import { AppShell, type Destination } from '../shell/AppShell';
 import { EmptyState } from '../common/bits';
@@ -186,7 +186,8 @@ export function FilesApp() {
   const chosen = items.filter((item) => selected.has(item.id));
   const folder = listing.data?.folder;
   const role = listing.data?.role ?? 'view';
-  const uploadTarget = view.kind === 'folder' && folder && role !== 'view' ? folder.id : rootId;
+  const readOnly = view.kind === 'folder' && Boolean(folder) && role === 'view';
+  const uploadTarget = view.kind !== 'folder' || readOnly ? rootId : (folder?.id ?? view.id);
   const files = items.filter((item) => item.type === 'file');
   const viewerIndex = viewer ? files.findIndex((item) => item.id === viewer.id) : -1;
 
@@ -487,6 +488,24 @@ export function FilesApp() {
     return () => window.removeEventListener('keydown', handler);
   });
 
+  useEffect(() => {
+    const handler = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      if (viewer || document.querySelector('.MuiDialog-root, .MuiMenu-root')) return;
+      const entries = entriesFromPaste(event.clipboardData);
+      if (entries.length === 0) return;
+      event.preventDefault();
+      if (readOnly) {
+        toast(t('In diesem Ordner darfst du nichts hochladen'));
+        return;
+      }
+      void upload(entries);
+    };
+    window.addEventListener('paste', handler);
+    return () => window.removeEventListener('paste', handler);
+  });
+
   const newMenu = useNewMenu({
     onUploadFiles: () => fileInput.current?.click(),
     onUploadFolder: () => folderInput.current?.click(),
@@ -524,7 +543,7 @@ export function FilesApp() {
       event.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
-      if (view.kind === 'folder' && role === 'view') {
+      if (readOnly) {
         toast(t('In diesem Ordner darfst du nichts hochladen'));
         return;
       }

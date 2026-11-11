@@ -444,12 +444,7 @@ backup_before_update() {
 }
 
 prune_images() {
-  local old
-  old="$(docker images "$IMAGE" --filter dangling=true -q 2>/dev/null || true)"
-  if [ -n "$old" ]; then
-    # shellcheck disable=SC2086
-    docker rmi $old >>"$LOG" 2>&1 || true
-  fi
+  docker images "$IMAGE" --filter dangling=true -q 2>/dev/null | xargs -r docker rmi >>"$LOG" 2>&1 || true
 }
 
 auto_update() {
@@ -626,7 +621,7 @@ check_only() {
 command -v curl >/dev/null 2>&1 || fail "curl fehlt. Installiere es zuerst, zum Beispiel mit apt install curl."
 init_log
 
-say "${bold}MoeCloud${reset} – deine Dateien auf deinem Server"
+say "${bold}MoeCloud${reset}: deine Dateien auf deinem Server"
 say "${dim}Ordner $DIR · Protokoll $LOG${reset}"
 
 case "$MODE" in

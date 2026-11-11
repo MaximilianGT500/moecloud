@@ -35,14 +35,17 @@ jobs:
       - name: Typen prüfen
         run: npm run typecheck
 
-      - name: Tests
-        run: npm test
+      - name: Versionsangaben prüfen
+        run: node tools/version.ts
 
       - name: Übersetzungen prüfen
         run: node tools/i18n.ts --strict
 
       - name: Oberfläche bauen
         run: npm run build
+
+      - name: Tests
+        run: npm test
 
       - name: Ablauf im Browser
         run: npm run test:browser
@@ -75,5 +78,7 @@ jobs:
 
       - name: Compose-Dateien prüfen
         run: |
-          MOECLOUD_VERSION=1.0.0 docker compose -f docker-compose.yml config --quiet
-          MOECLOUD_VERSION=1.0.0 COMPOSE_PROFILES=caddy docker compose -f docker-compose.yml -f docker/clamav.yml config --quiet
+          MOECLOUD_VERSION="$(node -p "require('./package.json').version")"
+          export MOECLOUD_VERSION
+          docker compose -f docker-compose.yml config --quiet
+          COMPOSE_PROFILES=caddy docker compose -f docker-compose.yml -f docker/clamav.yml config --quiet

@@ -1,7 +1,7 @@
 import { all, one, run, tx, value } from '../lib/db.ts';
 import { hashPassword, randomId } from '../lib/crypto.ts';
 import { conflict, notFound } from '../lib/errors.ts';
-import type { Lang } from '../lib/i18n.ts';
+import { isLang, type Lang } from '../lib/i18n.ts';
 import * as settings from './settings.ts';
 
 export interface UserRow {
@@ -33,6 +33,9 @@ export interface UserPrefs {
   mailAdmin: boolean;
   storageWarned: boolean;
 }
+
+export const preferredLanguage = (user: Pick<UserRow, 'language'>): Lang =>
+  user.language && isLang(user.language) ? user.language : settings.get('site.language');
 
 const PREF_DEFAULTS: UserPrefs = { mailShares: true, mailUploads: true, mailComments: true, mailAdmin: true, storageWarned: false };
 

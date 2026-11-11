@@ -90,7 +90,11 @@ function authenticate(request: FastifyRequest, reply: FastifyReply): UserRow | n
     .code(result === 'blocked' ? 429 : 401)
     .header('WWW-Authenticate', `Basic realm="${settings.get('site.name').replace(/"/g, '')}", charset="UTF-8"`)
     .type('text/plain; charset=utf-8')
-    .send(result === 'blocked' ? 'Zu viele Versuche' : 'Melde dich mit deinem Benutzernamen und einem App-Passwort an');
+    .send(
+      result === 'blocked'
+        ? t(request.lang, 'Zu viele Versuche, warte kurz und versuch es dann noch mal')
+        : t(request.lang, 'Melde dich mit deinem Benutzernamen und einem App-Passwort an')
+    );
   return null;
 }
 

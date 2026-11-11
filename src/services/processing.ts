@@ -2,17 +2,32 @@ import { open } from 'node:fs/promises';
 import sharp from 'sharp';
 import exifr from 'exifr';
 import { parseFile } from 'music-metadata';
-import { all, one, run } from '../lib/db.ts';
-import { extensionOf, isTextual, kindOf, mimeOf } from '../lib/mime.ts';
+import { all, one, run, tx } from '../lib/db.ts';
+import { canThumb, extensionOf, isHeif, isRaw, isTextual, kindOf, mimeOf, resolveType } from '../lib/mime.ts';
 import { log } from '../lib/log.ts';
 import { documentText } from './archive.ts';
-import { blobPath, getBlob } from './blobs.ts';
+import { blobPath, getBlob, metaOf } from './blobs.ts';
+import { heifExif } from './heif.ts';
 import { pdfText, probe, tools } from './media.ts';
+import { changed } from './nodes.ts';
+import { canonMeta, rawInfo, readRange } from './raw.ts';
 import * as settings from './settings.ts';
+import { sniff } from './sniff.ts';
 import { thumbnail } from './thumbs.ts';
 
 const TEXT_LIMIT = 1024 * 1024;
+const PREVIEW_REVISION = 2;
 const DOCUMENTS = new Set(['docx', 'odt', 'odp', 'ods', 'pptx', 'xlsx']);
+const EXIF_TAGS = ['DateTimeOriginal', 'CreateDate', 'Make', 'Model', 'LensModel', 'FNumber', 'ExposureTime', 'ISO', 'FocalLength'];
+const EXIF_CODES: Record<string, string> = {
+  36867: 'DateTimeOriginal',
+  36868: 'CreateDate',
+  33434: 'ExposureTime',
+  33437: 'FNumber',
+  34855: 'ISO',
+  37386: 'FocalLength',
+  42036: 'LensModel',
+};
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
@@ -29,34 +44,83 @@ function sample(sha: string) {
   );
 }
 
-function clean(value: unknown) {
+function clean(value: unknown, digits = 3) {
   if (value === null || value === undefined) return undefined;
-  if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : undefined;
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 10 ** digits) / 10 ** digits : undefined;
   if (typeof value === 'string') return value.replace(/\0/g, '').trim().slice(0, 200) || undefined;
   return undefined;
 }
 
-async function imageMeta(path: string) {
+type Exif = Record<string, unknown>;
+
+async function readExif(data: Buffer): Promise<Exif | undefined> {
+  try {
+    return ((await exifr.parse(data, { pick: EXIF_TAGS })) as Exif | undefined) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function canonExif(path: string): Promise<Exif | undefined> {
+  const found: Exif = {};
+  for (const box of await canonMeta(path)) {
+    try {
+      const tags = (await exifr.parse(box, { translateValues: false, gps: false })) as Exif | undefined;
+      for (const [key, value] of Object.entries(tags ?? {})) found[EXIF_CODES[key] ?? key] = value;
+    } catch {}
+  }
+  return Object.keys(found).length ? found : undefined;
+}
+
+async function rawExif(path: string): Promise<Exif | undefined> {
+  const canon = await canonExif(path);
+  if (canon) return canon;
+  const { preview } = await rawInfo(path);
+  return preview ? readExif(await readRange(path, preview.offset, Math.min(preview.length, 512 * 1024))) : undefined;
+}
+
+function exifDate(value: unknown) {
+  if (value instanceof Date) return value;
+  const parts = typeof value === 'string' ? value.trim().split(/[-: ]/).map(Number) : [];
+  if (parts.length < 6 || !parts.every(Number.isFinite)) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);
+}
+
+function cameraName(make: unknown, model: unknown) {
+  const brand = typeof make === 'string' ? make.trim() : '';
+  const name = typeof model === 'string' ? model.trim() : '';
+  const first = brand.split(/\s+/)[0].toLowerCase();
+  return first && name.toLowerCase().startsWith(first) ? name : [brand, name].filter(Boolean).join(' ');
+}
+
+async function imageMeta(path: string, type: string) {
   const meta: Record<string, unknown> = {};
   let takenAt: number | null = null;
-  const info = await sharp(path, { failOn: 'none', limitInputPixels: 268_402_689 }).metadata();
-  const width = info.autoOrient?.width ?? info.width ?? null;
-  const height = info.autoOrient?.height ?? info.height ?? null;
-  try {
-    const exif = (await exifr.parse(await head(path, 2 * 1024 * 1024), {
-      pick: ['DateTimeOriginal', 'CreateDate', 'Make', 'Model', 'LensModel', 'FNumber', 'ExposureTime', 'ISO', 'FocalLength'],
-    })) as Record<string, unknown> | undefined;
-    if (exif) {
-      const date = (exif.DateTimeOriginal ?? exif.CreateDate) as Date | undefined;
-      if (date instanceof Date && Number.isFinite(date.getTime()) && date.getFullYear() > 1900) takenAt = date.getTime();
-      meta.camera = clean([exif.Make, exif.Model].filter(Boolean).join(' '));
-      meta.lens = clean(exif.LensModel);
-      meta.aperture = clean(exif.FNumber);
-      meta.exposure = clean(exif.ExposureTime);
-      meta.iso = clean(exif.ISO);
-      meta.focal = clean(exif.FocalLength);
-    }
-  } catch {}
+  let width: number | null = null;
+  let height: number | null = null;
+  if (canThumb(type)) {
+    const info = await sharp(path, { failOn: 'none', limitInputPixels: 268_402_689 })
+      .metadata()
+      .catch(() => null);
+    width = info?.autoOrient?.width ?? info?.width ?? null;
+    height = info?.autoOrient?.height ?? info?.height ?? null;
+  }
+  let exif = await readExif(await head(path, 2 * 1024 * 1024));
+  if (!exif && isRaw(type)) exif = await rawExif(path).catch(() => undefined);
+  if (!exif && isHeif(type)) {
+    const item = await heifExif(path).catch(() => null);
+    if (item) exif = await readExif(item);
+  }
+  if (exif) {
+    const date = exifDate(exif.DateTimeOriginal ?? exif.CreateDate);
+    if (date && Number.isFinite(date.getTime()) && date.getFullYear() > 1900) takenAt = date.getTime();
+    meta.camera = clean(cameraName(exif.Make, exif.Model));
+    meta.lens = clean(exif.LensModel);
+    meta.aperture = clean(exif.FNumber);
+    meta.exposure = clean(exif.ExposureTime, 6);
+    meta.iso = clean(exif.ISO);
+    meta.focal = clean(exif.FocalLength);
+  }
   return { meta, takenAt, width, height };
 }
 
@@ -112,20 +176,21 @@ export async function processBlob(sha: string) {
     run('UPDATE blobs SET processed = 1 WHERE sha256 = ?', sha);
     return;
   }
-  const mime = found.mime ?? mimeOf(found.name);
-  const kind = kindOf(found.name, mime);
   const path = blobPath(sha);
+  const sniffed = blob.size > 0 ? await sniff(path).catch(() => null) : null;
+  const mime = resolveType(found.name, found.mime, sniffed);
+  const kind = kindOf(found.name, mime);
   let meta: Record<string, unknown> = {};
   let takenAt: number | null = null;
   let width: number | null = blob.width;
   let height: number | null = blob.height;
   try {
     if (kind === 'image') {
-      const result = await imageMeta(path);
+      const result = await imageMeta(path, mime);
       meta = result.meta;
       takenAt = result.takenAt;
-      width = result.width;
-      height = result.height;
+      width = result.width ?? width;
+      height = result.height ?? height;
     } else if (kind === 'video' && tools.ffprobe) {
       const result = await probe(path);
       meta = { duration: result.duration ?? undefined, codec: result.codec ?? undefined };
@@ -138,6 +203,7 @@ export async function processBlob(sha: string) {
   } catch (error) {
     log.debug({ sha, error: (error as Error).message }, 'Metadaten nicht lesbar');
   }
+  if (sniffed) meta.type = sniffed;
   const compact = Object.fromEntries(Object.entries(meta).filter(([, value]) => value !== undefined && value !== '' && value !== false));
   run(
     'UPDATE blobs SET meta = ?, taken_at = ?, width = ?, height = ? WHERE sha256 = ?',
@@ -148,7 +214,7 @@ export async function processBlob(sha: string) {
     sha
   );
   if (blob.size > 0 && blob.scan_status !== 'infected') {
-    await thumbnail({ type: 'file', sha256: sha, mime, size: blob.size, name: found.name }).catch(() => null);
+    await thumbnail({ type: 'file', sha256: sha, mime: found.mime, size: blob.size, name: found.name }).catch(() => null);
     try {
       const text = (await extractText(path, found.name, mime)).trim();
       if (text)
@@ -162,6 +228,15 @@ export async function processBlob(sha: string) {
     }
   }
   run('UPDATE blobs SET processed = 1 WHERE sha256 = ?', sha);
+  if (sniffed && sniffed !== metaOf(blob).type) {
+    const folders = all<{ parent_id: string | null; name: string; mime: string | null }>(
+      'SELECT parent_id, name, mime FROM nodes WHERE sha256 = ? AND trashed_at IS NULL LIMIT 200',
+      sha
+    )
+      .filter((node) => resolveType(node.name, node.mime, sniffed) !== (node.mime ?? mimeOf(node.name)))
+      .map((node) => node.parent_id);
+    if (folders.length) changed(folders);
+  }
 }
 
 async function drain() {
@@ -219,6 +294,56 @@ export async function processNow() {
   stopped = false;
   await drain();
   stopped = previous;
+}
+
+const RETYPE = {
+  nodes: {
+    select: "SELECT seq AS pos, name, mime, sha256 FROM nodes WHERE type = 'file' AND seq > ? ORDER BY seq LIMIT 2000",
+    update: 'UPDATE nodes SET mime = ? WHERE seq = ?',
+  },
+  versions: {
+    select: `SELECT v.rowid AS pos, n.name, v.mime, v.sha256 FROM versions v JOIN nodes n ON n.id = v.node_id
+             WHERE v.rowid > ? ORDER BY v.rowid LIMIT 2000`,
+    update: 'UPDATE versions SET mime = ? WHERE rowid = ?',
+  },
+};
+
+function retype(table: keyof typeof RETYPE) {
+  let changed = 0;
+  for (let last = 0; ;) {
+    const rows = all<{ pos: number; name: string; mime: string | null; sha256: string | null }>(RETYPE[table].select, last);
+    if (rows.length === 0) return changed;
+    last = rows[rows.length - 1].pos;
+    for (const row of rows) {
+      const mime = mimeOf(row.name);
+      if (mime === row.mime) continue;
+      run(RETYPE[table].update, mime, row.pos);
+      if (row.sha256) run('UPDATE blobs SET processed = 0 WHERE sha256 = ?', row.sha256);
+      changed++;
+    }
+  }
+}
+
+export function refreshPreviews() {
+  if (settings.get('preview.revision') >= PREVIEW_REVISION) return null;
+  const result = tx(() => {
+    const retyped = retype('nodes') + retype('versions');
+    run('UPDATE blobs SET processed = 0 WHERE refs > 0 AND thumb = -1');
+    run(
+      `UPDATE blobs SET processed = 0 WHERE refs > 0 AND sha256 IN (
+         SELECT sha256 FROM nodes WHERE type = 'file' AND mime IN ('application/octet-stream', 'application/postscript', 'text/typescript')
+       )`
+    );
+    run(
+      `UPDATE blobs SET processed = 0 WHERE refs > 0 AND (width IS NULL OR thumb = 0) AND sha256 IN (
+         SELECT sha256 FROM nodes WHERE type = 'file' AND mime LIKE 'image/%'
+       )`
+    );
+    run('UPDATE blobs SET thumb = 0 WHERE thumb = -1');
+    return { retyped, pending: pendingCount() };
+  });
+  settings.set('preview.revision', PREVIEW_REVISION);
+  return result;
 }
 
 export function reindexText() {

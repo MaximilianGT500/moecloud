@@ -1,9 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
+import sharp from 'sharp';
+import yazl from 'yazl';
+import { proRaw } from './images.ts';
+import { smtpSink } from './smtp.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const shots = resolve(process.env.SCREENSHOTS ?? join(root, 'docs/screenshots'));
@@ -19,6 +23,7 @@ if (!existsSync(join(root, 'dist/web/.vite/manifest.json'))) {
 
 const dataDir = await mkdtemp(join(tmpdir(), 'moecloud-browser-'));
 await mkdir(shots, { recursive: true });
+const smtp = await smtpSink();
 
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.ts'], {
   cwd: root,
@@ -36,6 +41,8 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
 });
 
 const logs: string[] = [];
+process.once('exit', () => server.kill('SIGTERM'));
+
 const code = await new Promise<string>((done, fail) => {
   const timer = setTimeout(() => fail(new Error('Der Server meldet keinen Einrichtungscode')), 30_000);
   server.stdout.setEncoding('utf8');
@@ -54,6 +61,7 @@ const browser = await chromium
   .launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
   .catch(async (error: Error) => {
     server.kill('SIGTERM');
+    await smtp.close();
     await rm(dataDir, { recursive: true, force: true });
     process.stderr.write(
       `Der Browser startet nicht: ${error.message.split('\n')[0]}\nSetze CHROME_PATH auf ein installiertes Chrome oder Chromium.\n`
@@ -189,6 +197,22 @@ try {
     await item(page, 'Urlaub 2026').waitFor();
   });
 
+  await step('E-Mail einrichten und testen', async () => {
+    await api(page, 'PATCH', '/api/admin/mail', {
+      'mail.enabled': true,
+      'mail.host': '127.0.0.1',
+      'mail.port': smtp.port,
+      'mail.security': 'none',
+      'mail.from': 'cloud@example.com',
+    });
+    await page.goto(`${base}/admin/mail`);
+    await page.getByRole('button', { name: 'Test senden', exact: true }).click();
+    const mail = await smtp.mailTo('emi@example.com');
+    if (!mail.includes('Diese E-Mail zeigt, dass der Versand funktioniert.')) throw new Error('Die Test-E-Mail hat den falschen Inhalt');
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+  });
+
   await step('Liste mit Details', async () => {
     await item(page, 'Urlaub 2026').click();
     await page.getByRole('button', { name: 'Verwalten', exact: true }).waitFor();
@@ -275,6 +299,22 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('Link per E-Mail senden', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Per E-Mail senden' }).first().click();
+    await dialog.getByRole('textbox', { name: 'E-Mail' }).fill('emily@example.com');
+    await dialog.getByRole('button', { name: 'Senden', exact: true }).click();
+    await visible(page, 'Link an emily@example.com gesendet');
+    const mail = await smtp.mailTo('emily@example.com');
+    if (!mail.includes('Emi Sato teilt „Fotos“ mit dir')) throw new Error('Der Betreff der E-Mail stimmt nicht');
+    if (!/http:\/\/localhost:\d+\/s\/[0-9A-Za-z]+/.test(mail)) throw new Error('Der Link fehlt in der E-Mail');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+  });
+
   await step('Fotos nach Monaten', async () => {
     await page.goto(`${base}/files/photos`);
     await page.getByRole('heading', { level: 2 }).first().waitFor();
@@ -359,8 +399,104 @@ try {
     const dialog = page.getByRole('dialog');
     await dialog.getByText('Tastenkürzel', { exact: true }).waitFor();
     await dialog.getByText('Alles auswählen', { exact: true }).waitFor();
+    await dialog.getByText('Aus der Zwischenablage hochladen', { exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
+  });
+
+  await step('Einfügen aus der Zwischenablage', async () => {
+    const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#8b5cf6' } })
+      .png()
+      .toBuffer();
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').waitFor();
+    let slow = true;
+    await page.route(
+      (url) => /^\/api\/nodes\/[^/]+\/children$/.test(url.pathname),
+      async (route) => {
+        if (slow) await new Promise((resolve) => setTimeout(resolve, 700));
+        await route.continue().catch(() => undefined);
+      }
+    );
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await page.evaluate((encoded) => {
+      const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
+      transfer.items.add(new File(['Aus der Zwischenablage\n'], 'Liste von Lea.txt', { type: 'text/plain' }));
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer }));
+    }, png.toString('base64'));
+    slow = false;
+    await page
+      .getByRole('grid')
+      .getByText(/^Eingefügtes Bild \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\.png$/)
+      .first()
+      .waitFor();
+    await item(page, 'Liste von Lea.txt').waitFor();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  });
+
+  await step('Vorschau für Rohformate, HEIC und Dokumente', async () => {
+    const cover = await sharp({ create: { width: 240, height: 320, channels: 3, background: '#8b5cf6' } })
+      .png()
+      .toBuffer();
+    const archive = new yazl.ZipFile();
+    archive.addBuffer(cover, 'Thumbnails/thumbnail.png');
+    archive.end();
+    const parts: Buffer[] = [];
+    for await (const part of archive.outputStream) parts.push(part as Buffer);
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const folder = page.url();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (
+      await chooser
+    ).setFiles([
+      { name: 'IMG_4711.DNG', mimeType: 'application/octet-stream', buffer: await proRaw() },
+      { name: 'IMG_4712.HEIC', mimeType: 'application/octet-stream', buffer: await readFile(join(root, 'test/fixtures/hochkant-p3.heic')) },
+      { name: 'Einladung.odt', mimeType: 'application/octet-stream', buffer: Buffer.concat(parts) },
+      { name: 'LIESMICH', mimeType: 'application/octet-stream', buffer: Buffer.from('Hallo Mia, das ist ein Text ohne Endung.\n') },
+    ]);
+    const upright = (name: string) =>
+      page.waitForFunction((alt) => {
+        const image = [...document.querySelectorAll<HTMLImageElement>('[role=dialog] img')].find((entry) => entry.alt === alt);
+        return Boolean(image && image.complete && image.naturalHeight > image.naturalWidth && image.src.includes('/preview'));
+      }, name);
+    const close = async () => {
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+    };
+    await item(page, 'IMG_4711.DNG').dblclick();
+    await upright('IMG_4711.DNG');
+    await page
+      .getByRole('dialog')
+      .getByText(/· Vorschaubild/)
+      .waitFor();
+    await close();
+    await item(page, 'IMG_4712.HEIC').dblclick();
+    await upright('IMG_4712.HEIC');
+    await close();
+    await item(page, 'Einladung.odt').dblclick();
+    await upright('Vorschaubild von „Einladung.odt“');
+    await page.getByRole('dialog').getByText('MoeCloud zeigt hier das Vorschaubild aus der Datei.', { exact: true }).waitFor();
+    await close();
+    const kind = async () => {
+      const id = folder.split('/').pop();
+      const listing = await api<{ items: { name: string; kind: string }[] }>(page, 'GET', `/api/nodes/${id}/children`);
+      return listing.items.find((entry) => entry.name === 'LIESMICH')?.kind;
+    };
+    for (let attempt = 0; (await kind()) !== 'text'; attempt++) {
+      if (attempt > 40) throw new Error('LIESMICH wurde nicht als Text erkannt');
+      await page.waitForTimeout(250);
+    }
+    await page.reload();
+    await item(page, 'LIESMICH').dblclick();
+    await page.getByRole('dialog').getByText('Hallo Mia, das ist ein Text ohne Endung.').first().waitFor();
+    await close();
   });
 
   await step('Ordnerfarbe', async () => {
@@ -558,6 +694,7 @@ try {
   });
 } finally {
   await browser.close();
+  await smtp.close();
   server.kill('SIGTERM');
   await new Promise((done) => server.once('exit', done));
   await rm(dataDir, { recursive: true, force: true });

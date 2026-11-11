@@ -8,6 +8,7 @@ import RadioGroup from '@mui/material/RadioGroup';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckRounded from '@mui/icons-material/CheckRounded';
+import { dayValue, endOfDay } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { buildPalette, normalizeHex, SEED_PRESETS } from '../../theme/scheme';
 import { c, radius } from '../../theme/tokens';
@@ -115,18 +116,6 @@ function SeedPicker({ value, onChange }: { value: string; onChange: (value: stri
   );
 }
 
-const dayValue = (time: number) => {
-  if (!time) return '';
-  const date = new Date(time);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
-const endOfDay = (value: string) => {
-  if (!value) return 0;
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day, 23, 59, 59).getTime();
-};
-
 export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings) => void }) {
   const setSeed = useSeed();
   const form = useDraft<Settings>(loadSettings, async (changes) => {
@@ -191,7 +180,7 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
             label={t('Anzeigen bis')}
             type="date"
             value={dayValue(Number(draft['notice.until']))}
-            onChange={(event) => set('notice.until', endOfDay(event.target.value))}
+            onChange={(event) => set('notice.until', endOfDay(event.target.value) ?? 0)}
             slotProps={{ inputLabel: { shrink: true } }}
             helperText={t('Leer lassen, damit der Hinweis bleibt, bis du ihn löschst.')}
           />

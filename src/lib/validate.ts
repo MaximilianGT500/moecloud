@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { badRequest } from './errors.ts';
 
+const BUILT_IN = /^(Invalid|Too (big|small)|Unrecognized)\b/;
+
 export function parse<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   const result = schema.safeParse(input ?? {});
   if (result.success) return result.data;
-  const issue = result.error.issues[0];
-  const message = issue?.message && !issue.message.startsWith('Invalid') ? issue.message : 'Die Eingabe ist ungültig';
+  const message = result.error.issues[0]?.message;
+  if (!message || BUILT_IN.test(message)) throw badRequest('Die Eingabe ist ungültig');
   throw badRequest(message);
 }
 

@@ -4,7 +4,7 @@ import { config } from '../config.ts';
 import { HttpError, badRequest, forbidden, insufficientStorage, notFound } from '../lib/errors.ts';
 import { cleanName, uniqueName } from '../lib/names.ts';
 import { record } from './activity.ts';
-import { entryStream, openZip, safePath } from './archive.ts';
+import { entryStream, isZip, openZip, safePath } from './archive.ts';
 import { blobPath, receive } from './blobs.ts';
 import { ingest } from './ingest.ts';
 import { changed, ensurePath, findChild, getNode, insertNode, remaining, requireAccess, requireFolder, taken } from './nodes.ts';
@@ -16,7 +16,6 @@ import type { UserRow } from './users.ts';
 const MAX_FILES = 10_000;
 const DISK_RESERVE = 512 * 1024 * 1024;
 const JUNK = /(^|\/)(__MACOSX(\/|$)|\.DS_Store$|Thumbs\.db$|desktop\.ini$)/i;
-const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
 
 interface Planned {
   entry: Entry;
@@ -72,7 +71,7 @@ async function freeSpace() {
 export async function extractArchive(user: UserRow, nodeId: string): Promise<ExtractResult> {
   const { node } = requireAccess(user, nodeId);
   if (node.type !== 'file' || !node.sha256) throw notFound('Diese Datei gibt es nicht mehr');
-  if (!ZIP_TYPES.has(node.mime ?? '') && !/\.zip$/i.test(node.name)) throw badRequest('Entpacken geht nur mit ZIP-Archiven');
+  if (!isZip(node)) throw badRequest('Entpacken geht nur mit ZIP-Archiven');
   if (!node.parent_id) throw notFound('Diese Datei gibt es nicht mehr');
   assertNotInfected(node.sha256);
   const parent = requireFolder(user, node.parent_id, 'edit').node;

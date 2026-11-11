@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import sharp from 'sharp';
-import yazl from 'yazl';
-import { Client, createApp, fakeClamd, httpSink, login, setUp } from './helpers.ts';
+import { Client, createApp, fakeClamd, httpSink, login, setUp, zip } from './helpers.ts';
 import { EICAR } from '../src/lib/clamav.ts';
 import { value } from '../src/lib/db.ts';
 import { outbox } from '../src/services/mail.ts';
@@ -31,15 +30,6 @@ async function eventually(check: () => boolean, timeout = 2000) {
     if (Date.now() - started > timeout) assert.fail('Die Bedingung trat nicht ein');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-}
-
-async function zip(entries: Record<string, string>) {
-  const file = new yazl.ZipFile();
-  for (const [name, content] of Object.entries(entries)) file.addBuffer(Buffer.from(content), name);
-  file.end();
-  const chunks: Buffer[] = [];
-  for await (const chunk of file.outputStream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
 }
 
 before(async () => {
@@ -227,6 +217,33 @@ describe('E-Mail', () => {
     assert.equal(created.json().sent, true);
     assert.equal(outbox.at(-1)?.to, 'emily@example.com');
   });
+
+  it('schickt einen öffentlichen Link per E-Mail', async () => {
+    const folder = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Für Lea' })).json().node.id;
+    const { id, url } = (
+      await emi.json('POST', `/api/nodes/${folder}/links`, { password: 'geheim-fuer-lea', expiresAt: Date.now() + 3 * 86_400_000 })
+    ).json().link;
+    const sent = await emi.json('POST', `/api/links/${id}/send`, { email: 'lea@example.com' });
+    assert.equal(sent.statusCode, 200, sent.body);
+    const mail = outbox.at(-1)!;
+    assert.equal(mail.to, 'lea@example.com');
+    assert.equal(mail.subject, 'Emi teilt „Für Lea“ mit dir');
+    assert.ok(mail.text.includes(url));
+    assert.match(mail.text, /mit einem Passwort geschützt/);
+    assert.match(mail.text, /Der Link gilt bis zum \d+\. \w+ \d{4}\./);
+    assert.ok(!mail.text.includes('geheim-fuer-lea'));
+    assert.ok(!mail.html.includes('geheim-fuer-lea'));
+    for (const email of ['', 'keine-adresse', 'lea@example.com,mia@example.com', 'Lea <lea@example.com>']) {
+      assert.equal((await emi.json('POST', `/api/links/${id}/send`, { email })).statusCode, 400, email);
+    }
+    assert.equal((await mia.json('POST', `/api/links/${id}/send`, { email: 'lea@example.com' })).statusCode, 404);
+    await emi.json('PATCH', `/api/links/${id}`, { paused: true });
+    const count = outbox.length;
+    const paused = await emi.json('POST', `/api/links/${id}/send`, { email: 'lea@example.com' });
+    assert.equal(paused.statusCode, 400);
+    assert.equal(paused.json().error.message, 'Dieser Link ist gerade pausiert');
+    assert.equal(outbox.length, count);
+  });
 });
 
 describe('Benachrichtigungen und Aktivität', () => {
@@ -291,6 +308,33 @@ describe('Benachrichtigungen und Aktivität', () => {
     assert.ok(items.some((item: { action: string }) => item.action === 'rename'));
     assert.ok(items.some((item: { action: string; viaLink: boolean }) => item.action === 'link_upload' && item.viaLink));
     assert.equal((await new Client(app).get(`/api/nodes/${folder}/activity`)).statusCode, 401);
+  });
+
+  it('zeigt Freigaben in der Aktivität nur, wem sie etwas angehen', async () => {
+    const actions = async (client: Client, id = folder) =>
+      (await client.get(`/api/nodes/${id}/activity`)).json().items.map((item: { action: string }) => item.action) as string[];
+    const owner = await actions(emi);
+    assert.ok(owner.includes('share_user'));
+    assert.ok(owner.includes('share_link'));
+    const editor = await actions(mia);
+    assert.ok(!editor.includes('share_user'));
+    assert.ok(editor.includes('share_link'));
+    assert.ok(editor.includes('upload'));
+    await emi.json('POST', `/api/nodes/${folder}/grants`, { userId: lea, permission: 'view' });
+    const viewer = await actions(await login(app, 'lea', 'leas-passwort-123'));
+    assert.ok(!viewer.includes('share_user'));
+    assert.ok(!viewer.includes('share_link'));
+    assert.ok(viewer.includes('upload'));
+    const inner = (await emi.json('POST', `/api/nodes/${folder}/folders`, { name: 'Strandtage' })).json().node.id;
+    const note = (await emi.json('POST', `/api/nodes/${root}/text`, { name: 'Notiz.txt' })).json().node.id;
+    await emi.json('POST', '/api/nodes/move', { ids: [note], target: inner });
+    assert.ok((await actions(mia, note)).includes('move'));
+    const elsewhere = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Nur für mich' })).json().node.id;
+    await emi.json('POST', `/api/nodes/${note}/grants`, { userId: miaId, permission: 'view' });
+    await emi.json('POST', '/api/nodes/move', { ids: [note], target: elsewhere });
+    const moved = (await mia.get(`/api/nodes/${note}/activity`)).json().items as { action: string; details: { to?: string } | null }[];
+    assert.ok(!moved.some((item) => item.details?.to === 'Nur für mich'));
+    assert.ok((await actions(emi, note)).filter((action) => action === 'move').length >= 1);
   });
 
   it('sammelt Kommentare und benachrichtigt die anderen', async () => {

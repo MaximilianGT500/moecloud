@@ -3,6 +3,9 @@ import yauzl, { type Entry, type ZipFile } from 'yauzl';
 import { badRequest, notFound } from '../lib/errors.ts';
 
 const MAX_ENTRIES = 5000;
+const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
+
+export const isZip = (node: { name: string; mime: string | null }) => ZIP_TYPES.has(node.mime ?? '') || /\.zip$/i.test(node.name);
 
 export function openZip(path: string): Promise<ZipFile> {
   return new Promise((resolve, reject) => {

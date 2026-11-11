@@ -12,6 +12,9 @@ export function t(lang: Lang, text: string, params?: Record<string, string | num
 
 export const messagesFor = (lang: Lang) => (lang === 'en' ? english : null);
 
+export const longDate = (lang: Lang, time: number) =>
+  new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'long' }).format(new Date(time));
+
 export const isLang = (value: unknown): value is Lang => value === 'de' || value === 'en';
 
 export function fromAcceptLanguage(header: string | undefined): Lang | null {

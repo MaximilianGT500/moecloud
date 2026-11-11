@@ -2,10 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { config } from '../config.ts';
-import { value } from '../lib/db.ts';
+import { run, value } from '../lib/db.ts';
 import { safeRedirect } from '../lib/http.ts';
 import { isLang } from '../lib/i18n.ts';
-import { run } from '../lib/db.ts';
 import { setLanguageCookie } from '../lib/request.ts';
 import * as settings from '../services/settings.ts';
 

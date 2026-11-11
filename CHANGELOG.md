@@ -2,6 +2,62 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.0] · 2026-11-11
+
+MoeCloud zeigt jetzt Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF, Photoshop-Dateien und viele weitere Bildformate, dazu Vorschaubilder aus Dokumenten. Öffentliche Links verschickst du direkt aus dem Dialog zum Teilen per E-Mail, und Dateien und Screenshots lädst du mit Strg+V aus der Zwischenablage hoch. Dazu kommen 27 englische Texte, die bisher fehlten, mehr Zurückhaltung in der Aktivität geteilter Ordner und eine Prüfung, die alle Versionsangaben zusammenhält.
+
+### Vorschau
+
+- Kamera-Rohformate bekommen Vorschaubilder und öffnen sich in der Bildansicht: DNG samt ProRAW vom iPhone, CR2, CR3, NEF, ARW, RAF, ORF, RW2 und 18 weitere. MoeCloud nimmt das Vorschaubild, das die Kamera in die Datei gelegt hat, und dreht es richtig
+- Rohdateien gelten jetzt als Bilder. Sie erscheinen unter **Fotos** und zeigen Abmessungen, Aufnahmedatum, Kamera, Objektiv und Belichtung. Bisher kannte MoeCloud nur DNG als Bild
+- HEIC, HEIF und HIF bekommen Vorschaubild und Anzeige ohne Zusatzprogramme, richtig gedreht und mit umgerechneten Farben für Fotos im Farbraum Display P3
+- TIFF öffnet sich in der Bildansicht jetzt in jedem Browser
+- PSD, PSB, JPEG XL, JPEG 2000, TGA, DDS, QOI, PCX, PPM, PGM, PBM und SGI zeigt MoeCloud über ffmpeg, BMP und ICO bekommen damit Vorschaubilder
+- Für Formate, die Browser nicht selbst zeigen, liefert der Server ein großes Vorschaubild mit bis zu 2560 Pixeln Kantenlänge. Es entsteht beim ersten Öffnen und liegt danach in `data/previews/`
+- Dokumente mit eingebettetem Vorschaubild zeigen es in den Kacheln und in der Vorschau: OpenDocument, PowerPoint, Pages, Numbers, Keynote, EPUB mit Titelbild, Comics als CBZ, Krita, OpenRaster, XMind, Sketch, Procreate, 3MF und GeoGebra
+- Dateien ohne oder mit unbekannter Endung erkennt MoeCloud am Inhalt als Text, Bild oder PDF. Illustrator-Dateien mit PDF-Inhalt öffnen sich als PDF, Videos mit der Endung `.ts` gelten nicht mehr als TypeScript
+- Lässt sich ein Bild nicht laden oder kann der Browser ein Video oder eine Audiodatei nicht abspielen, steht dort ein Hinweis mit dem Knopf zum Herunterladen
+- GPX, KML, Untertitel, E-Mail-Dateien und Batch-Dateien öffnen sich als Text
+- Kurze Belichtungszeiten wie 1/4000 s stimmen jetzt in den Bildinfos, bisher waren sie gerundet oder fehlten
+- Kameras, deren Modellname die Marke schon enthält, heißen nicht mehr doppelt, etwa „Canon EOS R“ statt „Canon Canon EOS R“
+- Rohdateien lassen sich nicht drehen, das Original bleibt unverändert
+- Neue Routen `GET /api/nodes/:id/preview` und `GET /api/public/:token/nodes/:id/preview` für das große Vorschaubild, Listen nennen dafür das Feld `rendition`
+
+### Teilen
+
+- Öffentliche Links per E-Mail verschicken: Das Brief-Symbol an jedem Link erscheint, sobald der E-Mail-Versand eingerichtet ist
+- Die E-Mail nennt deinen Namen, das geteilte Element und das Ablaufdatum, das Passwort eines Links steht nie darin
+- Pro Konto gehen höchstens 30 dieser E-Mails in einer Stunde raus, pausierte, abgelaufene und aufgebrauchte Links lassen sich nicht verschicken
+- In der Aktivität eines geteilten Ordners steht nur noch für die Person, der er gehört, mit wem er geteilt ist. Links sehen dort nur Personen, die bearbeiten dürfen, und Verschiebungen in Ordner ohne eigenen Zugriff erscheinen nicht mehr
+
+### Dateien
+
+- Dateien und Bilder aus der Zwischenablage hochladen: Strg+V oder ⌘V lädt sie in den offenen Ordner
+- Ein eingefügter Screenshot heißt „Eingefügtes Bild“ mit Datum und Uhrzeit
+- Die Übersicht der Tastenkürzel nennt das neue Kürzel
+- Die Knöpfe an einem Link brechen auf dem Handy sauber um
+- Beim Öffnen der Dateien lädt die Liste nicht mehr doppelt
+- Dateien, die du ablegst oder einfügst, während ein Ordner noch lädt, landen in diesem Ordner. Bisher erschien die Meldung, dass du dort nichts hochladen darfst
+
+### Übersetzung
+
+- 27 Texte gab es bisher nur auf Deutsch, darunter Meldungen zum vollen Speicher und zu ungültigen Eingaben, die Knöpfe in Benachrichtigungs-E-Mails, die Meldung zu Uploads über einen Link und der Ordner „Von …“ für übergebene Dateien
+- Eingaben, die zu lang sind oder unbekannte Felder enthalten, bekommen „Die Eingabe ist ungültig“ statt eines technischen englischen Textes
+- `node tools/i18n.ts` findet jetzt auch Texte in Standardmeldungen, Benachrichtigungen und Prüfregeln
+
+### Versionen und Entwicklung
+
+- `node tools/version.ts` prüft, ob `package.json`, `package-lock.json`, Changelog, README, `SECURITY.md` und die Vorlage für Fehlermeldungen dieselbe Version nennen und ob im Changelog keine Version doppelt oder in falscher Reihenfolge steht. Mit einer Version als Angabe trägt es sie überall ein
+- `SECURITY.md`, das Beispiel für die `version.json` im README und die Vorlage für Fehlermeldungen nannten noch 1.0.0
+- Die CI baut die Oberfläche jetzt vor den Tests, weil 3 Tests sie brauchen, und prüft die Versionsangaben. `npm run check` macht dasselbe in einem Durchlauf
+- Doppelte Hilfsfunktionen sind zusammengelegt, etwa die Erkennung von ZIP-Archiven, die Sprache für E-Mails und die Datumsfelder
+- Das Installationsskript kommt ohne Kommentarzeile aus
+- Abhängigkeiten aktualisiert, darunter Vite 8.3.8, Motion 14.12, nodemailer 10.5 und music-metadata 12.4. Neu ist libheif-js 1.23.5 für HEIC
+
+### Update von 1.1.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`. Der Aufbau der Datenbank ändert sich mit dieser Version nicht. Beim ersten Start ordnet MoeCloud vorhandene Rohdateien als Bilder ein und holt Vorschaubilder und Bildinfos für die neuen Formate im Hintergrund nach, den Fortschritt siehst du unter **Admin › System**.
+
 ## [1.1.0] · 2026-11-09
 
 Mit Gruppen teilst du Ordner mit mehreren Personen auf einmal, ZIP-Archive packst du direkt in der Cloud aus, und Links laufen auf Wunsch nach einer festen Zahl an Downloads ab. Admins können die Zwei-Faktor-Anmeldung vorschreiben. Das Installationsskript prüft den Server vorher, hält auf Wunsch eine Version fest und spielt Updates jede Nacht ein, das Docker-Image ist deutlich kleiner.
@@ -199,6 +255,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.2.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.2.0
 [1.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.1.0
 [1.0.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.0.0
 [0.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v0.1.0

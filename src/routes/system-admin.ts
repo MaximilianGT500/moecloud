@@ -125,7 +125,7 @@ export async function systemAdminRoutes(app: FastifyInstance) {
         lines: [t(lang, 'Diese E-Mail zeigt, dass der Versand funktioniert.')],
       });
     } catch (error) {
-      throw badRequest('Der Versand hat nicht geklappt: {error}', { error: (error as Error).message.slice(0, 200) });
+      throw badRequest('Der Versand hat nicht geklappt: {error}', { error: t(request.lang, (error as Error).message.slice(0, 200)) });
     }
     return { ok: true, to };
   });
@@ -156,7 +156,7 @@ export async function systemAdminRoutes(app: FastifyInstance) {
     try {
       return await testScanner(input);
     } catch (error) {
-      throw badRequest('ClamAV ist nicht erreichbar: {error}', { error: (error as Error).message.slice(0, 200) });
+      throw badRequest('ClamAV ist nicht erreichbar: {error}', { error: t(request.lang, (error as Error).message.slice(0, 200)) });
     }
   });
 
@@ -272,7 +272,9 @@ export async function systemAdminRoutes(app: FastifyInstance) {
     try {
       return await checkForUpdates(true);
     } catch (error) {
-      throw badRequest('Die Versionsprüfung hat nicht geklappt: {error}', { error: (error as Error).message.slice(0, 200) });
+      throw badRequest('Die Versionsprüfung hat nicht geklappt: {error}', {
+        error: t(request.lang, (error as Error).message.slice(0, 200)),
+      });
     }
   });
 

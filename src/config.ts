@@ -23,6 +23,7 @@ export const config = {
     db: resolve(dataDir, 'moecloud.db'),
     blobs: resolve(dataDir, 'blobs'),
     thumbs: resolve(dataDir, 'thumbs'),
+    previews: resolve(dataDir, 'previews'),
     tmp: resolve(dataDir, 'tmp'),
     backups: resolve(dataDir, 'backups'),
   },

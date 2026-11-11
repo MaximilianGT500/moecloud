@@ -72,6 +72,7 @@ const DEFAULTS = {
   'audit.days': 180,
   'activity.days': 90,
   'search.content': true,
+  'preview.revision': 1,
   'metrics.token': '',
   'setup.done': false,
   'setup.code': '',

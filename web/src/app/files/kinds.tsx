@@ -36,6 +36,7 @@ export interface Item {
   trashedAt?: number | null;
   version: string;
   thumb: boolean;
+  rendition?: boolean;
   starred?: boolean;
   shared?: boolean;
   role?: 'owner' | 'edit' | 'view';
@@ -52,17 +53,30 @@ export interface Item {
 }
 
 export type PreviewType =
-  'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'csv' | 'json' | 'code' | 'text' | 'docx' | 'xlsx' | 'zip' | 'font' | 'none';
+  'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'csv' | 'json' | 'code' | 'text' | 'docx' | 'xlsx' | 'zip' | 'font' | 'cover' | 'none';
+
+const BROWSER_IMAGES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/apng',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/svg+xml',
+]);
 
 const extension = (name: string) => {
   const index = name.lastIndexOf('.');
   return index > 0 ? name.slice(index + 1).toLowerCase() : name.toLowerCase() === 'dockerfile' ? 'dockerfile' : '';
 };
 
-export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' | 'infected'>): PreviewType {
+export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' | 'infected' | 'rendition'>): PreviewType {
   if (item.type === 'folder' || item.infected) return 'none';
   const ext = extension(item.name);
-  if (item.kind === 'image') return 'image';
+  if (item.kind === 'image') return item.rendition || BROWSER_IMAGES.has(item.mime ?? '') ? 'image' : 'none';
   if (item.kind === 'video') return 'video';
   if (item.kind === 'audio') return 'audio';
   if (item.kind === 'pdf') return 'pdf';
@@ -75,7 +89,7 @@ export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' |
   if (['ttf', 'otf', 'woff', 'woff2'].includes(ext)) return 'font';
   if (item.kind === 'code') return 'code';
   if (item.kind === 'text') return 'text';
-  return 'none';
+  return item.rendition ? 'cover' : 'none';
 }
 
 export const languageOf = (name: string) => extension(name);
@@ -144,6 +158,7 @@ export function FileIcon({ item, size = 24 }: { item: Pick<Item, 'kind' | 'share
 export const thumbUrl = (item: Pick<Item, 'id' | 'version'>, base = '/api') => `${base}/nodes/${item.id}/thumb?v=${item.version}`;
 export const contentUrl = (item: Pick<Item, 'id' | 'version'>, base = '/api', download = false) =>
   `${base}/nodes/${item.id}/content?v=${item.version}${download ? '&download=1' : ''}`;
+export const previewUrl = (item: Pick<Item, 'id' | 'version'>, base = '/api') => `${base}/nodes/${item.id}/preview?v=${item.version}`;
 
 export function Thumb({
   item,

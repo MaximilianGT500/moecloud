@@ -4,6 +4,7 @@ type Handler = (event: string, data: Record<string, unknown>) => void;
 
 const handlers = new Set<Handler>();
 let source: EventSource | null = null;
+let greeted = false;
 
 function connect() {
   if (source || typeof EventSource === 'undefined') return;
@@ -18,6 +19,10 @@ function connect() {
     });
   }
   source.addEventListener('hello', () => {
+    if (!greeted) {
+      greeted = true;
+      return;
+    }
     for (const handler of handlers) handler('reconnect', {});
   });
 }

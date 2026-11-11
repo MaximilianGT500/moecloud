@@ -8,7 +8,7 @@ import { c, radius } from '../../../theme/tokens';
 import { triggerDownload } from '../actions';
 import { contentUrl, previewType, type Item } from '../kinds';
 import { Fallback, InfectedNotice } from './Fallback';
-import { AudioPreview, FontPreview, ImagePreview } from './media';
+import { AudioPreview, CoverPreview, FontPreview, ImagePreview, VideoPreview } from './media';
 import XlsxPreview from './TablePreview';
 import { TextPreview, TEXT_LIMIT } from './TextPreview';
 
@@ -51,28 +51,13 @@ export function Preview({
 
   switch (type) {
     case 'image':
-      return <ImagePreview item={item} base={base} inline={inline} />;
+      return <ImagePreview item={item} base={base} inline={inline} action={download} />;
+    case 'cover':
+      return <CoverPreview item={item} base={base} inline={inline} action={download} />;
     case 'video':
-      return (
-        <Box
-          component="video"
-          src={url}
-          controls
-          autoPlay={!inline}
-          playsInline
-          poster={item.thumb ? `${base}/nodes/${item.id}/thumb?v=${item.version}` : undefined}
-          sx={{
-            maxWidth: '100%',
-            maxHeight: inline ? '70vh' : '100%',
-            width: inline ? '100%' : undefined,
-            borderRadius: `${radius.md}px`,
-            bgcolor: c.scrim,
-            outline: 'none',
-          }}
-        />
-      );
+      return <VideoPreview item={item} base={base} inline={inline} action={download} />;
     case 'audio':
-      return <AudioPreview item={item} base={base} />;
+      return <AudioPreview item={item} base={base} action={download} />;
     case 'pdf':
       return (
         <Box

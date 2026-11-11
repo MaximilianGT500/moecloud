@@ -5,8 +5,8 @@ import { publish } from '../lib/events.ts';
 import { kindOf, mimeOf } from '../lib/mime.ts';
 import { cleanName, nameKey, uniqueName } from '../lib/names.ts';
 import { record } from './activity.ts';
-import { type BlobRow } from './blobs.ts';
-import { hasPreview } from './thumbs.ts';
+import { typeOf, type BlobRow } from './blobs.ts';
+import { previews } from './thumbs.ts';
 import { getUser, quotaOf, usageOf, type UserRow } from './users.ts';
 
 export interface NodeRow {
@@ -598,6 +598,7 @@ export interface Presented {
   trashedAt: number | null;
   version: string;
   thumb: boolean;
+  rendition: boolean;
   starred: boolean;
   shared: boolean;
   role: Role;
@@ -664,13 +665,14 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
   }
   return nodes.map((node) => {
     const blob = node.sha256 ? blobs.get(node.sha256) : undefined;
+    const mime = node.type === 'file' ? typeOf(node, blob) : null;
     return {
       id: node.id,
       parentId: node.parent_id,
       type: node.type,
       name: node.name,
-      kind: kindOf(node.name, node.mime, node.type),
-      mime: node.mime,
+      kind: kindOf(node.name, mime, node.type),
+      mime,
       size: node.size,
       items: node.type === 'folder' ? (counts.get(node.id) ?? 0) : null,
       createdAt: node.created_at,
@@ -678,7 +680,7 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       modifiedAt: node.modified_at,
       trashedAt: node.trashed_at,
       version: `${node.etag}${node.sha256 ? `-${node.sha256.slice(0, 12)}` : ''}`,
-      thumb: hasPreview(node, blob),
+      ...previews(node, blob),
       starred: stars.has(node.id),
       shared: shared.has(node.id),
       role: typeof role === 'function' ? role(node) : role,

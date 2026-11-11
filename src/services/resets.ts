@@ -2,13 +2,13 @@ import type { FastifyRequest } from 'fastify';
 import { one, run, value } from '../lib/db.ts';
 import { hashPassword, randomId, sha256 } from '../lib/crypto.ts';
 import { badRequest } from '../lib/errors.ts';
-import { isLang, t, type Lang } from '../lib/i18n.ts';
+import { t } from '../lib/i18n.ts';
 import { audit } from './audit.ts';
 import { baseUrl } from './links.ts';
 import { deliver, mailReady } from './mail.ts';
 import { destroyUserSessions } from './sessions.ts';
 import * as settings from './settings.ts';
-import { findByLogin, getUser, type UserRow } from './users.ts';
+import { findByLogin, getUser, preferredLanguage, type UserRow } from './users.ts';
 
 interface ResetRow {
   id: string;
@@ -21,8 +21,6 @@ interface ResetRow {
 
 const HOUR = 60 * 60 * 1000;
 
-const langOf = (user: UserRow): Lang => (user.language && isLang(user.language) ? user.language : settings.get('site.language'));
-
 async function issue(request: FastifyRequest, user: UserRow, hours: number, byAdmin: boolean) {
   const token = randomId(40);
   const now = Date.now();
@@ -34,7 +32,7 @@ async function issue(request: FastifyRequest, user: UserRow, hours: number, byAd
     now,
     now + hours * HOUR
   );
-  const lang = langOf(user);
+  const lang = preferredLanguage(user);
   const url = `${baseUrl(request)}/reset?token=${token}`;
   await deliver(user.email!, {
     lang,

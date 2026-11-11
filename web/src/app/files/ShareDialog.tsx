@@ -23,6 +23,7 @@ import { useTheme } from '@mui/material/styles';
 import AddLinkRounded from '@mui/icons-material/AddLinkRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import ForwardToInboxRounded from '@mui/icons-material/ForwardToInboxRounded';
 import PauseCircleRounded from '@mui/icons-material/PauseCircleRounded';
 import PlayCircleRounded from '@mui/icons-material/PlayCircleRounded';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
@@ -37,7 +38,7 @@ import UploadRounded from '@mui/icons-material/UploadRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
 import { api, errorText } from '../../lib/api';
 import { boot } from '../../lib/boot';
-import { formatDay, formatNumber } from '../../lib/format';
+import { dayValue, endOfDay, formatDay, formatNumber } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, radius } from '../../theme/tokens';
 import { CopyField, QrCode, UserAvatar, copyText } from '../common/bits';
@@ -82,14 +83,6 @@ function GroupAvatar({ size }: { size: number }) {
 
 const settings = () =>
   (boot() as unknown as { share?: ShareSettings }).share ?? { links: true, users: true, requirePassword: false, maxDays: 0 };
-
-const dayValue = (time: number | null) => {
-  if (!time) return '';
-  const date = new Date(time);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
-const endOfDay = (value: string) => (value ? new Date(`${value}T23:59:59`).getTime() : null);
 
 function LinkForm({
   item,
@@ -257,6 +250,54 @@ function LinkForm({
   );
 }
 
+function SendForm({ link, onSent }: { link: SharedLink; onSent: () => void }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    const address = email.trim();
+    setBusy(true);
+    try {
+      await api.post(`/api/links/${link.id}/send`, { email: address });
+      toast(t('Link an {email} gesendet', { email: address }));
+      onSent();
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Box
+      component="form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+      sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: { xs: 'wrap', sm: 'nowrap' }, pt: 0.5 }}
+    >
+      <TextField
+        type="email"
+        size="small"
+        label={t('E-Mail')}
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        autoFocus
+        required
+        helperText={
+          link.hasPassword
+            ? t('Das Passwort steht nicht in der E-Mail, gib es auf einem anderen Weg weiter.')
+            : t('Die Person bekommt den Link mit deinem Namen als Absender.')
+        }
+        slotProps={{ htmlInput: { maxLength: 254, autoComplete: 'off' } }}
+        sx={{ flex: 1, minWidth: 220 }}
+      />
+      <Button type="submit" variant="tonal" disabled={busy || !email.trim()} sx={{ minHeight: 40 }}>
+        {t('Senden')}
+      </Button>
+    </Box>
+  );
+}
+
 function LinkCard({
   item,
   link,
@@ -270,6 +311,8 @@ function LinkCard({
 }) {
   const [edit, setEdit] = useState(false);
   const [qr, setQr] = useState(false);
+  const [send, setSend] = useState(false);
+  const sendable = Boolean(boot().site.mail) && !link.expired && !link.paused && !link.exhausted;
   const chips = [
     link.hasPassword && { icon: <LockRounded />, label: t('Passwort') },
     link.expiresAt && {
@@ -312,8 +355,8 @@ function LinkCard({
           ))}
         </Box>
       )}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: 1, minWidth: 140 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+        <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: { xs: '1 1 100%', sm: 1 }, minWidth: 140 }}>
           {t('{views} Aufrufe · {downloads} Downloads', { views: formatNumber(link.views), downloads: formatNumber(link.downloads) })}
         </Typography>
         <Tooltip title={link.paused ? t('Fortsetzen') : t('Pausieren')}>
@@ -321,6 +364,13 @@ function LinkCard({
             {link.paused ? <PlayCircleRounded /> : <PauseCircleRounded />}
           </IconButton>
         </Tooltip>
+        {sendable && (
+          <Tooltip title={t('Per E-Mail senden')}>
+            <IconButton aria-label={t('Per E-Mail senden')} aria-expanded={send} onClick={() => setSend(!send)}>
+              <ForwardToInboxRounded />
+            </IconButton>
+          </Tooltip>
+        )}
         <Tooltip title={t('QR-Code')}>
           <IconButton aria-label={t('QR-Code')} aria-expanded={qr} onClick={() => setQr(!qr)}>
             <QrCode2Rounded />
@@ -337,6 +387,9 @@ function LinkCard({
           </IconButton>
         </Tooltip>
       </Box>
+      <Collapse in={send && sendable} unmountOnExit>
+        <SendForm link={link} onSent={() => setSend(false)} />
+      </Collapse>
       <Collapse in={qr} unmountOnExit>
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
           <QrCode value={link.url} size={180} label={t('QR-Code für den Link')} />

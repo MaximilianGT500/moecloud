@@ -8,6 +8,7 @@ import { config } from '../config.ts';
 import { all, one, run } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
 import { HttpError, tooLarge } from '../lib/errors.ts';
+import { resolveType } from '../lib/mime.ts';
 
 export interface BlobRow {
   sha256: string;
@@ -34,8 +35,12 @@ export function metaOf(blob: Pick<BlobRow, 'meta'> | undefined | null): Record<s
   }
 }
 
+export const typeOf = (node: { name: string; mime: string | null }, blob?: Pick<BlobRow, 'meta'> | null) =>
+  resolveType(node.name, node.mime, blob?.meta ? metaOf(blob).type : undefined);
+
 export const blobPath = (sha: string) => join(config.paths.blobs, sha.slice(0, 2), sha.slice(2, 4), sha);
 export const thumbPath = (sha: string) => join(config.paths.thumbs, sha.slice(0, 2), `${sha}.webp`);
+export const previewPath = (sha: string) => join(config.paths.previews, sha.slice(0, 2), `${sha}.webp`);
 export const tmpPath = (name = randomId(24)) => join(config.paths.tmp, name);
 
 export async function ensureDirs() {
@@ -170,6 +175,7 @@ export async function collectGarbage(graceMs = 60 * 60 * 1000) {
       if (run('DELETE FROM blobs WHERE sha256 = ? AND refs <= 0 AND created_at < ?', row.sha256, cutoff).changes === 0) return;
       await rm(blobPath(row.sha256), { force: true });
       await rm(thumbPath(row.sha256), { force: true });
+      await rm(previewPath(row.sha256), { force: true });
       removed++;
     });
   }

@@ -1,4 +1,5 @@
 import { all, one, run } from '../lib/db.ts';
+import type { Role } from './nodes.ts';
 import { initials, getUser } from './users.ts';
 
 export type ActivityAction =
@@ -50,6 +51,7 @@ export interface ActivityInput {
 }
 
 const GROUPED = new Set<ActivityAction>(['upload', 'link_upload', 'trash', 'restore', 'move', 'copy']);
+const GRANTS = new Set<ActivityAction>(['share_user', 'unshare_user', 'share_group', 'unshare_group']);
 const WINDOW = 3 * 60 * 1000;
 
 export function record(input: ActivityInput) {
@@ -116,11 +118,22 @@ function present(rows: ActivityRow[], viewer: number) {
   }));
 }
 
-export function forNode(nodeId: string, viewer: number, limit = 40) {
-  return present(
-    all<ActivityRow>('SELECT * FROM activity WHERE node_id = ? OR parent_id = ? ORDER BY created_at DESC LIMIT ?', nodeId, nodeId, limit),
-    viewer
+function visibleTo(row: ActivityRow, role: Role, canSee: (nodeId: string) => boolean) {
+  if (role === 'owner') return true;
+  if (GRANTS.has(row.action)) return false;
+  if (row.action === 'share_link') return role === 'edit';
+  if (row.action === 'move' && row.parent_id) return canSee(row.parent_id);
+  return true;
+}
+
+export function forNode(nodeId: string, viewer: number, role: Role, canSee: (nodeId: string) => boolean, limit = 40) {
+  const rows = all<ActivityRow>(
+    'SELECT * FROM activity WHERE node_id = ? OR parent_id = ? ORDER BY created_at DESC LIMIT ?',
+    nodeId,
+    nodeId,
+    role === 'owner' ? limit : limit * 3
   );
+  return present(rows.filter((row) => visibleTo(row, role, canSee)).slice(0, limit), viewer);
 }
 
 export function forUser(userId: number, before?: number, limit = 50) {

@@ -15,37 +15,64 @@ async function files(dir: string): Promise<string[]> {
 }
 
 const STRING = String.raw`'((?:[^'\\]|\\.)*)'`;
-const PATTERNS = [
-  new RegExp(String.raw`\btp?\(\s*(?:[\w.]+\s*,\s*)?${STRING}`, 'g'),
-  new RegExp(String.raw`\btn\(\s*[^,]+,\s*${STRING}\s*,\s*${STRING}`, 'g'),
-  new RegExp(String.raw`\brich\(\s*${STRING}`, 'g'),
-  new RegExp(String.raw`\b(?:badRequest|unauthorized|forbidden|notFound|conflict|tooLarge|insufficientStorage|tooMany)\(\s*${STRING}`, 'g'),
-  new RegExp(String.raw`new HttpError\(\s*\d+\s*,\s*${STRING}`, 'g'),
-  new RegExp(String.raw`\.(?:min|max|regex|refine)\([^'()]*(?:\([^()]*\)[^'()]*)*,\s*${STRING}\s*\)`, 'g'),
-  new RegExp(String.raw`\b(?:label|name|title):\s*${STRING}`, 'g'),
-  new RegExp(
-    String.raw`^\s+(?:folder|image|video|audio|pdf|text|code|document|spreadsheet|presentation|archive|other):\s*${STRING},?$`,
-    'gm'
-  ),
-];
+const SENTENCE = String.raw`'([A-ZÄÖÜ](?:[^'\\]|\\.)* (?:[^'\\]|\\.)*)'`;
+const ERRORS = 'badRequest|unauthorized|forbidden|notFound|conflict|tooLarge|insufficientStorage|tooMany';
 
-const KEY_FILES = /(kinds\.tsx|scheme\.ts|FilesApp\.tsx|Storage\.tsx|pages\.ts|setup\.ts|admin\.ts|validate\.ts)$/;
+interface Rule {
+  pattern: RegExp;
+  files?: RegExp;
+  notAfter?: RegExp;
+}
+
+const RULES: Rule[] = [
+  { pattern: new RegExp(String.raw`\btp?\(\s*(?:[\w.]+(?:\([^()]*\))?\s*,\s*)?${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\btn\(\s*[^,]+,\s*${STRING}\s*,\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\bmany\(\s*[^,]+,\s*[^,]+,\s*${STRING}\s*,\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\brich\(\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\b(?:${ERRORS})\(\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\b(?:${ERRORS})\(\s*[^'()]*\?\s*${STRING}\s*:\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`new HttpError\(\s*\d+\s*,\s*${STRING}`, 'g') },
+  { pattern: new RegExp(String.raw`\.(?:min|max|regex|refine)\([^'()]*(?:\([^()]*\)[^'()]*)*,\s*${STRING}\s*\)`, 'g') },
+  {
+    pattern: new RegExp(String.raw`[)}]\s*,\s*${SENTENCE}\s*\)`, 'g'),
+    files: /src\/(lib\/validate|routes\/[\w-]+)\.ts$/,
+    notAfter: /\blog\.\w+\([^;]*$/,
+  },
+  { pattern: new RegExp(String.raw`\bmessage = ${STRING}`, 'g'), files: /src\/lib\/errors\.ts$/ },
+  { pattern: new RegExp(String.raw`\baction:\s*${STRING}`, 'g'), files: /src\/services\/notify\.ts$/ },
+  {
+    pattern: new RegExp(String.raw`new \w*Error\(\s*(?:[\w.?]+(?:\([^()]*\))?\s*\|\|\s*)?${SENTENCE}`, 'g'),
+    files: /src\/(lib\/(clamav|fetch)|services\/updates)\.ts$/,
+  },
+  {
+    pattern: new RegExp(String.raw`\b(?:label|name|title):\s*${STRING}`, 'g'),
+    files: /(kinds\.tsx|scheme\.ts|FilesApp\.tsx|Storage\.tsx|pages\.ts|setup\.ts|admin\.ts|validate\.ts)$/,
+  },
+  {
+    pattern: new RegExp(
+      String.raw`^\s+(?:folder|image|video|audio|pdf|text|code|document|spreadsheet|presentation|archive|other):\s*${STRING},?$`,
+      'gm'
+    ),
+    files: /kinds\.tsx$/,
+  },
+];
 
 const keys = new Set<string>();
 const sources = [...(await files(join(root, 'src'))), ...(await files(join(root, 'web/src')))];
 for (const file of sources) {
   const code = await readFile(file, 'utf8');
-  PATTERNS.forEach((pattern, index) => {
-    if (index === PATTERNS.length - 2 && !KEY_FILES.test(file)) return;
-    if (index === PATTERNS.length - 1 && !file.endsWith('kinds.tsx')) return;
-    for (const match of code.matchAll(pattern)) {
+  const path = file.replaceAll('\\', '/');
+  for (const rule of RULES) {
+    if (rule.files && !rule.files.test(path)) continue;
+    for (const match of code.matchAll(rule.pattern)) {
+      if (rule.notAfter?.test(code.slice(Math.max(0, match.index - 400), match.index))) continue;
       for (const value of match.slice(1)) {
         if (value === undefined) continue;
         const text = value.replace(/\\'/g, "'");
         if (/[A-Za-zÄÖÜäöüß]/.test(text) && !/^[a-z][\w.-]*$/.test(text)) keys.add(text);
       }
     }
-  });
+  }
 }
 
 const existing = JSON.parse(await readFile(target, 'utf8')) as Record<string, string>;

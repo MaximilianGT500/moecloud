@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import sharp from 'sharp';
-import yazl from 'yazl';
-import { Client, createApp, fakeClamd, login, setUp } from './helpers.ts';
+import { Client, createApp, fakeClamd, login, setUp, zip } from './helpers.ts';
 import { EICAR } from '../src/lib/clamav.ts';
 
 const app = await createApp();
@@ -25,18 +24,6 @@ before(async () => {
 const clamd = await fakeClamd((data) =>
   data.toString('latin1').includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE') ? 'Eicar-Signature' : null
 );
-
-async function zip(entries: Record<string, string | Buffer>) {
-  const file = new yazl.ZipFile();
-  for (const [name, content] of Object.entries(entries)) {
-    if (name.endsWith('/')) file.addEmptyDirectory(name);
-    else file.addBuffer(Buffer.isBuffer(content) ? content : Buffer.from(content), name);
-  }
-  file.end();
-  const chunks: Buffer[] = [];
-  for await (const chunk of file.outputStream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
-}
 
 after(async () => {
   await clamd.close();

@@ -9,7 +9,7 @@ import { resetTotp } from './src/services/auth.ts';
 import { runMaintenance } from './src/services/jobs.ts';
 import { deliver, mailReady } from './src/services/mail.ts';
 import { detectTools } from './src/services/media.ts';
-import { pendingCount, processNow, reindexText } from './src/services/processing.ts';
+import { pendingCount, processNow, refreshPreviews, reindexText } from './src/services/processing.ts';
 import { job, rescan, testScanner } from './src/services/scan.ts';
 import { destroyUserSessions } from './src/services/sessions.ts';
 import * as settings from './src/services/settings.ts';
@@ -217,6 +217,7 @@ async function main() {
     case 'process':
     case 'reindex': {
       await detectTools();
+      refreshPreviews();
       if (name === 'reindex') reindexText();
       const total = pendingCount();
       out(`${total} Dateien in der Warteschlange.`);

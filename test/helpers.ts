@@ -1,6 +1,7 @@
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
 import { createServer as createHttpServer, type IncomingMessage } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
+import yazl from 'yazl';
 
 const { config } = await import('../src/config.ts');
 const { openDatabase } = await import('../src/lib/db.ts');
@@ -112,6 +113,18 @@ export async function login(app: FastifyInstance, username: string, password: st
   if (response.statusCode !== 303) throw new Error(`Login failed: ${response.statusCode}`);
   await client.refreshCsrf();
   return client;
+}
+
+export async function zip(entries: Record<string, string | Buffer>) {
+  const file = new yazl.ZipFile();
+  for (const [name, content] of Object.entries(entries)) {
+    if (name.endsWith('/')) file.addEmptyDirectory(name);
+    else file.addBuffer(Buffer.isBuffer(content) ? content : Buffer.from(content), name);
+  }
+  file.end();
+  const chunks: Buffer[] = [];
+  for await (const chunk of file.outputStream) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
 }
 
 export async function fakeClamd(verdict: (data: Buffer) => string | null) {

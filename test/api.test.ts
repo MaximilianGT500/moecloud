@@ -75,6 +75,17 @@ describe('Dateien', () => {
     assert.equal(bad.statusCode, 400);
   });
 
+  it('antwortet bei ungültigen Eingaben mit einem eigenen Text', async () => {
+    for (const payload of [{ name: 'x'.repeat(1001) }, { name: 7 }, {}]) {
+      const response = await emi.json('POST', `/api/nodes/${root}/folders`, payload);
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.json().error.message, 'Die Eingabe ist ungültig');
+    }
+    const guest = await new Client(app).get(`/api/nodes/${root}/children`, { 'accept-language': 'en' });
+    assert.equal(guest.statusCode, 401);
+    assert.equal(guest.json().error.message, 'Please sign in');
+  });
+
   it('lädt in Stücken hoch und liefert den Inhalt aus', async () => {
     const content = Buffer.from('Hallo Mia, hier ist die Einkaufsliste für Lea.');
     const response = await emi.upload(folder, 'notiz.txt', content, 7);

@@ -32,10 +32,13 @@ Vor einem Pull Request sollten diese Befehle ohne Fehler durchlaufen:
 ```bash
 npm run format
 npm run typecheck
-npm test
-npm run build
+node tools/version.ts
 node tools/i18n.ts --strict
+npm run build
+npm test
 ```
+
+Die Tests brauchen die gebaute Oberfläche, deshalb steht `npm run build` davor. `npm run check` prüft alles davon in einem Durchlauf, ohne zu formatieren.
 
 Hast du etwas an der Oberfläche geändert, prüf den Ablauf zusätzlich mit `npm run test:browser`. Der Test braucht Chrome, mit `CHROME_PATH` gibst du den Pfad an. Er erzeugt dabei auch die Screenshots in `docs/screenshots` neu.
 
@@ -43,7 +46,15 @@ Hast du etwas an der Oberfläche geändert, prüf den Ablauf zusätzlich mit `np
 
 ## Neue Version
 
-Für eine neue Version gehören die Versionsnummer in `package.json` und ein Eintrag im `CHANGELOG.md` zusammen. Die Projektseite moecloud.moestudio.net mit `version.json` und Changelog liegt nicht in diesem Repository.
+Die Versionsnummer steht in `package.json`, `package-lock.json`, `SECURITY.md`, in den Beispielen im README und in der Vorlage für Fehlermeldungen. Damit nirgends eine alte Nummer stehen bleibt, trägt ein Befehl sie überall ein:
+
+```bash
+node tools/version.ts 1.2.3
+```
+
+Danach schreibst du den Eintrag im `CHANGELOG.md` mit der Überschrift `## [1.2.3] · JJJJ-MM-TT` und dem Verweis am Ende der Datei. `node tools/version.ts` ohne Angabe prüft, ob alle Stellen zusammenpassen, ob der oberste Eintrag im Changelog zur Version gehört und ob dort keine Version doppelt oder in falscher Reihenfolge steht. Die CI führt diese Prüfung bei jedem Push aus.
+
+Die Projektseite moecloud.moestudio.net mit `version.json` und Changelog liegt nicht in diesem Repository. Ihr `npm run check` vergleicht sie mit diesem Stand.
 
 ## Regeln für den Code
 

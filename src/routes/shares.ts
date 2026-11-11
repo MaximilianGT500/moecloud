@@ -1,10 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { forbidden } from '../lib/errors.ts';
+import { badRequest, forbidden, tooMany } from '../lib/errors.ts';
+import { longDate, t } from '../lib/i18n.ts';
+import { Limiter } from '../lib/limiter.ts';
 import { me } from '../lib/request.ts';
-import { parse } from '../lib/validate.ts';
+import { email, parse } from '../lib/validate.ts';
 import { getNode, present, requireAccess } from '../services/nodes.ts';
-import { createLink, deleteLink, linksBy, linksForNode, presentLink, updateLink } from '../services/links.ts';
+import { activeLink, createLink, deleteLink, linksBy, linksForNode, presentLink, updateLink } from '../services/links.ts';
+import { deliver, mailReady } from '../services/mail.ts';
 import {
   getGrant,
   grantsForNode,
@@ -43,6 +46,12 @@ const linkSchema = z.object({
 });
 
 const permission = z.enum(['view', 'edit']);
+const recipient = z.object({
+  email: email
+    .refine((value) => value !== '', 'Gib eine E-Mail-Adresse ein')
+    .refine((value) => !/[,;<>()"\\]/.test(value), 'Die E-Mail-Adresse sieht nicht richtig aus'),
+});
+const linkMails = new Limiter(30, 60 * 60 * 1000);
 
 export async function shareRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/api/nodes/:id/shares', async (request) => {
@@ -74,6 +83,39 @@ export async function shareRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string } }>('/api/links/:id', async (request) => {
     deleteLink(me(request), request.params.id);
+    return { ok: true };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/links/:id/send', async (request) => {
+    const user = me(request);
+    const input = parse(recipient, request.body);
+    if (!mailReady()) throw badRequest('Der E-Mail-Versand ist auf diesem Server nicht eingerichtet');
+    const { link, node } = activeLink(user, request.params.id);
+    const key = String(user.id);
+    if (linkMails.blocked(key)) throw tooMany('Du hast gerade viele E-Mails verschickt, versuch es später noch einmal');
+    linkMails.hit(key);
+    const lang = settings.get('site.language');
+    const names = { name: user.name, item: node.name };
+    try {
+      await deliver(input.email, {
+        lang,
+        title: t(lang, '{name} teilt „{item}“ mit dir', names),
+        lines: [
+          link.upload_only
+            ? t(lang, 'Über den Link lädst du Dateien für {name} hoch.', names)
+            : t(lang, 'Über den Link kommst du ohne Konto an den Inhalt.'),
+          ...(link.password_hash
+            ? [t(lang, 'Der Link ist mit einem Passwort geschützt, das dir {name} auf einem anderen Weg gibt.', names)]
+            : []),
+          ...(link.expires_at ? [t(lang, 'Der Link gilt bis zum {date}.', { date: longDate(lang, link.expires_at) })] : []),
+        ],
+        action: { label: t(lang, 'Link öffnen'), url: presentLink(link, request).url },
+        note: t(lang, 'Du bekommst diese E-Mail, weil {name} deine Adresse eingegeben hat.', names),
+      });
+    } catch (error) {
+      request.log.warn({ error: (error as Error).message }, 'Link konnte nicht per E-Mail gesendet werden');
+      throw badRequest('Die E-Mail konnte nicht verschickt werden, versuch es später noch einmal');
+    }
     return { ok: true };
   });
 

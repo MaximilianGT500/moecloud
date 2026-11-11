@@ -8,16 +8,15 @@ import { t } from '../lib/i18n.ts';
 import { inlineType } from '../lib/mime.ts';
 import { me } from '../lib/request.ts';
 import { id, ids, parse } from '../lib/validate.ts';
-import { forNode, forUser } from '../services/activity.ts';
-import { listArchive, openEntry } from '../services/archive.ts';
+import { forNode, forUser, record } from '../services/activity.ts';
+import { isZip, listArchive, openEntry } from '../services/archive.ts';
 import { extractArchive } from '../services/extract.ts';
 import { rotateImage } from '../services/rotate.ts';
-import { blobPath, getBlob, metaOf, receive } from '../services/blobs.ts';
+import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
 import { addComment, deleteComment, listComments } from '../services/comments.ts';
 import { ingest } from '../services/ingest.ts';
 import { photos, storageReport } from '../services/library.ts';
 import { assertNotInfected } from '../services/scan.ts';
-import { record } from '../services/activity.ts';
 import {
   breadcrumbs,
   copy,
@@ -44,7 +43,7 @@ import {
   FOLDER_COLORS,
   type NodeRow,
 } from '../services/nodes.ts';
-import { thumbnail } from '../services/thumbs.ts';
+import { rendition, thumbnail } from '../services/thumbs.ts';
 import { createTextFile, formatBytes } from '../services/uploads.ts';
 import { deleteVersion, getVersion, listVersions, restoreVersion, writeContent } from '../services/versions.ts';
 import { zipName, zipStream } from '../services/zip.ts';
@@ -65,11 +64,12 @@ export function sendNode(
 ) {
   if (!node.sha256) throw notFound();
   assertNotInfected(node.sha256);
-  const inline = download ? null : inlineType(node.name, node.mime);
+  const type = typeOf(node, getBlob(node.sha256));
+  const inline = download ? null : inlineType(node.name, type);
   return sendFile(request, reply, {
     path: blobPath(node.sha256),
     size: node.size,
-    type: inline ?? node.mime ?? 'application/octet-stream',
+    type: inline ?? type,
     etag: node.sha256,
     modified: node.modified_at,
     name: node.name,
@@ -99,9 +99,6 @@ export async function archiveListing(node: NodeRow) {
   return listArchive(blobPath(node.sha256));
 }
 
-const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
-export const isZip = (node: Pick<NodeRow, 'name' | 'mime'>) => ZIP_TYPES.has(node.mime ?? '') || /\.zip$/i.test(node.name);
-
 export function nodeMeta(node: NodeRow) {
   const blob = node.sha256 ? getBlob(node.sha256) : undefined;
   return {
@@ -123,6 +120,22 @@ export async function sendThumb(request: FastifyRequest, reply: FastifyReply, no
     size: info.size,
     type: 'image/webp',
     etag: `t-${node.sha256}`,
+    modified: node.modified_at,
+    name: `${node.name}.webp`,
+    disposition: 'inline',
+    cache: 'private, max-age=31536000, immutable',
+  });
+}
+
+export async function sendPreview(request: FastifyRequest, reply: FastifyReply, node: NodeRow) {
+  const path = await rendition(node);
+  if (!path || !node.sha256) throw notFound('Für diese Datei gibt es keine Vorschau');
+  const info = await stat(path);
+  return sendFile(request, reply, {
+    path,
+    size: info.size,
+    type: 'image/webp',
+    etag: `p-${node.sha256}`,
     modified: node.modified_at,
     name: `${node.name}.webp`,
     disposition: 'inline',
@@ -277,6 +290,11 @@ export async function fileRoutes(app: FastifyInstance) {
     return sendThumb(request, reply, node);
   });
 
+  app.get<IdParams>('/api/nodes/:id/preview', { compress: false }, async (request, reply) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    return sendPreview(request, reply, node);
+  });
+
   app.get<IdParams>('/api/nodes/:id/versions', async (request) => ({ items: listVersions(me(request), request.params.id) }));
 
   app.get<{ Params: { id: string; version: string }; Querystring: { download?: string } }>(
@@ -312,8 +330,8 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get<IdParams>('/api/nodes/:id/activity', async (request) => {
     const user = me(request);
-    requireAccess(user, request.params.id);
-    return { items: forNode(request.params.id, user.id) };
+    const access = requireAccess(user, request.params.id);
+    return { items: forNode(access.node.id, user.id, access.role, (nodeId) => Boolean(resolveAccess(user, nodeId))) };
   });
 
   app.get<{ Querystring: { before?: string } }>('/api/activity', async (request) => {

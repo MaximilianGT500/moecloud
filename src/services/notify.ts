@@ -1,10 +1,10 @@
 import { all, placeholders, run, value } from '../lib/db.ts';
 import { publish } from '../lib/events.ts';
-import { isLang, t, type Lang } from '../lib/i18n.ts';
+import { t, type Lang } from '../lib/i18n.ts';
 import { log } from '../lib/log.ts';
 import { deliver, mailReady } from './mail.ts';
 import * as settings from './settings.ts';
-import { getUser, prefsOf, type UserPrefs, type UserRow } from './users.ts';
+import { getUser, preferredLanguage, prefsOf, type UserPrefs, type UserRow } from './users.ts';
 import { dispatch, type WebhookEvent } from './webhooks.ts';
 
 export type NotifyKind =
@@ -82,7 +82,7 @@ const KINDS: Record<NotifyKind, Kind> = {
   },
   admin_scan: {
     title: (lang) => t(lang, 'Der Virenscan ist nicht erreichbar'),
-    text: (_lang, p) => String(p.error ?? ''),
+    text: (lang, p) => t(lang, String(p.error ?? '')),
     pref: 'mailAdmin',
     action: 'Zum Virenscan',
     event: 'scan_error',
@@ -127,8 +127,6 @@ interface NotificationRow {
   created_at: number;
 }
 
-const langOf = (user: UserRow): Lang => (user.language && isLang(user.language) ? user.language : settings.get('site.language'));
-
 const absolute = (url: string) => {
   const base = settings.get('site.url').replace(/\/+$/, '');
   return base && url.startsWith('/') ? `${base}${url}` : url;
@@ -138,7 +136,7 @@ async function mail(user: UserRow, kind: NotifyKind, params: Params, url: string
   const spec = KINDS[kind];
   if (!user.email || user.disabled || !mailReady()) return;
   if (spec.pref && !prefsOf(user)[spec.pref]) return;
-  const lang = langOf(user);
+  const lang = preferredLanguage(user);
   const text = spec.text?.(lang, params);
   try {
     await deliver(user.email, {

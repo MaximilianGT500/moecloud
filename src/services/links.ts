@@ -100,6 +100,23 @@ function canManage(user: UserRow, link: LinkRow) {
   return link.created_by === user.id || link.owner_id === user.id || user.role === 'admin';
 }
 
+function ownLink(user: UserRow, id: string) {
+  const link = getLink(id);
+  if (!link || !canManage(user, link)) throw notFound('Diesen Link gibt es nicht mehr');
+  return link;
+}
+
+export function activeLink(user: UserRow, id: string) {
+  const link = ownLink(user, id);
+  const node = getNode(link.node_id);
+  if (!node || node.trashed_at) throw notFound('Diesen Link gibt es nicht mehr');
+  const state = linkState(link);
+  if (state === 'expired') throw badRequest('Dieser Link ist abgelaufen oder wurde gelöscht');
+  if (state === 'paused') throw badRequest('Dieser Link ist gerade pausiert');
+  if (state === 'exhausted') throw badRequest('Dieser Link wurde schon so oft genutzt wie erlaubt');
+  return { link, node };
+}
+
 export async function createLink(user: UserRow, nodeId: string, input: LinkInput) {
   if (!settings.get('share.links')) throw forbidden('Öffentliche Links sind auf diesem Server ausgeschaltet');
   const { node } = requireAccess(user, nodeId, 'edit');
@@ -132,8 +149,7 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
 }
 
 export async function updateLink(user: UserRow, id: string, input: LinkInput & { removePassword?: boolean }) {
-  const link = getLink(id);
-  if (!link || !canManage(user, link)) throw notFound('Diesen Link gibt es nicht mehr');
+  const link = ownLink(user, id);
   const node = getNode(link.node_id);
   const folder = node?.type === 'folder';
   let passwordHash = link.password_hash;
@@ -159,8 +175,7 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
 }
 
 export function deleteLink(user: UserRow, id: string) {
-  const link = getLink(id);
-  if (!link || !canManage(user, link)) throw notFound('Diesen Link gibt es nicht mehr');
+  const link = ownLink(user, id);
   run('DELETE FROM links WHERE id = ?', id);
   return link;
 }

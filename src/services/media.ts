@@ -10,15 +10,24 @@ interface RunOptions {
   maxBytes?: number;
 }
 
-export function execute(command: string, args: string[], options: RunOptions = {}): Promise<Buffer> {
+interface Result {
+  output: Buffer;
+  log: string;
+}
+
+export const execute = (command: string, args: string[], options: RunOptions = {}) =>
+  launch(command, args, options).then((result) => result.output);
+
+function launch(command: string, args: string[], options: RunOptions = {}): Promise<Result> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const chunks: Buffer[] = [];
     const errors: Buffer[] = [];
     let size = 0;
+    let logged = 0;
     let settled = false;
     const limit = options.maxBytes ?? 32 * 1024 * 1024;
-    const finish = (error: Error | null, result?: Buffer) => {
+    const finish = (error: Error | null, result?: Result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -39,12 +48,14 @@ export function execute(command: string, args: string[], options: RunOptions = {
       chunks.push(chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      if (errors.length < 32) errors.push(chunk);
+      if (logged < 256 * 1024) errors.push(chunk);
+      logged += chunk.length;
     });
     child.once('error', (error) => finish(error));
     child.once('close', (code) => {
-      if (code === 0) finish(null, Buffer.concat(chunks));
-      else finish(new Error(Buffer.concat(errors).toString('utf8').trim().split('\n').pop() || `${command} endete mit ${code}`));
+      const log = Buffer.concat(errors).toString('utf8');
+      if (code === 0) finish(null, { output: Buffer.concat(chunks), log });
+      else finish(new Error(log.trim().split('\n').pop() || `${command} endete mit ${code}`));
     });
   });
 }
@@ -107,6 +118,60 @@ export async function videoFrame(path: string): Promise<Buffer> {
   const second = await execute(config.tools.ffmpeg, args('0'), { timeout: 45_000 });
   if (!second.length) throw new Error('Kein Standbild');
   return second;
+}
+
+const still = (decoder: string) => ['-f', 'image2', '-pattern_type', 'none', '-c:v', decoder];
+
+const FRAME_INPUT: Record<string, string[]> = {
+  'image/bmp': still('bmp'),
+  'image/vnd.adobe.photoshop': still('psd'),
+  'image/jp2': still('jpeg2000'),
+  'image/jpx': still('jpeg2000'),
+  'image/x-jp2-codestream': still('jpeg2000'),
+  'image/x-tga': still('targa'),
+  'image/vnd.ms-dds': still('dds'),
+  'image/qoi': still('qoi'),
+  'image/vnd.zbrush.pcx': still('pcx'),
+  'image/x-portable-pixmap': still('ppm'),
+  'image/x-portable-graymap': still('ppm'),
+  'image/x-portable-bitmap': still('ppm'),
+  'image/x-portable-anymap': still('ppm'),
+  'image/sgi': still('sgi'),
+  'image/vnd.microsoft.icon': ['-f', 'ico'],
+  'image/x-icon': ['-f', 'ico'],
+  'image/jxl': [],
+};
+
+export const canFrame = (type: string | null) => Object.hasOwn(FRAME_INPUT, type ?? '');
+
+export async function imageFrame(path: string, type: string, edge: number) {
+  const result = await launch(
+    config.tools.ffmpeg,
+    [
+      '-hide_banner',
+      '-nostats',
+      '-loglevel',
+      'info',
+      ...FRAME_INPUT[type],
+      '-i',
+      path,
+      '-frames:v',
+      '1',
+      '-vf',
+      `showinfo,scale=w='min(iw,${edge})':h='min(ih,${edge})':force_original_aspect_ratio=decrease`,
+      '-compression_level',
+      '1',
+      '-f',
+      'image2pipe',
+      '-vcodec',
+      'png',
+      'pipe:1',
+    ],
+    { timeout: 60_000, maxBytes: 128 * 1024 * 1024 }
+  );
+  if (!result.output.length) throw new Error('Kein Bild');
+  const size = / s:(\d+)x(\d+) /.exec(result.log);
+  return { data: result.output, width: size ? Number(size[1]) : null, height: size ? Number(size[2]) : null };
 }
 
 export interface Probe {

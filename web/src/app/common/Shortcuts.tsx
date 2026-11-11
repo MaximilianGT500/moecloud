@@ -54,6 +54,7 @@ function groups(): { title: string; rows: [string[], string][] }[] {
         [['Enter'], t('Öffnen')],
         [[t('Leertaste')], t('Auswählen')],
         [[ctrl, 'A'], t('Alles auswählen')],
+        [[ctrl, 'V'], t('Aus der Zwischenablage hochladen')],
         [[t('Entf')], t('In den Papierkorb')],
         [['F2'], t('Umbenennen')],
         [['Esc'], t('Auswahl aufheben')],

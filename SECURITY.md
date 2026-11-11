@@ -8,8 +8,8 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 
 | Version | Sicherheitsupdates |
 | ------- | ------------------ |
-| 1.0.x   | Ja                 |
-| 0.1.x   | Nein               |
+| 1.2.x   | Ja                 |
+| Älter   | Nein               |
 
 ## Eine Lücke melden
 

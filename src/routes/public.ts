@@ -9,8 +9,9 @@ import { Limiter } from '../lib/limiter.ts';
 import { kindOf } from '../lib/mime.ts';
 import { parse, ids } from '../lib/validate.ts';
 import { messagePage, sharePasswordPage } from '../views/pages.ts';
+import { typeOf } from '../services/blobs.ts';
 import { blobInfo, chain, children, type NodeRow } from '../services/nodes.ts';
-import { hasPreview } from '../services/thumbs.ts';
+import { previews } from '../services/thumbs.ts';
 import {
   baseUrl,
   countAccess,
@@ -27,7 +28,7 @@ import {
 } from '../services/links.ts';
 import * as settings from '../services/settings.ts';
 import { getUser } from '../services/users.ts';
-import { archiveListing, nodeMeta, sendArchiveEntry, sendNode, sendThumb, sendZip } from './files.ts';
+import { archiveListing, nodeMeta, sendArchiveEntry, sendNode, sendPreview, sendThumb, sendZip } from './files.ts';
 import { uploadEndpoints } from './uploads.ts';
 import { value } from '../lib/db.ts';
 
@@ -39,13 +40,14 @@ export function presentPublic(nodes: NodeRow[]) {
   const blobs = blobInfo(nodes.filter((node) => node.sha256).map((node) => node.sha256!));
   return nodes.map((node) => {
     const blob = node.sha256 ? blobs.get(node.sha256) : undefined;
+    const mime = node.type === 'file' ? typeOf(node, blob) : null;
     return {
       id: node.id,
       parentId: node.parent_id,
       type: node.type,
       name: node.name,
-      kind: kindOf(node.name, node.mime, node.type),
-      mime: node.mime,
+      kind: kindOf(node.name, mime, node.type),
+      mime,
       size: node.size,
       items:
         node.type === 'folder'
@@ -53,7 +55,7 @@ export function presentPublic(nodes: NodeRow[]) {
           : null,
       modifiedAt: node.modified_at,
       version: `${node.etag}${node.sha256 ? `-${node.sha256.slice(0, 12)}` : ''}`,
-      thumb: hasPreview(node, blob),
+      ...previews(node, blob),
       color: node.type === 'folder' ? node.color : null,
       infected: blob?.scan_status === 'infected',
       takenAt: blob?.taken_at ?? null,
@@ -244,6 +246,16 @@ export async function publicRoutes(app: FastifyInstance) {
     if (link.upload_only) throw notFound();
     return sendThumb(request, reply, linkNode(link, request.params.id));
   });
+
+  app.get<{ Params: { token: string; id: string } }>(
+    '/api/public/:token/nodes/:id/preview',
+    { compress: false },
+    async (request, reply) => {
+      const { link } = linkFor(request);
+      if (link.upload_only) throw notFound();
+      return sendPreview(request, reply, linkNode(link, request.params.id));
+    }
+  );
 
   app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/meta', async (request) => {
     const { link } = linkFor(request);
