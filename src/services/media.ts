@@ -218,8 +218,8 @@ export const pdfPage = (path: string, page = 1, size = 640) =>
     timeout: 45_000,
   });
 
-export async function pdfText(path: string, limit = 1024 * 1024) {
-  const output = await execute(config.tools.pdftotext, ['-l', '60', '-enc', 'UTF-8', '-q', path, '-'], {
+export async function pdfText(path: string, limit = 1024 * 1024, pages = 60) {
+  const output = await execute(config.tools.pdftotext, ['-l', String(pages), '-enc', 'UTF-8', '-q', path, '-'], {
     timeout: 60_000,
     maxBytes: limit * 4,
   });

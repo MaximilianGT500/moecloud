@@ -10,12 +10,15 @@ import { runMaintenance } from './src/services/jobs.ts';
 import { deliver, mailReady } from './src/services/mail.ts';
 import { detectTools } from './src/services/media.ts';
 import { pendingCount, processNow, refreshPreviews, reindexText } from './src/services/processing.ts';
+import { folderOf, recoverFiles, surveyStrays, type Tally } from './src/services/recover.ts';
 import { job, rescan, testScanner } from './src/services/scan.ts';
 import { destroyUserSessions } from './src/services/sessions.ts';
 import * as settings from './src/services/settings.ts';
 import { isSetUp, renewSetupCode, setupCode } from './src/services/setup.ts';
 import { checkForUpdates } from './src/services/updates.ts';
-import { createUser, findByUsername, listUsers, usageOf } from './src/services/users.ts';
+import { createUser, findByUsername, listUsers, preferredLanguage, usageOf } from './src/services/users.ts';
+import type { Lang } from './src/lib/i18n.ts';
+import type { Kind } from './src/lib/mime.ts';
 
 const command = process.env.MOECLOUD_COMMAND || 'node cli.ts';
 const [name, ...args] = process.argv.slice(2);
@@ -64,6 +67,7 @@ function help() {
     ['scan [--all]', 'Ungeprüfte Dateien mit ClamAV prüfen, mit --all alle'],
     ['mail-test <adresse>', 'Test-E-Mail schicken'],
     ['process', 'Vorschaubilder, Metadaten und Suchindex nachholen'],
+    ['recover [name] [--dry-run]', 'Dateien ohne Eintrag in der Datenbank in den Ordner Wiederhergestellt holen'],
     ['reindex', 'Suchindex für Inhalte neu aufbauen'],
     ['version', 'Installierte und neueste Version anzeigen'],
   ];
@@ -80,6 +84,21 @@ function requireUser(username: string | undefined) {
 }
 
 const generated = () => randomId(20);
+
+function recoverTarget(username: string | undefined) {
+  if (username) return requireUser(username);
+  const admins = listUsers().filter((user) => user.role === 'admin' && !user.disabled);
+  const [admin] = admins;
+  if (admins.length !== 1 || !admin) return fail(`Gib an, wem die Dateien gehören sollen, zum Beispiel: ${command} recover emi`);
+  return admin;
+}
+
+function kinds(tally: Tally, lang: Lang) {
+  const rows = Object.entries(tally).sort(([, a], [, b]) => b.bytes - a.bytes);
+  for (const [kind, entry] of rows) {
+    out(`  ${folderOf(kind as Kind, lang).padEnd(16)} ${String(entry.count).padStart(7)}  ${size(entry.bytes).padStart(9)}`);
+  }
+}
 
 async function main() {
   await ensureDirs();
@@ -223,6 +242,51 @@ async function main() {
       out(`${total} Dateien in der Warteschlange.`);
       await processNow();
       out('Fertig.');
+      break;
+    }
+    case 'recover': {
+      await detectTools();
+      if (args.includes('--dry-run')) {
+        const survey = await surveyStrays();
+        if (!survey.count) out(`In ${config.paths.blobs} liegen keine Dateien, die MoeCloud nicht kennt.`);
+        else {
+          out(`In ${config.paths.blobs} liegen ${survey.count} Dateien (${size(survey.bytes)}), die MoeCloud nicht kennt:`);
+          kinds(survey.kinds, 'de');
+          out(`Ohne --dry-run holt ${command} recover sie in den Ordner „Wiederhergestellt“.`);
+        }
+        if (survey.foreign) out(`${survey.foreign} andere Einträge in ${config.paths.blobs} lässt recover in Ruhe.`);
+        break;
+      }
+      if (!isSetUp())
+        fail(`Richte MoeCloud zuerst im Browser ein, den Link zeigt ${command} setup-link. Danach holt recover die Dateien in dein Konto.`);
+      const user = recoverTarget(positional()[0]);
+      let shown = 0;
+      const result = await recoverFiles(user, (progress) => {
+        if (Date.now() - shown < 250 && progress.done < progress.total) return;
+        shown = Date.now();
+        process.stdout.write(
+          `\rGeprüft: ${progress.done} von ${progress.total} Dateien, ${size(progress.bytes)} von ${size(progress.totalBytes)}`
+        );
+      });
+      if (shown) out();
+      if (!result.imported && !result.corrupted.length) out(`In ${config.paths.blobs} liegen keine Dateien, die MoeCloud nicht kennt.`);
+      if (result.imported) {
+        out(`${result.imported} Dateien (${size(result.bytes)}) liegen jetzt bei ${user.name} im Ordner „${result.folder}“:`);
+        kinds(result.kinds, preferredLanguage(user));
+      }
+      if (result.corrupted.length) {
+        out(`${result.corrupted.length} Dateien passen nicht zu ihrer Prüfsumme oder ließen sich nicht lesen. Sie bleiben, wo sie sind:`);
+        for (const path of result.corrupted) out(`  ${path}`);
+        process.exitCode = 2;
+      }
+      if (result.foreign) out(`${result.foreign} andere Einträge in ${config.paths.blobs} hat recover nicht angefasst.`);
+      if (result.overQuota !== null) {
+        out(`${user.name} belegt jetzt mehr als die erlaubten ${size(result.overQuota)}. Den Speicher änderst du unter Admin › Personen.`);
+      }
+      if (result.imported) {
+        out(`Vorschaubilder, Bildinfos und Suchtext erzeugt der Server in den nächsten Minuten. Mit ${command} process geht das sofort.`);
+        if (settings.get('scan.enabled')) out(`Mit ${command} scan prüft ClamAV die Dateien gleich.`);
+      }
       break;
     }
     case 'version': {

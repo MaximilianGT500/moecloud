@@ -65,6 +65,8 @@ export function auditLabel(action: string) {
       return t('Von der Verwaltung abgemeldet');
     case 'files_transferred':
       return t('Dateien übertragen');
+    case 'files_recovered':
+      return t('Dateien wiederhergestellt');
     case 'invite_created':
       return t('Einladung erstellt');
     case 'invite_deleted':
@@ -157,6 +159,14 @@ export function auditDetail(entry: AuditEntry) {
       return d.role === 'admin' ? t('Admin') : d.role === 'user' ? t('Mitglied') : '';
     case 'files_transferred':
       return [text('from') && `@${text('from')}`, text('folder')].filter(Boolean).join(' → ');
+    case 'files_recovered':
+      return [
+        typeof d.count === 'number' ? tn(d.count, '{count} Datei', '{count} Dateien') : '',
+        typeof d.size === 'number' ? formatBytes(d.size) : '',
+        text('folder'),
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'maintenance':
       return d.enabled ? t('eingeschaltet') : t('ausgeschaltet');
     case 'webhook_changed':

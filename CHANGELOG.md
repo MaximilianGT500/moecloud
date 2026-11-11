@@ -2,6 +2,23 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.2] · 2026-11-11
+
+Diese Version bringt den Befehl `recover`, der deine Dateien zurückholt, wenn die Datenbank verloren ist und keine Sicherung da ist.
+
+### Neu
+
+- `moecloud recover` holt alle Dateien aus `data/blobs/`, die in der Datenbank fehlen, in den Ordner „Wiederhergestellt“ eines Kontos. Ohne Namen nimmt es das einzige Admin-Konto
+- Die Art erkennt `recover` am Inhalt, auch bei RAW-Fotos, HEIC, alten Word-, Excel- und PowerPoint-Dateien und Textformaten wie CSV, Markdown und JSON. Sortiert wird nach Art, Bilder und Videos zusätzlich nach Jahr
+- Die Namen kommen aus dem Inhalt: Fotos und Videos heißen nach dem Aufnahmedatum, Musik nach Interpret und Titel, Texte, PDFs und Office-Dateien nach ihrer ersten Zeile mit Text, alles andere nach dem Zeitpunkt des Uploads
+- Jede Datei prüft `recover` vorher gegen ihre Prüfsumme. `--dry-run` zeigt vorab, was gefunden wird, und ein zweiter Aufruf übernimmt nur, was noch fehlt
+- Das Protokoll unter **Admin** zeigt dafür den Eintrag „Dateien wiederhergestellt“ mit Anzahl und Größe
+
+### Kleinigkeiten
+
+- 5 neue Texte mit englischer Übersetzung
+- `file-type` 22.3.0 ist jetzt eine direkte Abhängigkeit, bisher kam es nur über `music-metadata` mit
+
 ## [1.3.1] · 2026-11-11
 
 Diese Version behebt einen Fehler, durch den MoeCloud nach dem Update auf 1.3.0 auf manchen Servern nicht mehr startete.
@@ -331,6 +348,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.3.2]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.2
 [1.3.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.1
 [1.3.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.0
 [1.2.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.2.0

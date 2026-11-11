@@ -93,7 +93,7 @@ function cameraName(make: unknown, model: unknown) {
   return first && name.toLowerCase().startsWith(first) ? name : [brand, name].filter(Boolean).join(' ');
 }
 
-async function imageMeta(path: string, type: string) {
+export async function imageMeta(path: string, type: string) {
   const meta: Record<string, unknown> = {};
   let takenAt: number | null = null;
   let width: number | null = null;

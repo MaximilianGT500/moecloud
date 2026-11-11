@@ -29,6 +29,7 @@ export const AUDIT_ACTIONS = [
   'admin_2fa_reset',
   'admin_logout',
   'files_transferred',
+  'files_recovered',
   'invite_created',
   'invite_deleted',
   'settings_changed',

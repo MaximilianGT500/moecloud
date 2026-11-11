@@ -154,7 +154,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.1` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.2` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
@@ -166,7 +166,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.1`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.2`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -577,7 +577,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
 | `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.1`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.2`. Das Installationsskript trägt hier die installierte Version ein                               |
 | `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
 | `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
@@ -603,9 +603,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.3.1",
+  "version": "1.3.2",
   "date": "2026-11-11",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.1",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.2",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -653,25 +653,46 @@ Die Dateien selbst stecken nicht in diesen Sicherungen. Sichere den Ordner `data
 
 Die Datenbank enthält Passwort-Hashes, die Schlüssel der Authenticator-Apps, das Passwort für den SMTP-Server und den Schlüssel, mit dem MoeCloud App-Passwörter prüft. Bewahre Sicherungen so sicher auf wie den Server selbst.
 
+### Dateien ohne Datenbank zurückholen
+
+Ist die Datenbank verloren und es gibt keine Sicherung, liegen deine Dateien trotzdem vollständig in `data/blobs/`. Weg sind dann Namen, Ordner, Konten und Freigaben. Mit `recover` holst du die Dateien in ein Konto zurück:
+
+1. Kopiere `data/blobs/` vorher mit `cp -a` oder `rsync -a` auf eine andere Platte. So bleiben auch die Zeitstempel erhalten, die `recover` als Datum nutzt.
+2. Starte MoeCloud und richte es im Browser neu ein.
+3. `docker compose exec moecloud moecloud recover --dry-run` zeigt, was gefunden wird, ohne etwas zu ändern.
+4. `docker compose exec moecloud moecloud recover emi` holt alles in den Ordner „Wiederhergestellt“ von emi. Ohne Namen nimmt `recover` das einzige Admin-Konto.
+
+`recover` prüft jede Datei gegen ihre Prüfsumme und erkennt die Art am Inhalt, auch bei RAW-Fotos, HEIC und alten Office-Dateien. Die Dateien landen nach Art sortiert in Ordnern wie Bilder, Videos, Audio, PDFs, Dokumente und Texte, Bilder und Videos zusätzlich nach Jahr. Die Namen kommen, wo es geht, aus dem Inhalt:
+
+| Art                                                     | Name                                          |
+| ------------------------------------------------------- | --------------------------------------------- |
+| Bilder und Videos                                       | Aufnahmedatum, etwa `2024-07-14 18.32.05.jpg` |
+| Musik                                                   | Interpret und Titel aus den Tags              |
+| Texte, PDFs, Word- und PowerPoint-Dateien, OpenDocument | Erste Zeile mit Text, etwa `Mietvertrag.pdf`  |
+| Alles andere                                            | Zeitpunkt des Uploads                         |
+
+Ältere Versionen und Dateien aus dem Papierkorb kommen ebenfalls zurück, und alles landet bei einer Person. Dateien, die nicht zu ihrer Prüfsumme passen, lässt `recover` liegen und nennt sie. Ein zweiter Aufruf übernimmt nur, was noch fehlt. Vorschaubilder, Bildinfos und den Suchtext erzeugt MoeCloud danach im Hintergrund, mit `process` sofort.
+
 ## Kommandozeile
 
-| Befehl                                   | Zweck                                                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `users`                                  | Alle Konten mit belegtem Speicher anzeigen                                                          |
-| `create-admin <name> [--email] [--name]` | Admin-Konto mit neuem Passwort anlegen, etwa wenn du die Einrichtung im Browser überspringen willst |
-| `reset-password <name>`                  | Neues Passwort setzen und alle Sitzungen beenden                                                    |
-| `reset-2fa <name> [--passkeys]`          | Authenticator-App eines Kontos entfernen, mit `--passkeys` auch alle Passkeys                       |
-| `setup-link [--new]`                     | Link für die Einrichtung anzeigen, mit `--new` einen neuen Code erzeugen                            |
-| `backup [ordner]`                        | Datenbank sichern, ohne den Server anzuhalten                                                       |
-| `cleanup`                                | Papierkorb, alte Uploads und verwaiste Dateien aufräumen                                            |
-| `check`                                  | Prüfen, ob alle Dateien auf der Platte liegen                                                       |
-| `maintenance <on\|off> [text]`           | Wartungsmodus ein- oder ausschalten                                                                 |
-| `scan-test`                              | Verbindung zu ClamAV mit der EICAR-Testdatei prüfen                                                 |
-| `scan [--all]`                           | Ungeprüfte Dateien mit ClamAV prüfen, mit `--all` alle                                              |
-| `mail-test <adresse>`                    | Test-E-Mail schicken                                                                                |
-| `process`                                | Vorschaubilder, Bildinfos und Suchindex nachholen                                                   |
-| `reindex`                                | Suchindex für Inhalte neu aufbauen                                                                  |
-| `version`                                | Installierte und neueste Version anzeigen                                                           |
+| Befehl                                   | Zweck                                                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                                  | Alle Konten mit belegtem Speicher anzeigen                                                                                                           |
+| `create-admin <name> [--email] [--name]` | Admin-Konto mit neuem Passwort anlegen, etwa wenn du die Einrichtung im Browser überspringen willst                                                  |
+| `reset-password <name>`                  | Neues Passwort setzen und alle Sitzungen beenden                                                                                                     |
+| `reset-2fa <name> [--passkeys]`          | Authenticator-App eines Kontos entfernen, mit `--passkeys` auch alle Passkeys                                                                        |
+| `setup-link [--new]`                     | Link für die Einrichtung anzeigen, mit `--new` einen neuen Code erzeugen                                                                             |
+| `backup [ordner]`                        | Datenbank sichern, ohne den Server anzuhalten                                                                                                        |
+| `cleanup`                                | Papierkorb, alte Uploads und verwaiste Dateien aufräumen                                                                                             |
+| `check`                                  | Prüfen, ob alle Dateien auf der Platte liegen                                                                                                        |
+| `maintenance <on\|off> [text]`           | Wartungsmodus ein- oder ausschalten                                                                                                                  |
+| `scan-test`                              | Verbindung zu ClamAV mit der EICAR-Testdatei prüfen                                                                                                  |
+| `scan [--all]`                           | Ungeprüfte Dateien mit ClamAV prüfen, mit `--all` alle                                                                                               |
+| `mail-test <adresse>`                    | Test-E-Mail schicken                                                                                                                                 |
+| `process`                                | Vorschaubilder, Bildinfos und Suchindex nachholen                                                                                                    |
+| `recover [name] [--dry-run]`             | Dateien aus `data/blobs/` ohne Eintrag in der Datenbank zurückholen, siehe [Dateien ohne Datenbank zurückholen](#dateien-ohne-datenbank-zurückholen) |
+| `reindex`                                | Suchindex für Inhalte neu aufbauen                                                                                                                   |
+| `version`                                | Installierte und neueste Version anzeigen                                                                                                            |
 
 Mit Docker heißen die Befehle `docker compose exec moecloud moecloud users`, `… moecloud reset-password emi` und so weiter, nach dem Installationsskript `sudo moecloud users`. Sie laufen dort mit dem Benutzer, dem `data/` gehört. Ohne Docker nimmst du `npm run cli -- users`. Legst du das erste Konto mit `create-admin` an, starte MoeCloud danach einmal neu.
 

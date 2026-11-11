@@ -45,6 +45,7 @@ const GROUPS: Record<string, string[]> = {
     'admin_2fa_reset',
     'admin_logout',
     'files_transferred',
+    'files_recovered',
     'invite_created',
     'invite_deleted',
     'group_created',
