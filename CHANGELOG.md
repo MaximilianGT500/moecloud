@@ -2,6 +2,17 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.1] · 2026-11-11
+
+Diese Version behebt einen Fehler, durch den MoeCloud nach dem Update auf 1.3.0 auf manchen Servern nicht mehr startete.
+
+### Behoben
+
+- Nach dem Update auf 1.3.0 brach der Start auf manchen Servern mit „database is locked“ ab, und Docker startete den Container immer wieder neu. Die Sicherung vor dem Update brauchte eine Dateisperre auf der neuen Datei in `data/backups/`, und die klappt nicht auf jedem Dateisystem, etwa auf Netzlaufwerken oder FUSE. Die Datenbank blieb dabei unverändert, das Update auf 1.3.1 läuft deshalb ganz normal durch
+- Sicherungen kommen jetzt ohne Dateisperren aus. MoeCloud prüft jede Sicherung, bevor sie zählt, und kopiert die Datenbank, wenn der normale Weg scheitert. Das gilt für die Sicherung vor einem Update, die nächtliche Sicherung, die Sicherung unter **Admin › Sicherungen** und `moecloud backup`. Aus demselben Grund konnten auf solchen Servern bisher auch die nächtlichen Sicherungen fehlschlagen
+- Scheitert die Sicherung vor einem Update trotzdem, nennt die Meldung im Log den Ordner und den Grund und sagt, dass die Datenbank unverändert bleibt
+- Leere und unfertige Sicherungsdateien, wie sie bei den Neustarts entstanden sind, stehen nicht mehr in der Liste der Sicherungen. MoeCloud entfernt sie beim Start und beim nächtlichen Aufräumen, sobald sie älter als zehn Minuten sind
+
 ## [1.3.0] · 2026-11-11
 
 Mit dieser Version ordnest du Dateien mit Schlagwörtern und Alben, bearbeitest Bilder und PDFs direkt in der Cloud und hörst Musik in einem eigenen Player mit Warteschlange. Videos zeigen Untertitel und merken sich die Stelle, an der du aufgehört hast. Dazu kommen Suchfilter, Freigaben mit Ablaufdatum, beobachtete Ordner, das Umbenennen vieler Dateien auf einmal, ZIP-Archive aus der Cloud, ein Vergleich von Textversionen und Ordnerbeschreibungen aus einer README.md.
@@ -320,6 +331,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.3.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.1
 [1.3.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.0
 [1.2.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.2.0
 [1.1.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.1.0

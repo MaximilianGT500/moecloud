@@ -426,10 +426,10 @@ const MIGRATIONS = [
 export const pendingMigrations = (database: DatabaseSync) =>
   MIGRATIONS.length - (database.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 
-export function migrate(database: DatabaseSync) {
+export function migrate(database: DatabaseSync, until = MIGRATIONS.length) {
   const row = database.prepare('PRAGMA user_version').get() as { user_version: number };
   const current = row.user_version;
-  for (let version = current; version < MIGRATIONS.length; version++) {
+  for (let version = current; version < Math.min(until, MIGRATIONS.length); version++) {
     database.exec('BEGIN IMMEDIATE');
     try {
       database.exec(MIGRATIONS[version]);

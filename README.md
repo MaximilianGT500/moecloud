@@ -154,7 +154,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.1` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
@@ -166,7 +166,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.0`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.1`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -577,7 +577,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
 | `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.0`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.1`. Das Installationsskript trägt hier die installierte Version ein                               |
 | `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
 | `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
@@ -603,9 +603,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "date": "2026-11-11",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.0",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.1",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -646,6 +646,8 @@ Die Datenbank sichert MoeCloud jede Nacht um 3 Uhr als `moecloud-auto-…db` und
 ```bash
 docker compose exec moecloud moecloud backup
 ```
+
+Bevor ein Update die Datenbank ändert, legt MoeCloud eine Sicherung `moecloud-update-v3-…db` mit dem alten Stand an und behält die letzten drei. Klappt diese Sicherung nicht, startet MoeCloud nicht und lässt die Datenbank, wie sie ist. Die Meldung im Log nennt dann den Ordner und den Grund. Sicherungen brauchen keine Dateisperren, `data/backups/` darf deshalb auch auf einem Netzlaufwerk liegen. Die Datenbank selbst gehört auf einen lokalen Datenträger.
 
 Die Dateien selbst stecken nicht in diesen Sicherungen. Sichere den Ordner `data/blobs/` zusätzlich, etwa mit `restic`, Borg oder `rsync`. Zum Zurückspielen MoeCloud beenden, die Sicherung als `data/moecloud.db` ablegen, `moecloud.db-wal` und `moecloud.db-shm` löschen, `blobs/` zurückkopieren und MoeCloud wieder starten. `check` zeigt danach, ob alle Dateien da sind.
 

@@ -1,6 +1,7 @@
 import { config } from './config.ts';
 import { closeDatabase, openDatabase, updateBackup } from './lib/db.ts';
 import { buildApp } from './app.ts';
+import { tidyBackups } from './services/backups.ts';
 import { ensureDirs } from './services/blobs.ts';
 import { startJobs } from './services/jobs.ts';
 import { detectTools } from './services/media.ts';
@@ -14,6 +15,8 @@ settings.secret();
 
 const app = await buildApp();
 if (updateBackup) app.log.info(`Vor dem Update der Datenbank wurde eine Sicherung angelegt: ${updateBackup}`);
+const tidied = await tidyBackups();
+if (tidied) app.log.info(`${tidied} leere oder unvollständige Sicherungsdateien wurden entfernt`);
 
 const found = await detectTools();
 const missing = Object.entries(found)

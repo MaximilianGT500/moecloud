@@ -1,7 +1,7 @@
 import { mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './src/config.ts';
-import { all, closeDatabase, openDatabase, run, stamp, vacuumInto } from './src/lib/db.ts';
+import { all, closeDatabase, openDatabase, run, stamp, snapshotDatabase } from './src/lib/db.ts';
 import { hashPassword, randomId } from './src/lib/crypto.ts';
 import { audit } from './src/services/audit.ts';
 import { blobPath, ensureDirs } from './src/services/blobs.ts';
@@ -140,7 +140,7 @@ async function main() {
     case 'backup': {
       const dir = positional()[0] ?? config.paths.backups;
       await mkdir(dir, { recursive: true });
-      const file = vacuumInto(join(dir, `moecloud-manual-${stamp()}.db`));
+      const file = snapshotDatabase(join(dir, `moecloud-manual-${stamp()}.db`));
       audit('backup_created', { details: { name: file, via: 'cli' } });
       out(`Datenbank gesichert: ${file} (${size((await stat(file)).size)})`);
       out(`Sichere zusätzlich den Ordner ${config.paths.blobs}, dort liegen die Dateien.`);
