@@ -1,6 +1,7 @@
 import { config } from './config.ts';
 import { closeDatabase, openDatabase, updateBackup } from './lib/db.ts';
 import { buildApp } from './app.ts';
+import { sharedFileSystem } from './lib/storage.ts';
 import { tidyBackups } from './services/backups.ts';
 import { ensureDirs } from './services/blobs.ts';
 import { startJobs } from './services/jobs.ts';
@@ -15,6 +16,13 @@ settings.secret();
 
 const app = await buildApp();
 if (updateBackup) app.log.info(`Vor dem Update der Datenbank wurde eine Sicherung angelegt: ${updateBackup}`);
+const storage = sharedFileSystem(config.dataDir);
+if (storage) {
+  app.log.warn(
+    `${config.dataDir} liegt auf ${storage}. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, ` +
+      'Befehle wie moecloud backup laufen dann nur bei angehaltenem Server. Leg den Datenordner am besten auf einen lokalen Datenträger.'
+  );
+}
 const tidied = await tidyBackups();
 if (tidied) app.log.info(`${tidied} leere oder unvollständige Sicherungsdateien wurden entfernt`);
 

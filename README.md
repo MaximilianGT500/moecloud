@@ -154,7 +154,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.2` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.3` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
@@ -166,7 +166,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.2`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.3`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -577,7 +577,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
 | `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.2`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.3`. Das Installationsskript trägt hier die installierte Version ein                               |
 | `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
 | `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
@@ -603,9 +603,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.3.2",
+  "version": "1.3.3",
   "date": "2026-11-11",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.2",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.3",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -660,7 +660,7 @@ Ist die Datenbank verloren und es gibt keine Sicherung, liegen deine Dateien tro
 1. Kopiere `data/blobs/` vorher mit `cp -a` oder `rsync -a` auf eine andere Platte. So bleiben auch die Zeitstempel erhalten, die `recover` als Datum nutzt.
 2. Starte MoeCloud und richte es im Browser neu ein.
 3. `docker compose exec moecloud moecloud recover --dry-run` zeigt, was gefunden wird, ohne etwas zu ändern.
-4. `docker compose exec moecloud moecloud recover emi` holt alles in den Ordner „Wiederhergestellt“ von emi. Ohne Namen nimmt `recover` das einzige Admin-Konto.
+4. `docker compose exec moecloud moecloud recover emi` holt alles in den Ordner „Wiederhergestellt“ von emi. Ohne Namen nimmt `recover` das einzige Admin-Konto. Meldet der Befehl `locking protocol`, nimm den Weg aus [Kommandozeile](#kommandozeile).
 
 `recover` prüft jede Datei gegen ihre Prüfsumme und erkennt die Art am Inhalt, auch bei RAW-Fotos, HEIC und alten Office-Dateien. Die Dateien landen nach Art sortiert in Ordnern wie Bilder, Videos, Audio, PDFs, Dokumente und Texte, Bilder und Videos zusätzlich nach Jahr. Die Namen kommen, wo es geht, aus dem Inhalt:
 
@@ -695,6 +695,16 @@ Ist die Datenbank verloren und es gibt keine Sicherung, liegen deine Dateien tro
 | `version`                                | Installierte und neueste Version anzeigen                                                                                                            |
 
 Mit Docker heißen die Befehle `docker compose exec moecloud moecloud users`, `… moecloud reset-password emi` und so weiter, nach dem Installationsskript `sudo moecloud users`. Sie laufen dort mit dem Benutzer, dem `data/` gehört. Ohne Docker nimmst du `npm run cli -- users`. Legst du das erste Konto mit `create-admin` an, starte MoeCloud danach einmal neu.
+
+Meldet ein Befehl `locking protocol` oder `database is locked`, kommt er neben dem laufenden Server nicht an die Datenbank. Das passiert, wenn `data/` auf einem Netzlaufwerk oder einem FUSE-Dateisystem wie mergerfs liegt, weil die Dateisperren von SQLite dort zwischen zwei Prozessen nicht zuverlässig funktionieren. Dann läuft der Befehl bei angehaltenem Server in einem eigenen Container:
+
+```bash
+docker compose stop
+docker compose run --rm --name moecloud-cli moecloud moecloud users
+docker compose up -d
+```
+
+`sudo moecloud` fragt in diesem Fall selbst, ob es MoeCloud dafür kurz anhalten soll, und `sudo moecloud doctor` zeigt, auf welchem Dateisystem `data/` liegt. Auf Dauer gehört zumindest die Datenbank auf einen lokalen Datenträger.
 
 ## API
 
@@ -821,6 +831,6 @@ Die Texte sind auf Deutsch geschrieben und dienen gleichzeitig als Schlüssel f�
 
 ## Support, Mitwirken und Lizenz
 
-Fehler und Ideen gerne als [Issue](https://github.com/MaximilianGT500/moecloud/issues/new/choose) oder Pull Request, siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken meldest du bitte nicht öffentlich, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Kontakt gibt es auch über meine [Website](https://m-s.gg).
+Fehler und Ideen gerne als [Issue](https://github.com/MaximilianGT500/moecloud/issues/new/choose) oder Pull Request, siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken meldest du bitte nicht öffentlich, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Kontakt gibt es auch über meine [Website](https://mm-s.gg).
 
 MoeCloud steht unter der [MIT-Lizenz](LICENSE). Für HEIC nutzt MoeCloud das Paket [libheif-js](https://github.com/catdad-experiments/libheif-js) mit libheif und libde265 unter der LGPL 3.0. Es wird unverändert als eigenes Paket installiert und lässt sich austauschen.

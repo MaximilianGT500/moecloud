@@ -16,7 +16,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 Melde Sicherheitslücken bitte nicht öffentlich als Issue, sondern vertraulich:
 
 - über **Security › Report a vulnerability** in diesem Repository oder
-- über das [Kontaktformular](https://m-s.gg).
+- über das [Kontaktformular](https://mm-s.gg).
 
 Hilfreich sind:
 

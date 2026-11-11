@@ -14,6 +14,8 @@ export let updateBackup: string | null = null;
 
 const HEADER = 'SQLite format 3\u0000';
 
+export const isLockError = (error: unknown) => [5, 6, 15].includes(((error as { errcode?: number } | null)?.errcode ?? 0) & 0xff);
+
 export const stamp = (date = new Date()) => date.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
 const uri = (file: string, flag: string) => `${pathToFileURL(file).href}?${flag}=1`;

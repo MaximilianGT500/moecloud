@@ -35,12 +35,38 @@ command -v docker >/dev/null 2>&1 || fail "Docker fehlt auf diesem Server."
 compose() { (cd "$DIR" && docker compose "$@"); }
 env_get() { sed -n "s/^$1=//p" "$DIR/.env" 2>/dev/null | tail -n 1 || true; }
 
-cli() {
+offline() {
   if [ -t 0 ] && [ -t 1 ]; then
-    compose exec moecloud moecloud "$@"
+    compose run --rm --no-deps --name moecloud-cli moecloud moecloud "$@"
   else
-    compose exec -T moecloud moecloud "$@"
+    compose run --rm --no-deps -T --name moecloud-cli moecloud moecloud "$@"
   fi
+}
+
+paused() {
+  local answer="" status=0
+  printf '\nDafür muss MoeCloud kurz anhalten. Jetzt anhalten, den Befehl ausführen und danach wieder starten? (j/n) '
+  IFS= read -r answer </dev/tty || answer=""
+  case "$answer" in j | J | ja | y | yes) ;; *) fail "Abgebrochen, MoeCloud läuft weiter." ;; esac
+  compose stop moecloud
+  offline "$@" || status=$?
+  compose start moecloud
+  return "$status"
+}
+
+cli() {
+  local status=0
+  if [ -z "$(compose ps -q moecloud 2>/dev/null || true)" ]; then
+    offline "$@"
+    return
+  fi
+  if [ -t 0 ] && [ -t 1 ]; then
+    compose exec -e MOECLOUD_VIA=host moecloud moecloud "$@" || status=$?
+  else
+    compose exec -T -e MOECLOUD_VIA=host moecloud moecloud "$@" || status=$?
+  fi
+  [ "$status" -eq 75 ] || return "$status"
+  paused "$@"
 }
 
 state_of() {
@@ -113,7 +139,7 @@ newest_backup() {
 }
 
 doctor() {
-  local state free memory backup age domain url code
+  local state free memory backup age domain url code fs
   printf '%sMoeCloud prüfen%s\n\n' "$bold" "$reset"
   if docker info >/dev/null 2>&1; then ok "Docker läuft"; else warn "Docker läuft nicht. Starte es mit: sudo systemctl start docker"; fi
   state="$(state_of moecloud)"
@@ -137,6 +163,14 @@ doctor() {
   fi
   free="$(df -Pm "$DIR" 2>/dev/null | awk 'NR == 2 { print $4 }' || echo 0)"
   if [ "${free:-0}" -lt 2048 ]; then warn "Nur noch ${free:-0} MB frei unter $DIR"; else ok "$((free / 1024)) GB frei unter $DIR"; fi
+  fs="$(stat -f -c %T "$DIR/data" 2>/dev/null || true)"
+  case "$fs" in
+    nfs* | cifs | smb* | fuse* | 9p | ceph | vboxsf)
+      warn "Der Datenordner liegt auf $fs. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, leg $DIR/data am besten auf einen lokalen Datenträger"
+      ;;
+    "") ;;
+    *) ok "Der Datenordner liegt auf $fs" ;;
+  esac
   memory="$(awk '/MemAvailable/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null || echo 0)"
   if [ "${memory:-0}" -lt 256 ]; then warn "Nur noch ${memory:-0} MB Arbeitsspeicher frei"; else ok "${memory} MB Arbeitsspeicher frei"; fi
   backup="$(newest_backup)"

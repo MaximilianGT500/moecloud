@@ -8,6 +8,7 @@ import { badRequest } from '../lib/errors.ts';
 import { contentDisposition } from '../lib/http.ts';
 import { t } from '../lib/i18n.ts';
 import { admin } from '../lib/request.ts';
+import { sharedFileSystem } from '../lib/storage.ts';
 import { email, parse } from '../lib/validate.ts';
 import { audit } from '../services/audit.ts';
 import { backupPath, createBackup, deleteBackup, listBackups } from '../services/backups.ts';
@@ -288,6 +289,7 @@ export async function systemAdminRoutes(app: FastifyInstance) {
       platform: `${process.platform} ${process.arch}`,
       install: config.install,
       dataDir: config.dataDir,
+      storage: sharedFileSystem(config.dataDir),
       database: (db?.size ?? 0) + (wal?.size ?? 0),
       tools: { ...tools },
       processing: { pending: pendingCount(), ...progress },

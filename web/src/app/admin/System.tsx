@@ -22,6 +22,7 @@ interface SystemInfo {
   platform: string;
   install: string;
   dataDir: string;
+  storage: string | null;
   database: number;
   tools: { ffmpeg: boolean; ffprobe: boolean; pdftoppm: boolean; pdftotext: boolean };
   processing: { pending: number; processed: number; failed: number };
@@ -115,6 +116,14 @@ export function SystemSection() {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <UpdateBanner updates={updates} />
+      {info.storage && (
+        <Alert severity="warning">
+          {t(
+            'Der Datenordner liegt auf {kind}. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, Befehle wie moecloud backup laufen dann nur bei angehaltenem Server. Leg den Datenordner am besten auf einen lokalen Datenträger.',
+            { kind: info.storage }
+          )}
+        </Alert>
+      )}
       <Section
         title={t('Version')}
         action={

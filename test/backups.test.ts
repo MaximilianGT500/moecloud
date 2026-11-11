@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { config } from '../src/config.ts';
 import * as store from '../src/lib/db.ts';
 import { migrate, schemaVersion } from '../src/lib/schema.ts';
+import { sharedFileSystem } from '../src/lib/storage.ts';
 import { listBackups, tidyBackups } from '../src/services/backups.ts';
 
 const dir = join(config.dataDir, 'snapshots');
@@ -127,5 +128,27 @@ describe('Aufräumen im Sicherungsordner', () => {
       'notizen-von-emi.txt',
     ]);
     assert.equal(await tidyBackups(), 0);
+  });
+});
+
+describe('Dateisystem und Sperren', () => {
+  it('erkennt Netzlaufwerke und FUSE am Typ des Dateisystems', () => {
+    assert.equal(sharedFileSystem('/data', 0x65735546), 'FUSE');
+    assert.equal(sharedFileSystem('/data', 0xff534d42), 'SMB');
+    assert.equal(sharedFileSystem('/data', -11317950), 'SMB');
+    assert.equal(sharedFileSystem('/data', 0x6969), 'NFS');
+    assert.equal(sharedFileSystem('/data', 0xef53), null);
+    assert.equal(sharedFileSystem('/data', 0x2fc12fc1), null);
+    assert.ok([null, 'FUSE', '9p', 'NFS', 'SMB'].includes(sharedFileSystem(config.dataDir)));
+  });
+
+  it('erkennt Sperrfehler von SQLite', () => {
+    assert.ok(store.isLockError({ errcode: 15 }));
+    assert.ok(store.isLockError({ errcode: 5 }));
+    assert.ok(store.isLockError({ errcode: 517 }));
+    assert.ok(store.isLockError({ errcode: 6 }));
+    assert.ok(!store.isLockError({ errcode: 14 }));
+    assert.ok(!store.isLockError(new Error('Emi')));
+    assert.ok(!store.isLockError(null));
   });
 });

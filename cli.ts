@@ -1,7 +1,7 @@
 import { mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './src/config.ts';
-import { all, closeDatabase, openDatabase, run, stamp, snapshotDatabase } from './src/lib/db.ts';
+import { all, closeDatabase, isLockError, openDatabase, run, stamp, snapshotDatabase } from './src/lib/db.ts';
 import { hashPassword, randomId } from './src/lib/crypto.ts';
 import { audit } from './src/services/audit.ts';
 import { blobPath, ensureDirs } from './src/services/blobs.ts';
@@ -33,6 +33,29 @@ const fail = (line: string): never => {
   process.stderr.write(`${line}\n`);
   process.exit(1);
 };
+
+const quoted = (value: string) => (/^[\w./:=@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`);
+
+function lockAdvice(error: Error) {
+  const lines = [
+    `MoeCloud kommt gerade nicht an die Datenbank (${error.message}).`,
+    'Meist hat der laufende Server sie offen, und das Dateisystem unter dem Datenordner lässt keinen zweiten Zugriff zu, etwa ein Netzlaufwerk oder FUSE.',
+  ];
+  if (process.env.MOECLOUD_VIA === 'host') return lines.join('\n');
+  const call = [name ?? 'help', ...args].map(quoted).join(' ');
+  if (config.install === 'docker' || config.install === 'script') {
+    lines.push(
+      'Halte MoeCloud dafür kurz an und starte den Befehl in einem eigenen Container, im Ordner mit der docker-compose.yml:',
+      '  docker compose stop',
+      `  docker compose run --rm --name moecloud-cli moecloud moecloud ${call}`,
+      '  docker compose up -d'
+    );
+  } else {
+    lines.push(`Halte den Server kurz an, führe ${command} ${call} aus und starte ihn danach wieder.`);
+  }
+  lines.push('Auf Dauer hilft es, den Datenordner auf einen lokalen Datenträger zu legen.');
+  return lines.join('\n');
+}
 
 function option(key: string) {
   const index = args.indexOf(`--${key}`);
@@ -102,7 +125,13 @@ function kinds(tally: Tally, lang: Lang) {
 
 async function main() {
   await ensureDirs();
-  openDatabase(config.paths.db, config.paths.backups);
+  try {
+    openDatabase(config.paths.db, config.paths.backups);
+  } catch (error) {
+    if (!isLockError(error)) throw error;
+    process.stderr.write(`${lockAdvice(error as Error)}\n`);
+    process.exit(75);
+  }
   switch (name) {
     case 'users': {
       const users = listUsers();

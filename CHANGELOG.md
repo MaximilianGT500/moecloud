@@ -2,6 +2,24 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.3] · 2026-11-11
+
+Diese Version hilft, wenn der Datenordner auf einem Netzlaufwerk oder einem FUSE-Dateisystem liegt.
+
+### Behoben
+
+- Befehle wie `moecloud recover` brachen neben dem laufenden Server mit einem Stacktrace und „locking protocol“ ab, wenn `data/` auf einem Dateisystem liegt, dessen Dateisperren zwischen zwei Prozessen nicht zuverlässig funktionieren. Jetzt erklärt die Meldung den Grund und nennt den Weg mit `docker compose run` bei angehaltenem Server
+- `sudo moecloud` fragt in diesem Fall selbst, ob es MoeCloud kurz anhalten, den Befehl ausführen und danach wieder starten soll. Läuft MoeCloud gar nicht, nimmt es gleich einen eigenen Container, statt mit einem Fehler abzubrechen
+
+### Neu
+
+- Liegt der Datenordner auf NFS, SMB, FUSE, 9p, Ceph oder einem Ordner von VirtualBox, warnt MoeCloud beim Start im Log und unter **Admin › System**
+- `sudo moecloud doctor` zeigt, auf welchem Dateisystem `data/` liegt, und warnt bei Netzlaufwerken und FUSE
+
+### Kleinigkeiten
+
+- 1 neuer Text mit englischer Übersetzung
+
 ## [1.3.2] · 2026-11-11
 
 Diese Version bringt den Befehl `recover`, der deine Dateien zurückholt, wenn die Datenbank verloren ist und keine Sicherung da ist.
@@ -348,6 +366,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.3.3]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.3
 [1.3.2]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.2
 [1.3.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.1
 [1.3.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.0
