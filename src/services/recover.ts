@@ -69,6 +69,8 @@ export interface Survey {
   bytes: number;
   kinds: Tally;
   foreign: number;
+  known: number;
+  unreadable: Unreadable[];
 }
 
 export interface Recovered {
@@ -77,6 +79,8 @@ export interface Recovered {
   kinds: Tally;
   corrupted: string[];
   foreign: number;
+  known: number;
+  unreadable: Unreadable[];
   folder: string;
   overQuota: number | null;
 }
@@ -115,41 +119,63 @@ export function folderOf(kind: Kind, lang: Lang) {
   }
 }
 
-async function entries(dir: string) {
-  const list = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
-  return list.sort((a, b) => a.name.localeCompare(b.name));
+export interface Unreadable {
+  path: string;
+  code: string;
 }
 
-export async function findStrays() {
-  const strays: Stray[] = [];
-  const foreign: string[] = [];
+export interface Scan {
+  strays: Stray[];
+  foreign: string[];
+  known: number;
+  unreadable: Unreadable[];
+}
+
+export async function listDir(dir: string, unreadable: Unreadable[]) {
+  try {
+    return (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'EIO';
+    if (code !== 'ENOENT') unreadable.push({ path: dir, code });
+    return [] as Dirent[];
+  }
+}
+
+export async function findStrays(): Promise<Scan> {
+  const scan: Scan = { strays: [], foreign: [], known: 0, unreadable: [] };
   const root = config.paths.blobs;
-  for (const first of await entries(root)) {
+  for (const first of await listDir(root, scan.unreadable)) {
     const firstPath = join(root, first.name);
     if (!first.isDirectory() || !FAN.test(first.name)) {
-      foreign.push(firstPath);
+      scan.foreign.push(firstPath);
       continue;
     }
-    for (const second of await entries(firstPath)) {
+    for (const second of await listDir(firstPath, scan.unreadable)) {
       const secondPath = join(firstPath, second.name);
       if (!second.isDirectory() || !FAN.test(second.name)) {
-        foreign.push(secondPath);
+        scan.foreign.push(secondPath);
         continue;
       }
-      for (const entry of await entries(secondPath)) {
+      for (const entry of await listDir(secondPath, scan.unreadable)) {
         const path = join(secondPath, entry.name);
         if (!entry.isFile() || !SHA.test(entry.name) || !entry.name.startsWith(first.name + second.name)) {
-          foreign.push(path);
+          scan.foreign.push(path);
           continue;
         }
-        if (getBlob(entry.name)) continue;
-        const info = await stat(path);
-        strays.push({ sha: entry.name, path, size: info.size, modified: info.mtimeMs });
+        if (getBlob(entry.name)) {
+          scan.known++;
+          continue;
+        }
+        const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
+          scan.unreadable.push({ path, code: error.code ?? 'EIO' });
+          return null;
+        });
+        if (info) scan.strays.push({ sha: entry.name, path, size: info.size, modified: info.mtimeMs });
       }
     }
   }
-  strays.sort((a, b) => a.modified - b.modified || a.sha.localeCompare(b.sha));
-  return { strays, foreign };
+  scan.strays.sort((a, b) => a.modified - b.modified || a.sha.localeCompare(b.sha));
+  return scan;
 }
 
 async function readAt(handle: FileHandle, position: number, length: number) {
@@ -421,18 +447,35 @@ const count = (tally: Tally, kind: Kind, bytes: number) => {
 };
 
 export async function surveyStrays(): Promise<Survey> {
-  const { strays, foreign } = await findStrays();
+  const { strays, foreign, known, unreadable } = await findStrays();
   const kinds: Tally = {};
   for (const stray of strays) count(kinds, kindOfExt(await identify(stray.path, stray.size).catch(() => 'bin')), stray.size);
-  return { count: strays.length, bytes: strays.reduce((sum, stray) => sum + stray.size, 0), kinds, foreign: foreign.length };
+  return {
+    count: strays.length,
+    bytes: strays.reduce((sum, stray) => sum + stray.size, 0),
+    kinds,
+    foreign: foreign.length,
+    known,
+    unreadable,
+  };
 }
 
 export async function recoverFiles(user: UserRow, onProgress?: (progress: Progress) => void): Promise<Recovered> {
   const lang = preferredLanguage(user);
   const folder = t(lang, 'Wiederhergestellt');
-  const { strays, foreign } = await findStrays();
+  const { strays, foreign, known, unreadable } = await findStrays();
   const totalBytes = strays.reduce((sum, stray) => sum + stray.size, 0);
-  const result: Recovered = { imported: 0, bytes: 0, kinds: {}, corrupted: [], foreign: foreign.length, folder, overQuota: null };
+  const result: Recovered = {
+    imported: 0,
+    bytes: 0,
+    kinds: {},
+    corrupted: [],
+    foreign: foreign.length,
+    known,
+    unreadable,
+    folder,
+    overQuota: null,
+  };
   let bytes = 0;
   for (const [index, stray] of strays.entries()) {
     if ((await hashFile(stray.path).catch(() => null)) !== stray.sha) {

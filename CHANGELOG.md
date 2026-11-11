@@ -2,6 +2,16 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.4] · 2026-11-11
+
+Diese Version macht die Ausgabe von `recover` eindeutig.
+
+### Behoben
+
+- Durfte MoeCloud Unterordner von `data/blobs/` nicht lesen, meldete `recover` nur, es gebe nichts zurückzuholen. Jetzt nennt es diese Ordner mit dem Grund und zeigt, für welchen Benutzer die Leserechte fehlen
+- `recover` sagt jetzt, wie viele Dateien die Datenbank schon kennt. Kennt sie alle, steht da, dass es nichts zurückzuholen gibt, statt dass der Ordner leer wirkt
+- Einzahl und Mehrzahl in der Ausgabe von `recover` stimmen jetzt
+
 ## [1.3.3] · 2026-11-11
 
 Diese Version hilft, wenn der Datenordner auf einem Netzlaufwerk oder einem FUSE-Dateisystem liegt.
@@ -366,6 +376,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.3.4]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.4
 [1.3.3]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.3
 [1.3.2]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.2
 [1.3.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.1

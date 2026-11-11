@@ -10,7 +10,7 @@ import { runMaintenance } from './src/services/jobs.ts';
 import { deliver, mailReady } from './src/services/mail.ts';
 import { detectTools } from './src/services/media.ts';
 import { pendingCount, processNow, refreshPreviews, reindexText } from './src/services/processing.ts';
-import { folderOf, recoverFiles, surveyStrays, type Tally } from './src/services/recover.ts';
+import { folderOf, recoverFiles, surveyStrays, type Tally, type Unreadable } from './src/services/recover.ts';
 import { job, rescan, testScanner } from './src/services/scan.ts';
 import { destroyUserSessions } from './src/services/sessions.ts';
 import * as settings from './src/services/settings.ts';
@@ -114,6 +114,22 @@ function recoverTarget(username: string | undefined) {
   const [admin] = admins;
   if (admins.length !== 1 || !admin) return fail(`Gib an, wem die Dateien gehören sollen, zum Beispiel: ${command} recover emi`);
   return admin;
+}
+
+const amount = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+function unreadableNote(unreadable: Unreadable[]) {
+  if (!unreadable.length) return;
+  out(
+    `${amount(unreadable.length, 'Eintrag', 'Einträge')} in ${config.paths.blobs} kann MoeCloud nicht lesen, ihre Dateien fehlen in dieser Zählung:`
+  );
+  for (const entry of unreadable.slice(0, 10)) out(`  ${entry.path} (${entry.code})`);
+  if (unreadable.length > 10) out(`  und ${unreadable.length - 10} weitere`);
+  if (unreadable.some((entry) => entry.code === 'EACCES' || entry.code === 'EPERM')) {
+    const who = `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`;
+    out(`MoeCloud läuft als Benutzer ${who}. Gib ihm Leserechte, auf dem Server etwa mit: chown -R ${who} data/blobs`);
+  }
+  process.exitCode = 2;
 }
 
 function kinds(tally: Tally, lang: Lang) {
@@ -275,15 +291,24 @@ async function main() {
     }
     case 'recover': {
       await detectTools();
+      const blobs = config.paths.blobs;
       if (args.includes('--dry-run')) {
         const survey = await surveyStrays();
-        if (!survey.count) out(`In ${config.paths.blobs} liegen keine Dateien, die MoeCloud nicht kennt.`);
-        else {
-          out(`In ${config.paths.blobs} liegen ${survey.count} Dateien (${size(survey.bytes)}), die MoeCloud nicht kennt:`);
+        if (survey.count) {
+          const one = survey.count === 1;
+          out(
+            `In ${blobs} ${one ? 'liegt' : 'liegen'} ${amount(survey.count, 'Datei', 'Dateien')} (${size(survey.bytes)}), die in der Datenbank ${one ? 'fehlt' : 'fehlen'}:`
+          );
           kinds(survey.kinds, 'de');
+          if (survey.known) out(`${amount(survey.known, 'weitere Datei kennt', 'weitere Dateien kennt')} die Datenbank schon.`);
           out(`Ohne --dry-run holt ${command} recover sie in den Ordner „Wiederhergestellt“.`);
+        } else if (survey.known) {
+          out(`Die Datenbank kennt alle ${amount(survey.known, 'Datei', 'Dateien')} in ${blobs}, es gibt nichts zurückzuholen.`);
+        } else if (!survey.unreadable.length) {
+          out(`In ${blobs} liegen keine Dateien.`);
         }
-        if (survey.foreign) out(`${survey.foreign} andere Einträge in ${config.paths.blobs} lässt recover in Ruhe.`);
+        if (survey.foreign) out(`${amount(survey.foreign, 'anderen Eintrag', 'andere Einträge')} in ${blobs} lässt recover in Ruhe.`);
+        unreadableNote(survey.unreadable);
         break;
       }
       if (!isSetUp())
@@ -298,17 +323,26 @@ async function main() {
         );
       });
       if (shown) out();
-      if (!result.imported && !result.corrupted.length) out(`In ${config.paths.blobs} liegen keine Dateien, die MoeCloud nicht kennt.`);
       if (result.imported) {
-        out(`${result.imported} Dateien (${size(result.bytes)}) liegen jetzt bei ${user.name} im Ordner „${result.folder}“:`);
+        out(
+          `${amount(result.imported, 'Datei', 'Dateien')} (${size(result.bytes)}) ${result.imported === 1 ? 'liegt' : 'liegen'} jetzt bei ${user.name} im Ordner „${result.folder}“:`
+        );
         kinds(result.kinds, preferredLanguage(user));
+        if (result.known) out(`${amount(result.known, 'weitere Datei kannte', 'weitere Dateien kannte')} die Datenbank schon.`);
+      } else if (!result.corrupted.length && result.known) {
+        out(`Die Datenbank kennt alle ${amount(result.known, 'Datei', 'Dateien')} in ${blobs}, es gibt nichts zurückzuholen.`);
+      } else if (!result.corrupted.length && !result.unreadable.length) {
+        out(`In ${blobs} liegen keine Dateien.`);
       }
       if (result.corrupted.length) {
-        out(`${result.corrupted.length} Dateien passen nicht zu ihrer Prüfsumme oder ließen sich nicht lesen. Sie bleiben, wo sie sind:`);
+        out(
+          `${amount(result.corrupted.length, 'Datei passt', 'Dateien passen')} nicht zur Prüfsumme oder ließ sich nicht lesen. Sie bleiben, wo sie sind:`
+        );
         for (const path of result.corrupted) out(`  ${path}`);
         process.exitCode = 2;
       }
-      if (result.foreign) out(`${result.foreign} andere Einträge in ${config.paths.blobs} hat recover nicht angefasst.`);
+      if (result.foreign) out(`${amount(result.foreign, 'anderen Eintrag', 'andere Einträge')} in ${blobs} hat recover nicht angefasst.`);
+      unreadableNote(result.unreadable);
       if (result.overQuota !== null) {
         out(`${user.name} belegt jetzt mehr als die erlaubten ${size(result.overQuota)}. Den Speicher änderst du unter Admin › Personen.`);
       }

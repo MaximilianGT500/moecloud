@@ -11,7 +11,7 @@ import { all, one, value } from '../src/lib/db.ts';
 import { blobPath } from '../src/services/blobs.ts';
 import type { NodeRow } from '../src/services/nodes.ts';
 import { processNow } from '../src/services/processing.ts';
-import { hintOf, identify, recoverFiles, surveyStrays } from '../src/services/recover.ts';
+import { hintOf, identify, listDir, recoverFiles, surveyStrays, type Unreadable } from '../src/services/recover.ts';
 import { findByUsername } from '../src/services/users.ts';
 
 const app = await createApp();
@@ -223,6 +223,8 @@ describe('Dateien ohne Datenbank wiederherstellen', () => {
     const survey = await surveyStrays();
     assert.equal(survey.count, planted.size + 1);
     assert.equal(survey.foreign, 2);
+    assert.equal(survey.known, 1);
+    assert.deepEqual(survey.unreadable, []);
     assert.equal(survey.kinds.image?.count, 5);
     assert.equal(survey.kinds.pdf?.count, 2);
     assert.equal(value<number>('SELECT COUNT(*) FROM nodes'), before);
@@ -236,6 +238,8 @@ describe('Dateien ohne Datenbank wiederherstellen', () => {
     assert.equal(result.folder, 'Wiederhergestellt');
     assert.deepEqual(result.corrupted, [blobPath(broken)]);
     assert.equal(result.foreign, 2);
+    assert.equal(result.known, 1);
+    assert.deepEqual(result.unreadable, []);
     assert.equal(result.overQuota, null);
     assert.equal(steps.at(-1), planted.size + 1);
 
@@ -279,8 +283,17 @@ describe('Dateien ohne Datenbank wiederherstellen', () => {
     const nodes = value<number>('SELECT COUNT(*) FROM nodes');
     const result = await recoverFiles(findByUsername('emi')!);
     assert.equal(result.imported, 0);
+    assert.equal(result.known, planted.size + 1);
     assert.deepEqual(result.corrupted, [blobPath(broken)]);
     assert.equal(value<number>('SELECT COUNT(*) FROM nodes'), nodes);
+  });
+
+  it('meldet Ordner, die es nicht lesen kann, statt sie zu übergehen', async () => {
+    const unreadable: Unreadable[] = [];
+    assert.deepEqual(await listDir(join(config.paths.blobs, 'gibt-es-nicht'), unreadable), []);
+    assert.deepEqual(unreadable, []);
+    assert.deepEqual(await listDir(join(config.paths.blobs, 'notizen-von-mia.txt'), unreadable), []);
+    assert.deepEqual(unreadable, [{ path: join(config.paths.blobs, 'notizen-von-mia.txt'), code: 'ENOTDIR' }]);
   });
 
   it('übergibt die Dateien an die normale Verarbeitung', async () => {
