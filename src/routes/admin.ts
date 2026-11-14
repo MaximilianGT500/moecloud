@@ -24,6 +24,8 @@ import { scanEnabled, scanStats } from '../services/scan.ts';
 import { destroyUserSessions, listSessions } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { transferFiles } from '../services/transfer.ts';
+import { recordUsage, usageHistory } from '../services/usage.ts';
+import { planImport, runImport } from '../services/userimport.ts';
 import { updateStatus } from '../services/updates.ts';
 import {
   adminCount,
@@ -78,10 +80,12 @@ const settingsSchema = z
     'storage.maxUpload': quota,
     'storage.trashDays': z.number().int().min(0).max(3650),
     'storage.versions': z.number().int().min(0).max(100),
+    'storage.versionDays': z.number().int().min(0).max(3650),
     'share.links': z.boolean(),
     'share.users': z.boolean(),
     'share.requirePassword': z.boolean(),
     'share.maxDays': z.number().int().min(0).max(3650),
+    'share.stripLocation': z.boolean(),
     'users.directory': z.boolean(),
     'notice.text': z.string().max(500),
     'notice.level': z.enum(['info', 'warning']),
@@ -95,6 +99,8 @@ const settingsSchema = z
     'audit.days': z.number().int().min(0).max(3650),
     'activity.days': z.number().int().min(0).max(3650),
     'search.content': z.boolean(),
+    'import.enabled': z.boolean(),
+    'import.private': z.boolean(),
   })
   .partial();
 
@@ -111,6 +117,7 @@ function userView(user: Parameters<typeof adminUser>[0]) {
 export async function adminRoutes(app: FastifyInstance) {
   app.get('/api/admin/overview', async (request) => {
     admin(request);
+    recordUsage();
     const disk = await statfs(config.dataDir).catch(() => null);
     const top = all<{ owner_id: number; size: number; files: number }>(
       "SELECT owner_id, COALESCE(SUM(size), 0) AS size, COUNT(*) AS files FROM nodes WHERE type = 'file' GROUP BY owner_id ORDER BY size DESC LIMIT 6"
@@ -149,6 +156,7 @@ export async function adminRoutes(app: FastifyInstance) {
           value<number>("SELECT COUNT(*) FROM audit WHERE action = 'login_failed' AND created_at > ?", Date.now() - 86_400_000) ?? 0,
       },
       updates: updateStatus(),
+      history: usageHistory(),
     };
   });
 
@@ -176,6 +184,20 @@ export async function adminRoutes(app: FastifyInstance) {
       sent = true;
     }
     return { user: userView(user), sent };
+  });
+
+  app.post('/api/admin/users/import', { bodyLimit: 2 * 1024 * 1024 }, async (request) => {
+    const actor = admin(request);
+    const input = parse(
+      z.object({
+        csv: z.string().max(1_000_000, 'Die Datei ist zu groß'),
+        sendLinks: z.boolean().default(false),
+        apply: z.boolean().default(false),
+      }),
+      request.body
+    );
+    if (!input.apply) return { lines: planImport(input.csv, input.sendLinks, request.lang).map((entry) => entry.shown), created: 0 };
+    return runImport(request, actor, input.csv, input.sendLinks);
   });
 
   app.patch<{ Params: { id: string } }>('/api/admin/users/:id', async (request) => {

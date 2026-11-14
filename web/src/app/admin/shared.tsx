@@ -29,7 +29,7 @@ export function Stat({ label, value, hint, tone }: { label: string; value: React
       <Typography variant="body2" sx={{ color: tone === 'error' ? 'inherit' : c.onSurfaceVariant }}>
         {label}
       </Typography>
-      <Typography variant="h4" component="p" sx={{ fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+      <Typography variant="h4" component="p" sx={{ overflowWrap: 'anywhere' }}>
         {value}
       </Typography>
       {hint && (

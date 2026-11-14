@@ -15,6 +15,9 @@ import { useLive } from '../../lib/live';
 import { navigate } from '../../lib/router';
 import { c, fileTypeColor, radius } from '../../theme/tokens';
 import { EmptyState } from '../common/bits';
+import { confirm } from '../common/dialogs';
+import { toast } from '../common/toast';
+import { attempt } from './actions';
 import { FileIcon, type Item } from './kinds';
 
 type Group = 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other';
@@ -26,7 +29,7 @@ interface Report {
   versions: number;
   groups: Record<Group, { size: number; count: number }>;
   largest: Item[];
-  duplicates: { sha256: string; size: number; wasted: number; items: Item[] }[];
+  duplicates: { sha256: string; size: number; count: number; wasted: number; items: Item[] }[];
 }
 
 const GROUPS: { key: Group; label: string; color: string }[] = [
@@ -141,6 +144,29 @@ export function StorageView({ onReveal }: { onReveal: (item: Item) => void }) {
   ].filter((segment) => segment.size > 0);
   const other = Math.max(0, report.used - files - report.trash);
   const wasted = report.duplicates.reduce((sum, group) => sum + group.wasted, 0);
+  const tidy = async (groups: Report['duplicates']) => {
+    const copies = groups.reduce((sum, group) => sum + group.count - 1, 0);
+    const first = groups[0].items[0];
+    const ok = await confirm({
+      title: tn(copies, 'Eine Kopie in den Papierkorb legen?', '{count} Kopien in den Papierkorb legen?'),
+      text:
+        groups.length === 1
+          ? t('„{name}“ in „{folder}“ bleibt, die anderen Kopien wandern in den Papierkorb.', {
+              name: first.name,
+              folder: first.location || t('Meine Dateien'),
+            })
+          : t('Von jeder Datei bleibt die älteste Kopie, die anderen wandern in den Papierkorb.'),
+      confirm: t('Aufräumen'),
+      danger: true,
+    });
+    if (!ok) return;
+    const result = await attempt(() =>
+      api.post<{ removed: number; size: number }>('/api/storage/duplicates', { keep: groups.map((group) => group.items[0].id) })
+    );
+    if (!result) return;
+    toast(tn(result.removed, 'Eine Kopie liegt jetzt im Papierkorb', '{count} Kopien liegen jetzt im Papierkorb'));
+    setRevision((value) => value + 1);
+  };
 
   return (
     <Box
@@ -234,7 +260,16 @@ export function StorageView({ onReveal }: { onReveal: (item: Item) => void }) {
           </Typography>
         )}
       </Card>
-      <Card title={t('Doppelte Dateien')}>
+      <Card
+        title={t('Doppelte Dateien')}
+        action={
+          report.duplicates.length > 1 ? (
+            <Button size="small" startIcon={<DeleteSweepRounded />} onClick={() => void tidy(report.duplicates)}>
+              {t('Alle aufräumen')}
+            </Button>
+          ) : undefined
+        }
+      >
         {report.duplicates.length ? (
           <>
             <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
@@ -248,13 +283,20 @@ export function StorageView({ onReveal }: { onReveal: (item: Item) => void }) {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5 }}>
                     <FileCopyRounded fontSize="small" sx={{ color: c.onSurfaceVariant }} />
                     <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: 1 }}>
-                      {tn(group.items.length, '{count} Kopie', '{count} Kopien')} ·{' '}
-                      {t('{size} je Datei', { size: formatBytes(group.size) })}
+                      {tn(group.count, '{count} Kopie', '{count} Kopien')} · {t('{size} je Datei', { size: formatBytes(group.size) })}
                     </Typography>
+                    <Button size="small" onClick={() => void tidy([group])}>
+                      {t('Nur eine behalten')}
+                    </Button>
                   </Box>
                   {group.items.map((item) => (
                     <FileRow key={item.id} item={item} extra="" onOpen={onReveal} />
                   ))}
+                  {group.count > group.items.length ? (
+                    <Typography variant="caption" component="p" sx={{ color: c.onSurfaceVariant, px: 1, pt: 0.5 }}>
+                      {tn(group.count - group.items.length, 'und {count} weitere Kopie', 'und {count} weitere Kopien')}
+                    </Typography>
+                  ) : null}
                 </Box>
               ))}
             </Box>

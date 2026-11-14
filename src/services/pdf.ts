@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { degrees, EncryptedPDFError, PDFDocument } from '@pdfme/pdf-lib';
 import { badRequest, HttpError } from '../lib/errors.ts';
 import { cleanName, splitName } from '../lib/names.ts';
 import { record } from './activity.ts';
@@ -35,7 +34,10 @@ function pdfNode(user: UserRow, id: string) {
   return node;
 }
 
+const library = () => import('@pdfme/pdf-lib');
+
 async function open(node: NodeRow) {
+  const { EncryptedPDFError, PDFDocument } = await library();
   try {
     const document = await PDFDocument.load(await readFile(blobPath(node.sha256!)), { updateMetadata: false });
     if (document.getPageCount() > MAX_PAGES) throw badRequest('Die PDF hat mehr als {count} Seiten', { count: MAX_PAGES });
@@ -78,6 +80,7 @@ export async function rearrange(user: UserRow, id: string, pages: PageChoice[], 
   const count = source.getPageCount();
   if (pages.length === 0) throw badRequest('Wähle mindestens eine Seite aus');
   if (pages.some((choice) => choice.page < 1 || choice.page > count)) throw badRequest('Diese Seite gibt es in der PDF nicht');
+  const { degrees, PDFDocument } = await library();
   const output = await PDFDocument.create();
   const copied = await output.copyPages(
     source,
@@ -97,6 +100,7 @@ export async function merge(user: UserRow, ids: string[], name: string) {
   if (ids.length > MAX_MERGE) throw badRequest('Höchstens {count} PDFs auf einmal', { count: MAX_MERGE });
   const nodes = ids.map((id) => pdfNode(user, id));
   if (nodes.reduce((sum, node) => sum + node.size, 0) > MAX_PDF_BYTES * 2) throw badRequest('Die PDFs sind zusammen zu groß');
+  const { PDFDocument } = await library();
   const output = await PDFDocument.create();
   let pages = 0;
   for (const node of nodes) {

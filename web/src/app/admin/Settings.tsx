@@ -10,7 +10,8 @@ import Typography from '@mui/material/Typography';
 import CheckRounded from '@mui/icons-material/CheckRounded';
 import { dayValue, endOfDay } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { buildPalette, normalizeHex, SEED_PRESETS } from '../../theme/scheme';
+import { buildPalette } from '../../theme/generate';
+import { normalizeHex, SEED_PRESETS } from '../../theme/scheme';
 import { c, radius } from '../../theme/tokens';
 import { Section } from '../common/bits';
 import { QuotaField } from '../common/QuotaField';
@@ -277,12 +278,34 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
             onChange={(event) => set('storage.versions', Math.max(0, Math.min(100, Number(event.target.value))))}
             helperText={t('So viele ältere Fassungen bleiben erhalten. Bei 0 gibt es keine Versionen.')}
           />
+          <TextField
+            label={t('Versionen löschen nach')}
+            type="number"
+            value={draft['storage.versionDays']}
+            onChange={(event) => set('storage.versionDays', Math.max(0, Math.min(3650, Number(event.target.value))))}
+            helperText={t('In Tagen. Bei 0 bleiben Versionen, bis die Zahl pro Datei erreicht ist.')}
+          />
         </Box>
         <Toggle
           checked={Boolean(draft['search.content'])}
           onChange={(value) => set('search.content', value)}
           label={t('Auch im Inhalt von Dateien suchen')}
           hint={t('Durchsucht Texte, PDFs und Office-Dokumente. Der Suchindex liegt in der Datenbank.')}
+        />
+        <Toggle
+          checked={Boolean(draft['import.enabled'])}
+          onChange={(value) => set('import.enabled', value)}
+          label={t('Downloads aus dem Internet')}
+          hint={t('Unter „Neu“ lädt MoeCloud eine Datei von einer Adresse direkt in einen Ordner.')}
+        />
+        <Toggle
+          checked={Boolean(draft['import.private'])}
+          disabled={!draft['import.enabled']}
+          onChange={(value) => set('import.private', value)}
+          label={t('Auch Adressen im lokalen Netz erlauben')}
+          hint={t(
+            'Ausgeschaltet kommt niemand über MoeCloud an Geräte in deinem Netz, etwa den Router oder andere Dienste auf dem Server.'
+          )}
         />
       </Section>
 
@@ -297,6 +320,12 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           checked={Boolean(draft['share.requirePassword'])}
           onChange={(value) => set('share.requirePassword', value)}
           label={t('Passwort für Links verlangen')}
+        />
+        <Toggle
+          checked={Boolean(draft['share.stripLocation'])}
+          onChange={(value) => set('share.stripLocation', value)}
+          label={t('Standort aus Fotos in Links entfernen')}
+          hint={t('Wer Fotos über einen Link öffnet oder herunterlädt, sieht keine GPS-Daten. Die Originale bleiben unverändert.')}
         />
         <TextField
           label={t('Links laufen spätestens ab nach')}

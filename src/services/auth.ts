@@ -15,7 +15,11 @@ export const hasPasskey = (user: UserRow) => settings.get('auth.passkeys') && pa
 
 export const hasSecondFactor = (user: UserRow) => Boolean(user.totp_enabled) || hasPasskey(user);
 
-export const needsSecondFactor = (user: UserRow) => secondFactorRequired(user) && !hasSecondFactor(user);
+const ssoOnly = (user: UserRow) => Boolean(user.oidc_sub) && !user.password_hash;
+
+export const needsSecondFactor = (user: UserRow) => secondFactorRequired(user) && !hasSecondFactor(user) && !ssoOnly(user);
+
+export const secondFactorPending = (user: UserRow, method?: string | null) => method !== 'oidc' && needsSecondFactor(user);
 
 const perIp = new Limiter(30, 15 * 60 * 1000);
 const perAccount = new Limiter(10, 15 * 60 * 1000);

@@ -8,7 +8,8 @@ import { config } from '../src/config.ts';
 import * as store from '../src/lib/db.ts';
 import { migrate, schemaVersion } from '../src/lib/schema.ts';
 import { sharedFileSystem } from '../src/lib/storage.ts';
-import { listBackups, tidyBackups } from '../src/services/backups.ts';
+import { createBackup, listBackups, pruneBackups, tidyBackups } from '../src/services/backups.ts';
+import * as settings from '../src/services/settings.ts';
 
 const dir = join(config.dataDir, 'snapshots');
 mkdirSync(dir, { recursive: true });
@@ -140,6 +141,38 @@ describe('Dateisystem und Sperren', () => {
     assert.equal(sharedFileSystem('/data', 0xef53), null);
     assert.equal(sharedFileSystem('/data', 0x2fc12fc1), null);
     assert.ok([null, 'FUSE', '9p', 'NFS', 'SMB'].includes(sharedFileSystem(config.dataDir)));
+  });
+
+  it('kopiert Sicherungen in einen zweiten Ordner und räumt dort auf', async () => {
+    store.openDatabase(config.database);
+    const copies = join(config.dataDir, 'zweiter-ordner');
+    config.backupCopy = copies;
+    try {
+      const first = await createBackup('manual');
+      assert.equal(statSync(join(copies, first.name)).size, first.size);
+      assert.equal(settings.get('backup.copyError'), '');
+      assert.ok(settings.get('backup.copied') > 0);
+      const now = Date.now() / 1000;
+      for (const [index, name] of [
+        'moecloud-auto-20260101-000000.db',
+        'moecloud-auto-20260102-000000.db',
+        'moecloud-auto-20260103-000000.db',
+      ].entries()) {
+        writeFileSync(join(copies, name), 'Sicherung von Lea');
+        utimesSync(join(copies, name), now - 3000 + index * 1000, now - 3000 + index * 1000);
+      }
+      await pruneBackups(1);
+      assert.deepEqual(readdirSync(copies).sort(), ['moecloud-auto-20260103-000000.db', first.name].sort());
+      config.backupCopy = join(copies, first.name);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const second = await createBackup('manual');
+      assert.ok(second.size > 0);
+      assert.ok(existsSync(join(config.paths.backups, second.name)));
+      assert.notEqual(settings.get('backup.copyError'), '');
+    } finally {
+      config.backupCopy = null;
+      store.closeDatabase();
+    }
   });
 
   it('erkennt Sperrfehler von SQLite', () => {

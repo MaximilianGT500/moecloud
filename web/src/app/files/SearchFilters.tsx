@@ -5,14 +5,17 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ArrowDropDownRounded from '@mui/icons-material/ArrowDropDownRounded';
+import BookmarkAddOutlined from '@mui/icons-material/BookmarkAddOutlined';
+import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
 import CheckRounded from '@mui/icons-material/CheckRounded';
 import EventRounded from '@mui/icons-material/EventRounded';
 import SellRounded from '@mui/icons-material/SellRounded';
 import StraightenRounded from '@mui/icons-material/StraightenRounded';
 import { t, tp } from '../../lib/i18n';
-import { setQuery } from '../../lib/router';
+import { navigate, setQuery } from '../../lib/router';
 import { c, folderColor } from '../../theme/tokens';
 import { DATE_FILTERS, SIZE_FILTERS, type View } from './model';
+import { currentQuery, removeSearch, saveSearch, searchHref, useSavedSearches } from './searches';
 import { useTags } from './tags';
 
 export const TYPE_FILTERS = [
@@ -58,7 +61,10 @@ function MenuChip({
 
 export function SearchFilters({ view }: { view: Extract<View, { kind: 'search' }> }) {
   const tags = useTags();
+  const saved = useSavedSearches();
   const [menu, setMenu] = useState<{ kind: Kind; anchor: HTMLElement } | null>(null);
+  const query = currentQuery();
+  const known = saved.find((entry) => entry.query === query);
   const date = DATE_FILTERS.find((entry) => entry.value === view.date);
   const size = SIZE_FILTERS.find((entry) => entry.value === view.size);
   const tag = tags.find((entry) => entry.id === view.tag);
@@ -114,6 +120,30 @@ export function SearchFilters({ view }: { view: Extract<View, { kind: 'search' }
           onOpen={(anchor) => setMenu({ kind: 'tag', anchor })}
           onClear={() => choose('tag', null)}
         />
+      )}
+      {query && !known && (
+        <Chip
+          icon={<BookmarkAddOutlined />}
+          label={t('Suche speichern')}
+          variant="outlined"
+          onClick={() => void saveSearch(view.q || TYPE_FILTERS.find((entry) => entry.value === view.filter)?.label || t('Meine Suche'))}
+        />
+      )}
+      {saved.length > 0 && (
+        <Box role="list" aria-label={t('Gespeicherte Suchen')} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: '100%' }}>
+          {saved.map((entry) => (
+            <Box key={entry.id} role="listitem">
+              <Chip
+                icon={<BookmarkRounded />}
+                label={entry.name}
+                variant={entry === known ? 'filled' : 'outlined'}
+                onClick={() => navigate(searchHref(entry), { replace: true })}
+                onDelete={() => void removeSearch(entry)}
+                sx={entry === known ? selected : undefined}
+              />
+            </Box>
+          ))}
+        </Box>
       )}
       <Menu anchorEl={menu?.anchor} open={Boolean(menu)} onClose={() => setMenu(null)}>
         {options.map((option) => (

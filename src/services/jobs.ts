@@ -1,15 +1,17 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { statfs } from 'node:fs/promises';
 import { config } from '../config.ts';
-import { db } from '../lib/db.ts';
+import { maintainDatabase } from '../lib/db.ts';
 import { purgeActivity } from './activity.ts';
 import { purgeAudit, recentFailures } from './audit.ts';
 import { autoBackup } from './backups.ts';
 import { cleanTmp, collectGarbage } from './blobs.ts';
+import { purgeDevices } from './devices.ts';
 import { purgeInvites } from './invites.ts';
 import { purgeTrash } from './nodes.ts';
 import { notifyAdmins, purgeNotifications } from './notify.ts';
 import { purgeResets } from './resets.ts';
+import { applyRules } from './rules.ts';
 import { rescan, scanEnabled } from './scan.ts';
 import { purgeExpiredSessions } from './sessions.ts';
 import { expireGrants } from './grants.ts';
@@ -17,22 +19,26 @@ import { expireGroupGrants } from './groups.ts';
 import * as settings from './settings.ts';
 import { checkForUpdates, updatesEnabled } from './updates.ts';
 import { cleanupUploads, formatBytes } from './uploads.ts';
+import { recordUsage } from './usage.ts';
+import { purgeVersions } from './versions.ts';
 
 export async function runMaintenance() {
+  const cleaned = applyRules();
   const trash = purgeTrash(settings.get('storage.trashDays'));
+  const versions = purgeVersions(settings.get('storage.versionDays'));
   const uploads = await cleanupUploads();
   const blobs = await collectGarbage();
   const tmp = await cleanTmp();
   const sessions = purgeExpiredSessions().changes;
+  purgeDevices();
   purgeInvites();
   purgeResets();
   purgeNotifications();
   const audit = purgeAudit(settings.get('audit.days'));
   const activity = purgeActivity(settings.get('activity.days'));
-  try {
-    db().exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  } catch {}
-  return { trash, uploads, blobs, tmp, sessions, audit, activity };
+  recordUsage();
+  maintainDatabase();
+  return { cleaned, trash, versions, uploads, blobs, tmp, sessions, audit, activity };
 }
 
 let diskAlert = 0;
@@ -66,7 +72,7 @@ export function startJobs(log: FastifyBaseLogger) {
     maintaining = true;
     try {
       const result = await runMaintenance();
-      if (result.trash || result.blobs || result.uploads) log.info(result, 'Aufräumen erledigt');
+      if (result.cleaned || result.trash || result.versions || result.blobs || result.uploads) log.info(result, 'Aufräumen erledigt');
     } catch (error) {
       log.error(error, 'Aufräumen fehlgeschlagen');
     } finally {

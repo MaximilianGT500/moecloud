@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { run, one } from '../lib/db.ts';
 import { hashPassword, verifyPassword } from '../lib/crypto.ts';
 import { badRequest, conflict, unauthorized } from '../lib/errors.ts';
+import { contentDisposition } from '../lib/http.ts';
 import { me, setLanguageCookie } from '../lib/request.ts';
 import { displayName, email, parse, password } from '../lib/validate.ts';
 import { audit, listAudit, SECURITY_ACTIONS } from '../services/audit.ts';
@@ -10,7 +11,7 @@ import {
   beginTotp,
   disableTotp,
   enableTotp,
-  needsSecondFactor,
+  secondFactorPending,
   newRecoveryCodes,
   passkeyCount,
   remainingRecoveryCodes,
@@ -18,9 +19,12 @@ import {
   verifySecondFactor,
 } from '../services/auth.ts';
 import { mailReady } from '../services/mail.ts';
+import { oidcEnabled, unlink } from '../services/oidc.ts';
 import { clearNotifications, listNotifications, markRead, unreadCount } from '../services/notify.ts';
 import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword } from '../services/apppasswords.ts';
 import { deletePasskey, listPasskeys, presentPasskey, register, registrationOptions, renamePasskey } from '../services/passkeys.ts';
+import { forgetOtherDevices } from '../services/devices.ts';
+import { exportName, exportStream } from '../services/export.ts';
 import { describeSession, destroySession, destroyUserSessions, listSessions } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { getUser, keyOf, prefsOf, publicUser, storageOf, updatePrefs } from '../services/users.ts';
@@ -54,8 +58,9 @@ export async function accountRoutes(app: FastifyInstance) {
       prefs: prefsOf(user),
       security: {
         required: secondFactorRequired(user),
-        setupRequired: needsSecondFactor(user),
+        setupRequired: secondFactorPending(user, request.auth?.session?.method),
         hasPassword: Boolean(user.password_hash),
+        sso: user.oidc_sub ? { enabled: oidcEnabled() } : null,
         totp: Boolean(user.totp_enabled),
         recoveryCodes: user.totp_enabled ? remainingRecoveryCodes(user.id) : 0,
         passkeys: listPasskeys(user.id).map(presentPasskey),
@@ -82,13 +87,21 @@ export async function accountRoutes(app: FastifyInstance) {
     return { user: publicUser(getUser(user.id)!) };
   });
 
-  app.post('/api/account/password', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request) => {
+  app.delete('/api/account/sso', async (request) => {
+    const user = me(request);
+    unlink(user);
+    audit('sso_unlinked', { actor: user.id, request });
+    return { ok: true };
+  });
+
+  app.post('/api/account/password', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request, reply) => {
     const user = me(request);
     const input = parse(z.object({ current: z.string().max(512).optional().default(''), next: password }), request.body);
     if (user.password_hash && !(await verifyPassword(user.password_hash, input.current)))
       throw badRequest('Das aktuelle Passwort stimmt nicht');
     run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(input.next), user.id);
     destroyUserSessions(user.id, request.auth?.session?.id);
+    forgetOtherDevices(request, reply, user);
     audit('password_changed', { actor: user.id, request });
     return { ok: true };
   });
@@ -102,6 +115,7 @@ export async function accountRoutes(app: FastifyInstance) {
           mailComments: z.boolean(),
           mailWatch: z.boolean(),
           mailAdmin: z.boolean(),
+          mailLogins: z.boolean(),
         })
         .partial(),
       request.body
@@ -204,8 +218,19 @@ export async function accountRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.post('/api/account/sessions/revoke-others', async (request) => {
+  app.get('/api/account/export', { compress: false, config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = me(request);
+    audit('account_exported', { actor: user.id, request });
+    reply.header('Content-Type', 'application/zip');
+    reply.header('Content-Disposition', contentDisposition(exportName(user), 'attachment'));
+    reply.header('Cache-Control', 'no-store');
+    reply.header('X-Content-Type-Options', 'nosniff');
+    return reply.send(exportStream(user));
+  });
+
+  app.post('/api/account/sessions/revoke-others', async (request, reply) => {
     destroyUserSessions(me(request).id, session(request).id);
+    forgetOtherDevices(request, reply, me(request));
     audit('sessions_revoked', { actor: me(request).id, request });
     return { ok: true };
   });

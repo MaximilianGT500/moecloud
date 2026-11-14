@@ -3,8 +3,9 @@ import { after, before, describe, it } from 'node:test';
 import sharp from 'sharp';
 import { Client, createApp, setUp, setupCode } from './helpers.ts';
 import { hotp, totpCounter } from '../src/lib/crypto.ts';
-import { value } from '../src/lib/db.ts';
+import { run, value } from '../src/lib/db.ts';
 import { collectGarbage } from '../src/services/blobs.ts';
+import { purgeVersions } from '../src/services/versions.ts';
 
 const app = await createApp();
 let emi: Client;
@@ -165,6 +166,26 @@ describe('Dateien', () => {
     assert.equal(filtered.items[0].type, 'folder');
   });
 
+  it('speichert Suchen für später', async () => {
+    assert.equal((await emi.json('POST', '/api/searches', { name: 'Leer', query: 'foo=bar' })).statusCode, 400);
+    const saved = await emi.json('POST', '/api/searches', { name: '  Rechnungen 2026  ', query: '?q=rechnung&type=pdf&evil=1&date=' });
+    assert.equal(saved.statusCode, 200, saved.body);
+    const search = saved.json().search;
+    assert.equal(search.name, 'Rechnungen 2026');
+    assert.equal(search.query, 'q=rechnung&type=pdf');
+    await emi.json('POST', '/api/searches', { name: 'Alle Bilder', query: 'type=image' });
+    const list = (await emi.get('/api/searches')).json().items as { name: string }[];
+    assert.deepEqual(
+      list.map((entry) => entry.name),
+      ['Alle Bilder', 'Rechnungen 2026']
+    );
+    assert.equal((await emi.json('PATCH', `/api/searches/${search.id}`, { name: 'Belege' })).statusCode, 200);
+    assert.equal((await emi.json('PATCH', `/api/searches/${search.id}`, { name: '' })).statusCode, 400);
+    assert.equal((await emi.json('DELETE', `/api/searches/${search.id}`)).statusCode, 200);
+    assert.equal((await emi.json('DELETE', `/api/searches/${search.id}`)).statusCode, 404);
+    assert.equal((await emi.get('/api/searches')).json().items.length, 1);
+  });
+
   it('speichert Versionen und stellt sie wieder her', async () => {
     const write = await emi.send({
       method: 'PUT',
@@ -180,6 +201,19 @@ describe('Dateien', () => {
     const content = await emi.get(`/api/nodes/${file}/content`);
     assert.match(content.body, /Einkaufsliste/);
     assert.equal((await emi.get(`/api/nodes/${file}/versions`)).json().items.length, 1);
+  });
+
+  it('löscht alte Versionen nach der eingestellten Zeit', async () => {
+    assert.equal(purgeVersions(0), 0);
+    assert.equal(purgeVersions(30), 0);
+    run('UPDATE versions SET created_at = ? WHERE node_id = ?', Date.now() - 40 * 24 * 60 * 60 * 1000, file);
+    assert.equal(purgeVersions(0), 0);
+    assert.equal(purgeVersions(30), 1);
+    assert.equal((await emi.get(`/api/nodes/${file}/versions`)).json().items.length, 0);
+    assert.equal(await collectGarbage(0), 1);
+    const saved = await emi.json('PATCH', '/api/admin/settings', { 'storage.versionDays': 90 });
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.equal((await emi.get('/api/admin/settings')).json().settings['storage.versionDays'], 90);
   });
 
   it('packt Ordner als ZIP', async () => {

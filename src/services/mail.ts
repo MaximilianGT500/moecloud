@@ -1,4 +1,4 @@
-import { createTransport } from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { config } from '../config.ts';
 import { escapeHtml } from '../lib/http.ts';
 import { t, type Lang } from '../lib/i18n.ts';
@@ -13,7 +13,7 @@ export interface Mail {
 
 export const outbox: Mail[] = [];
 
-type Transport = ReturnType<typeof createTransport>;
+type Transport = Transporter;
 
 let cached: { key: string; transport: Transport } | null = null;
 
@@ -37,7 +37,8 @@ function options() {
   };
 }
 
-function transport(): Transport {
+async function transport(): Promise<Transport> {
+  const { createTransport } = await import('nodemailer');
   if (config.test) return createTransport({ jsonTransport: true });
   const current = options();
   const key = JSON.stringify(current);
@@ -55,13 +56,15 @@ function sender() {
 
 export async function sendMail(mail: Mail) {
   if (!mailReady()) throw new Error('mail-not-configured');
-  await transport().sendMail({ from: sender(), to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+  const mailer = await transport();
+  await mailer.sendMail({ from: sender(), to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
   if (config.test) outbox.push(mail);
 }
 
 export async function verifyMail() {
   if (config.test) return true;
-  await transport().verify();
+  const mailer = await transport();
+  await mailer.verify();
   return true;
 }
 

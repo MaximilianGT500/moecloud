@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { PDFDocument, StandardFonts, rgb } from '@pdfme/pdf-lib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import sharp from 'sharp';
@@ -159,6 +160,27 @@ async function api<T>(page: Page, method: string, path: string, body?: unknown):
     },
     { method, path, body }
   ) as Promise<T>;
+}
+
+function seedHistory(now: { logical: number; physical: number; files: number; users: number }) {
+  const database = new DatabaseSync(join(dataDir, 'moecloud.db'));
+  try {
+    database.exec('PRAGMA busy_timeout = 5000');
+    const insert = database.prepare('INSERT OR REPLACE INTO usage_days (day, users, files, bytes, stored) VALUES (?, ?, ?, ?, ?)');
+    for (let back = 75; back >= 1; back--) {
+      const progress = 1 - back / 75;
+      const share = Math.min(0.97, 0.38 + 0.42 * progress + (back <= 30 ? 0.12 : 0) - (back <= 12 && back > 8 ? 0.05 : 0));
+      insert.run(
+        new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10),
+        Math.max(1, now.users - (back > 40 ? 1 : 0)),
+        Math.round(now.files * share),
+        Math.round(now.logical * share),
+        Math.round(now.physical * share)
+      );
+    }
+  } finally {
+    database.close();
+  }
 }
 
 const visible = (page: Page, text: string) => page.getByText(text, { exact: true }).filter({ visible: true }).first().waitFor();
@@ -319,8 +341,13 @@ try {
   await step('Fotos nach Monaten', async () => {
     await page.goto(`${base}/files/photos`);
     await page.getByRole('heading', { level: 2 }).first().waitFor();
+    await page.getByRole('heading', { name: 'An diesem Tag' }).waitFor();
     await images(page, 'main [role=list]');
     await shot(page, 'photos');
+    await page.getByRole('button', { name: /^Vor 2 Jahren/ }).click();
+    await images(page, '[role=dialog]');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
     await page.getByRole('button', { name: /^Sonnenuntergang am See\.jpg/ }).click();
     await images(page, '[role=dialog]');
     await page.getByRole('button', { name: 'Informationen', exact: true }).click();
@@ -335,6 +362,11 @@ try {
     await visible(page, 'Doppelte Dateien');
     await visible(page, 'Strand Kopie.jpg');
     await shot(page, 'storage');
+    await page.getByRole('button', { name: 'Nur eine behalten' }).first().click();
+    const confirm = page.getByRole('dialog');
+    await confirm.getByText(/„Strand\.jpg“ in „.+“ bleibt/).waitFor();
+    await confirm.getByRole('button', { name: 'Aufräumen' }).click();
+    await visible(page, 'Keine doppelten Dateien gefunden.');
   });
 
   await step('Aktivität', async () => {
@@ -371,6 +403,95 @@ try {
     await page.getByRole('dialog').locator('code .hljs-built_in, code .hljs-string').first().waitFor();
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
+  });
+
+  await step('E-Mail ansehen', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const logo = await sharp({ create: { width: 96, height: 96, channels: 3, background: '#8b5cf6' } })
+      .png()
+      .toBuffer();
+    const message = [
+      'From: Mia Weber <mia@example.com>',
+      'To: Emi Sato <emi@example.com>',
+      'Cc: Lea Hoffmann <lea@example.com>',
+      'Subject: Grillabend am Samstag',
+      'Date: Fri, 13 Nov 2026 18:05:00 +0100',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="aussen"',
+      '',
+      '--aussen',
+      'Content-Type: multipart/related; boundary="innen"',
+      '',
+      '--innen',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      '<div style="font-family:sans-serif"><img src="cid:sonne" width="48" height="48" alt=""><h2 style="color:#6b38d4">Grillabend am Samstag</h2><p>Hallo Emi,</p><p>wir grillen ab 18 Uhr im Garten. Bring gern Salat mit.</p><p>Liebe Grüße<br>Mia</p></div>',
+      '--innen',
+      'Content-Type: image/png',
+      'Content-ID: <sonne>',
+      'Content-Transfer-Encoding: base64',
+      '',
+      logo.toString('base64'),
+      '--innen--',
+      '--aussen',
+      'Content-Type: text/plain; name="Einkaufsliste.txt"',
+      'Content-Disposition: attachment; filename="Einkaufsliste.txt"',
+      '',
+      'Brot, Tomaten, Zitronen',
+      '--aussen--',
+      '',
+    ].join('\r\n');
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (await chooser).setFiles({ name: 'Grillabend.eml', mimeType: 'message/rfc822', buffer: Buffer.from(message) });
+    await item(page, 'Grillabend.eml').dblclick();
+    const viewer = page.getByRole('dialog');
+    await viewer.getByRole('heading', { name: 'Grillabend am Samstag' }).waitFor();
+    await viewer.getByRole('button', { name: /Einkaufsliste\.txt/ }).waitFor();
+    await page.frameLocator('iframe[title="Grillabend am Samstag"]').getByText('Bring gern Salat mit.').waitFor();
+    await shot(page, 'email');
+    await page.keyboard.press('Escape');
+    await viewer.waitFor({ state: 'detached' });
+  });
+
+  await step('Termine und Kontakte', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const calendar = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'SUMMARY:Grillabend bei Mia',
+      'DTSTART;TZID=Europe/Berlin:20261121T180000',
+      'DTEND;TZID=Europe/Berlin:20261121T220000',
+      'LOCATION:Garten',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const contacts = ['BEGIN:VCARD', 'FN:Lea Hoffmann', 'TEL;TYPE=CELL:+49 151 2345678', 'EMAIL:lea@example.com', 'END:VCARD'].join('\r\n');
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (
+      await chooser
+    ).setFiles([
+      { name: 'Termine.ics', mimeType: 'text/calendar', buffer: Buffer.from(calendar) },
+      { name: 'Lea.vcf', mimeType: 'text/vcard', buffer: Buffer.from(contacts) },
+    ]);
+    await item(page, 'Termine.ics').dblclick();
+    const viewer = page.getByRole('dialog');
+    await viewer.getByRole('heading', { name: 'Grillabend bei Mia' }).waitFor();
+    await viewer.getByText(/18:00–22:00/).waitFor();
+    await page.keyboard.press('Escape');
+    await viewer.waitFor({ state: 'detached' });
+    await item(page, 'Lea.vcf').dblclick();
+    await viewer.getByRole('heading', { name: 'Lea Hoffmann' }).waitFor();
+    await viewer.getByRole('link', { name: 'lea@example.com' }).waitFor();
+    await page.keyboard.press('Escape');
+    await viewer.waitFor({ state: 'detached' });
   });
 
   await step('Inhalt eines ZIP-Archivs', async () => {
@@ -719,6 +840,16 @@ try {
     await page.getByRole('menuitem', { name: 'Letzte 30 Tage' }).click();
     await filters.getByRole('button', { name: 'Bilder' }).click();
     await item(page, 'Fuji am Morgen.jpg').waitFor();
+    await filters.getByRole('button', { name: 'Suche speichern' }).click();
+    const naming = page.getByRole('dialog');
+    await naming.getByLabel('Name').fill('Neue Bilder');
+    await naming.getByRole('button', { name: 'Speichern' }).click();
+    await page.getByRole('list', { name: 'Gespeicherte Suchen' }).getByRole('button', { name: 'Neue Bilder' }).waitFor();
+    await page.goto(`${base}/files`);
+    await page.getByRole('textbox', { name: 'In deinen Dateien suchen' }).click();
+    await page.getByRole('menuitem', { name: 'Neue Bilder' }).click();
+    await page.waitForURL(/\/files\/search\?.*type=image/);
+    await item(page, 'Fuji am Morgen.jpg').waitFor();
     await page.goto(`${base}/files`);
     await item(page, 'Urlaub 2026').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Teilen' }).click();
@@ -740,17 +871,45 @@ try {
     await page.locator('button[aria-label="Ordner beobachten"][aria-pressed="true"]').waitFor();
   });
 
+  await step('Aufräumregel für einen Ordner', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Aufräumregel' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'Aufräumen' }).click();
+    await page.getByRole('option', { name: 'Nach 90 Tagen' }).click();
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Projekte').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await page.getByRole('button', { name: 'Aufräumregel' }).click();
+    const again = page.getByRole('dialog');
+    await again.getByRole('button', { name: 'Ausschalten' }).click();
+    await again.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Aufräumregel' }).waitFor({ state: 'detached' });
+  });
+
   await step('Verwaltung', async () => {
+    seedHistory(await api(page, 'GET', '/api/admin/overview'));
     await page.goto(`${base}/admin`);
     await visible(page, 'Zustand');
     await visible(page, 'Speicher nach Art');
     await shot(page, 'admin');
+    const chart = page.getByRole('group', { name: /^Speicherverlauf über/ });
+    await chart.scrollIntoViewIfNeeded();
+    const box = (await chart.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.62, box.y + box.height / 2);
+    await page.getByRole('status').filter({ hasText: 'auf der Platte' }).waitFor();
+    await shot(page, 'admin-usage');
+    await page.getByRole('button', { name: 'Als Tabelle' }).click();
+    await page.getByRole('columnheader', { name: 'Auf der Platte' }).waitFor();
     for (const [path, text] of [
       ['/admin/people', 'Mia Weber'],
       ['/admin/invites', 'Noch keine Einladungen.'],
       ['/admin/links', 'Fotos für die Familie'],
       ['/admin/audit', 'Anmeldung'],
       ['/admin/mail', 'SMTP-Server'],
+      ['/admin/sso', 'Weiterleitungsadresse'],
       ['/admin/webhooks', 'Noch kein Ziel eingerichtet.'],
       ['/admin/backups', 'Vorhandene Sicherungen'],
       ['/admin/settings', 'Wartungsmodus einschalten'],
@@ -762,6 +921,40 @@ try {
     await page.goto(`${base}/admin/scan`);
     await visible(page, 'Dateien beim Hochladen prüfen');
     await shot(page, 'admin-scan');
+    await page.goto(`${base}/admin/sso`);
+    await page.getByLabel('Adresse des Anbieters').fill('https://auth.example.com/application/o/moecloud/');
+    await page.getByLabel('Client-ID').fill('moecloud');
+    await page.getByLabel('Text auf dem Knopf').fill('Mit Authentik anmelden');
+    await shot(page, 'admin-sso');
+  });
+
+  await step('Personen aus CSV importieren', async () => {
+    await page.goto(`${base}/admin/people`);
+    await page.getByRole('button', { name: 'Importieren' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog
+      .getByRole('textbox', { name: 'CSV' })
+      .fill('username;name;email\nemily;Emily Sato;emily@example.com\nmia;Mia Weber;mia@example.com');
+    await dialog.getByRole('button', { name: 'Prüfen' }).click();
+    await dialog.getByText('Den Benutzernamen gibt es schon').waitFor();
+    await dialog.getByRole('button', { name: 'Eine Person anlegen' }).click();
+    await dialog.getByText('Fertig. So ist es gelaufen:').waitFor();
+    await dialog.getByRole('button', { name: 'Schließen' }).click();
+    await visible(page, 'Emily Sato');
+    const mail = await smtp.mailTo('emily@example.com');
+    if (!mail.includes('Passwort')) throw new Error('Der Link für Emily fehlt');
+  });
+
+  await step('Aus dem Internet laden', async () => {
+    await api(page, 'PATCH', '/api/admin/settings', { 'import.private': true });
+    await page.goto(`${base}/files`);
+    await page.getByRole('button', { name: 'Neu', exact: true }).first().click();
+    await page.getByRole('menuitem', { name: 'Aus dem Internet laden' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Adresse').fill(`${base}/icons/icon-192.png`);
+    await dialog.getByRole('button', { name: 'Laden' }).click();
+    await item(page, 'icon-192.png').waitFor({ timeout: 20_000 });
+    await api(page, 'PATCH', '/api/admin/settings', { 'import.private': false });
   });
 
   await step('Gruppe anlegen und damit teilen', async () => {
@@ -918,6 +1111,11 @@ try {
     await account.goto(`${base}/account`);
     await visible(account, 'Sicherheit');
     await shot(account, 'account');
+    const download = account.waitForEvent('download');
+    await account.getByRole('link', { name: 'Daten exportieren' }).click();
+    const file = await (await download).path();
+    const head = (await readFile(file)).subarray(0, 2).toString();
+    if (head !== 'PK') throw new Error('Der Export ist kein ZIP');
   });
 } finally {
   await browser.close();

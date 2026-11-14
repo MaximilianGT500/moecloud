@@ -2,6 +2,7 @@ export interface SiteInfo {
   name: string;
   url: string;
   seed: string;
+  palette?: unknown;
   version: string;
   registration: 'closed' | 'open' | 'invite';
   passkeys: boolean;

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.ts';
 import { safeEqual } from '../lib/crypto.ts';
-import { value } from '../lib/db.ts';
+import { databaseInfo, value } from '../lib/db.ts';
 import { liveCount } from '../lib/events.ts';
 import { notFound, unauthorized } from '../lib/errors.ts';
 import { pendingCount } from '../services/processing.ts';
@@ -31,9 +31,13 @@ export async function metricsRoutes(app: FastifyInstance) {
     const count = (sql: string) => value<number>(sql) ?? 0;
     const scan = scanStats();
     const memory = process.memoryUsage();
+    const database = databaseInfo();
     const body = [
       line('moecloud_info', 'Version von MoeCloud', 'gauge', [[{ version: config.version, node: process.version }, 1]]),
       line('moecloud_uptime_seconds', 'Laufzeit des Prozesses', 'gauge', [[null, Math.round(process.uptime())]]),
+      line('moecloud_database_bytes', 'Größe der Datenbank', 'gauge', [
+        [{ kind: database.dialect, version: database.version }, database.size],
+      ]),
       line('moecloud_users', 'Konten', 'gauge', [
         [{ state: 'active' }, count('SELECT COUNT(*) FROM users WHERE disabled = 0')],
         [{ state: 'disabled' }, count('SELECT COUNT(*) FROM users WHERE disabled = 1')],

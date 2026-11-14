@@ -29,6 +29,11 @@ export function prune(nodeId: string, keep = settings.get('storage.versions')) {
   for (const row of rows.slice(Math.max(0, keep))) run('DELETE FROM versions WHERE id = ?', row.id);
 }
 
+export function purgeVersions(days: number) {
+  if (days <= 0) return 0;
+  return run('DELETE FROM versions WHERE created_at < ?', Date.now() - days * 24 * 60 * 60 * 1000).changes;
+}
+
 export function writeContent(node: NodeRow, content: Content, actorId: number | null): NodeRow {
   const now = Date.now();
   const modified = content.modifiedAt && content.modifiedAt > 0 ? Math.min(content.modifiedAt, now + 60_000) : now;

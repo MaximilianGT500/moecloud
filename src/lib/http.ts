@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { pipeline, type Transform } from 'node:stream';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export const FILE_CSP =
@@ -59,6 +60,7 @@ export interface FileResponse {
   disposition: 'inline' | 'attachment';
   cache?: string;
   csp?: string;
+  transform?: (start: number) => Transform;
 }
 
 const RANGE = /^bytes=(\d*)-(\d*)$/;
@@ -107,7 +109,9 @@ export function sendFile(request: FastifyRequest, reply: FastifyReply, file: Fil
     reply.header('Content-Range', `bytes ${start}-${end}/${file.size}`);
   }
   if (request.method === 'HEAD' || length === 0) return reply.send();
-  return reply.send(createReadStream(file.path, { start, end }));
+  const stream = createReadStream(file.path, { start, end });
+  if (!file.transform) return reply.send(stream);
+  return reply.send(pipeline(stream, file.transform(start), () => undefined));
 }
 
 export function serializeJson(data: unknown) {

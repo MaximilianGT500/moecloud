@@ -15,14 +15,7 @@ import { errorText } from '../../lib/api';
 import { formatDateTime } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, fonts, mix } from '../../theme/tokens';
-import { contentUrl, previewType, type Item } from './kinds';
-
-export interface DiffVersion {
-  id: string;
-  size: number;
-  modifiedAt: number;
-  author: string | null;
-}
+import { contentUrl, type DiffVersion, type Item } from './kinds';
 
 interface Row {
   kind: 'same' | 'added' | 'removed';
@@ -34,12 +27,6 @@ interface Row {
 type Shown = { type: 'row'; row: Row } | { type: 'gap'; start: number; count: number };
 
 const CONTEXT = 3;
-const LIMIT = 2 * 1024 * 1024;
-const COMPARABLE = new Set(['markdown', 'code', 'text', 'csv', 'json']);
-
-export const canCompare = (item: Item, version: DiffVersion) =>
-  COMPARABLE.has(previewType(item)) && item.size <= LIMIT && version.size <= LIMIT;
-
 async function text(url: string, signal: AbortSignal) {
   const response = await fetch(url, { credentials: 'same-origin', signal });
   if (!response.ok) throw new Error(t('Die Datei lässt sich nicht laden'));

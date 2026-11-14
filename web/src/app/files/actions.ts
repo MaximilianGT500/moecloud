@@ -130,6 +130,21 @@ export async function createFolder(parentId: string) {
   return (await attempt(() => api.post<{ node: Item }>(`/api/nodes/${parentId}/folders`, { name })))?.node ?? null;
 }
 
+export async function importFromUrl(parentId: string) {
+  const url = await prompt({
+    title: t('Aus dem Internet laden'),
+    label: t('Adresse'),
+    value: '',
+    confirm: t('Laden'),
+    helper: t('MoeCloud lädt die Datei selbst herunter und legt sie in diesen Ordner.'),
+  });
+  if (!url?.trim()) return false;
+  const started = await attempt(() => api.post<{ job: { id: string } }>(`/api/nodes/${parentId}/import`, { url: url.trim() }));
+  if (!started) return false;
+  toast(t('Der Download läuft. Ist er fertig, siehst du es unter Benachrichtigungen.'));
+  return true;
+}
+
 export async function createTextFile(parentId: string) {
   const name = await prompt({
     title: t('Neue Textdatei'),

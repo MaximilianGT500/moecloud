@@ -12,7 +12,7 @@ const defaultPalette = (await import('../src/lib/default-palette.json', { with: 
 
 export async function createApp() {
   await ensureDirs();
-  openDatabase(config.paths.db);
+  openDatabase(config.database);
   const app = await buildApp();
   await app.ready();
   return app;

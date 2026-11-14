@@ -1,9 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import { z } from 'zod';
 import { config } from '../config.ts';
 import { randomId } from '../lib/crypto.ts';
+import { databaseInfo, value } from '../lib/db.ts';
 import { badRequest } from '../lib/errors.ts';
 import { contentDisposition } from '../lib/http.ts';
 import { t } from '../lib/i18n.ts';
@@ -13,7 +13,9 @@ import { email, parse } from '../lib/validate.ts';
 import { audit } from '../services/audit.ts';
 import { backupPath, createBackup, deleteBackup, listBackups } from '../services/backups.ts';
 import { deliver, mailReady, verifyMail } from '../services/mail.ts';
+import { baseUrl } from '../services/links.ts';
 import { tools } from '../services/media.ts';
+import { discover, forgetDiscovery, oidcEnabled } from '../services/oidc.ts';
 import { pendingCount, progress, reindexText } from '../services/processing.ts';
 import { job, purgeInfected, quarantine, releaseBlob, rescan, scanStats, testScanner } from '../services/scan.ts';
 import * as settings from '../services/settings.ts';
@@ -78,6 +80,39 @@ function mailView() {
   };
 }
 
+const ssoSchema = z
+  .object({
+    'oidc.enabled': z.boolean(),
+    'oidc.issuer': z
+      .string()
+      .trim()
+      .max(500)
+      .refine((value) => value === '' || /^https?:\/\/[^\s]+$/i.test(value), 'Die Adresse des Anbieters muss mit https:// beginnen'),
+    'oidc.clientId': z.string().trim().max(500),
+    'oidc.clientSecret': z.string().max(2000),
+    'oidc.label': z.string().trim().max(60),
+    'oidc.autoCreate': z.boolean(),
+    'oidc.adminGroup': z.string().trim().max(200),
+  })
+  .partial();
+
+function ssoView(request: FastifyRequest) {
+  return {
+    settings: {
+      'oidc.enabled': settings.get('oidc.enabled'),
+      'oidc.issuer': settings.get('oidc.issuer'),
+      'oidc.clientId': settings.get('oidc.clientId'),
+      'oidc.label': settings.get('oidc.label'),
+      'oidc.autoCreate': settings.get('oidc.autoCreate'),
+      'oidc.adminGroup': settings.get('oidc.adminGroup'),
+    },
+    hasSecret: Boolean(settings.get('oidc.clientSecret')),
+    callback: `${baseUrl(request)}/login/oidc/callback`,
+    ready: oidcEnabled(),
+    linked: value<number>('SELECT COUNT(*) FROM users WHERE oidc_sub IS NOT NULL') ?? 0,
+  };
+}
+
 function scanView() {
   return {
     settings: {
@@ -129,6 +164,45 @@ export async function systemAdminRoutes(app: FastifyInstance) {
       throw badRequest('Der Versand hat nicht geklappt: {error}', { error: t(request.lang, (error as Error).message.slice(0, 200)) });
     }
     return { ok: true, to };
+  });
+
+  app.get('/api/admin/sso', async (request) => {
+    admin(request);
+    return ssoView(request);
+  });
+
+  app.patch('/api/admin/sso', async (request) => {
+    const actor = admin(request);
+    const input = parse(ssoSchema, request.body);
+    const next: Record<string, unknown> = { ...input };
+    if (next['oidc.clientSecret'] === '') delete next['oidc.clientSecret'];
+    if ((request.body as { clearSecret?: boolean })?.clearSecret) next['oidc.clientSecret'] = '';
+    const enabled = next['oidc.enabled'] ?? settings.get('oidc.enabled');
+    const issuer = String(next['oidc.issuer'] ?? settings.get('oidc.issuer')).trim();
+    const clientId = String(next['oidc.clientId'] ?? settings.get('oidc.clientId')).trim();
+    if (enabled && (!issuer || !clientId)) throw badRequest('Trag die Adresse des Anbieters und die Client-ID ein');
+    settings.setMany(next as Partial<settings.Settings>);
+    forgetDiscovery();
+    audit('sso_changed', { actor: actor.id, request, details: { keys: Object.keys(next).filter((key) => key !== 'oidc.clientSecret') } });
+    return ssoView(request);
+  });
+
+  app.post('/api/admin/sso/test', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (request) => {
+    admin(request);
+    const issuer = settings.get('oidc.issuer');
+    const clientId = settings.get('oidc.clientId');
+    if (!issuer || !clientId) throw badRequest('Trag die Adresse des Anbieters und die Client-ID ein');
+    try {
+      const found = await discover(issuer, clientId, settings.get('oidc.clientSecret'));
+      const metadata = found.serverMetadata();
+      return {
+        issuer: metadata.issuer,
+        authorization: metadata.authorization_endpoint ?? null,
+        groups: Boolean(metadata.scopes_supported?.includes('groups')),
+      };
+    } catch (error) {
+      throw badRequest('Der Anbieter antwortet nicht wie erwartet: {error}', { error: (error as Error).message.slice(0, 200) });
+    }
   });
 
   app.get('/api/admin/scan', async (request) => {
@@ -239,6 +313,9 @@ export async function systemAdminRoutes(app: FastifyInstance) {
       },
       last: settings.get('backup.last') || null,
       dir: config.paths.backups,
+      copy: config.backupCopy
+        ? { dir: config.backupCopy, last: settings.get('backup.copied') || null, error: settings.get('backup.copyError') || null }
+        : null,
     };
   });
 
@@ -281,8 +358,7 @@ export async function systemAdminRoutes(app: FastifyInstance) {
 
   app.get('/api/admin/system', async (request) => {
     admin(request);
-    const db = await stat(config.paths.db).catch(() => null);
-    const wal = await stat(`${config.paths.db}-wal`).catch(() => null);
+    const info = databaseInfo();
     return {
       version: config.version,
       node: process.version,
@@ -290,7 +366,9 @@ export async function systemAdminRoutes(app: FastifyInstance) {
       install: config.install,
       dataDir: config.dataDir,
       storage: sharedFileSystem(config.dataDir),
-      database: (db?.size ?? 0) + (wal?.size ?? 0),
+      database: info.size,
+      databaseKind: info.dialect,
+      databaseVersion: info.version,
       tools: { ...tools },
       processing: { pending: pendingCount(), ...progress },
       metrics: Boolean(settings.get('metrics.token') || config.metricsToken),

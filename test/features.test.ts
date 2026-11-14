@@ -5,6 +5,7 @@ import { Client, createApp, fakeClamd, httpSink, login, setUp, zip } from './hel
 import { EICAR } from '../src/lib/clamav.ts';
 import { value } from '../src/lib/db.ts';
 import { outbox } from '../src/services/mail.ts';
+import { recordUsage, usageHistory } from '../src/services/usage.ts';
 import { processNow } from '../src/services/processing.ts';
 import { job } from '../src/services/scan.ts';
 import { flushLinkNotices } from '../src/services/uploads.ts';
@@ -254,6 +255,7 @@ describe('Benachrichtigungen und Aktivität', () => {
   });
 
   it('meldet Freigaben in der App und per E-Mail', async () => {
+    await mia.json('POST', '/api/notifications/read', {});
     const before = outbox.length;
     await emi.json('POST', `/api/nodes/${folder}/grants`, { userId: miaId, permission: 'edit' });
     const notes = (await mia.get('/api/notifications')).json();
@@ -425,8 +427,53 @@ describe('Vorschauen, Fotos und Suche', () => {
     assert.ok(report.groups.image.count >= 1);
     const group = report.duplicates.find((entry: { items: { name: string }[] }) => entry.items.some((item) => item.name === 'kopie-1.bin'));
     assert.equal(group.items.length, 2);
+    assert.equal(group.count, 2);
     assert.equal(group.wasted, 2048);
     assert.ok(report.largest.length > 0);
+  });
+
+  it('räumt doppelte Dateien auf und behält eine Kopie', async () => {
+    const folder = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Doppelt' })).json().node.id;
+    const content = Buffer.alloc(3000, 9);
+    const first = (await emi.upload(root, 'Original von Mia.bin', content, 4096)).json().node.id;
+    await emi.upload(folder, 'Kopie A.bin', content, 4096);
+    await emi.upload(folder, 'Kopie B.bin', content, 4096);
+    const before = (await emi.get('/api/storage/report')).json();
+    const group = before.duplicates.find((entry: { items: { id: string }[] }) => entry.items.some((item) => item.id === first));
+    assert.equal(group.count, 3);
+    assert.equal(group.items[0].id, first);
+    const cleaned = await emi.json('POST', '/api/storage/duplicates', { keep: [first] });
+    assert.equal(cleaned.statusCode, 200, cleaned.body);
+    assert.deepEqual(cleaned.json(), { removed: 2, size: 6000 });
+    const after = (await emi.get('/api/storage/report')).json();
+    assert.ok(!after.duplicates.some((entry: { items: { id: string }[] }) => entry.items.some((item) => item.id === first)));
+    assert.equal((await emi.get(`/api/nodes/${folder}/children`)).json().items.length, 0);
+    assert.equal((await emi.get(`/api/nodes/${first}`)).statusCode, 200);
+    assert.equal((await mia.json('POST', '/api/storage/duplicates', { keep: [first] })).statusCode, 404);
+  });
+
+  it('zeigt Fotos von diesem Tag aus früheren Jahren', async () => {
+    const folder = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Erinnerungen' })).json().node.id;
+    const shot = (taken: string, background: string) =>
+      sharp({ create: { width: 64, height: 48, channels: 3, background } })
+        .jpeg()
+        .withExif({ IFD2: { DateTimeOriginal: taken } })
+        .toBuffer();
+    await emi.upload(folder, 'Kyoto.jpg', await shot('2023:11:13 12:00:00', '#d05050'), 4096);
+    await emi.upload(folder, 'Ostsee.jpg', await shot('2021:11:13 12:00:00', '#5080d0'), 4096);
+    await emi.upload(folder, 'Anderer Tag.jpg', await shot('2023:11:14 12:00:00', '#50d080'), 4096);
+    await emi.upload(folder, 'Heute.jpg', await shot('2026:11:13 12:00:00', '#d0d050'), 4096);
+    await processNow();
+    const { groups } = (await emi.get('/api/photos/memories?date=2026-11-13&offset=0')).json();
+    assert.deepEqual(
+      groups.map((group: { year: number; items: { name: string }[] }) => [group.year, group.items.map((item) => item.name)]),
+      [
+        [2023, ['Kyoto.jpg']],
+        [2021, ['Ostsee.jpg']],
+      ]
+    );
+    assert.deepEqual((await emi.get('/api/photos/memories?date=kaputt')).json().groups, []);
+    assert.deepEqual((await emi.get('/api/photos/memories?date=2026-11-12&offset=0')).json().groups, []);
   });
 });
 
@@ -510,6 +557,7 @@ describe('Verwaltung', () => {
     const metrics = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: `Bearer ${token}` } });
     assert.equal(metrics.statusCode, 200);
     assert.match(metrics.body, /moecloud_users\{state="active"\} \d+/);
+    assert.match(metrics.body, /moecloud_database_bytes\{kind="(sqlite|postgres)",version="(SQLite|PostgreSQL) [\d.]+"\} \d+/);
   });
 
   it('schickt Benachrichtigungen an einen Webhook', async () => {
@@ -564,5 +612,26 @@ describe('Verwaltung', () => {
     assert.ok(overview.top.length >= 1);
     assert.equal(overview.health.mail, true);
     assert.equal(overview.updates.available, true);
+    const today = overview.history.at(-1);
+    assert.equal(today.day, new Date().toISOString().slice(0, 10));
+    assert.equal(today.bytes, overview.logical);
+    assert.equal(today.files, overview.files);
+  });
+
+  it('merkt sich den Speicher Tag für Tag', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    assert.equal(recordUsage(now - 2 * day, true), true);
+    assert.equal(recordUsage(now - day, true), true);
+    assert.equal(recordUsage(now - day + 1000), false);
+    const history = usageHistory(365, now);
+    assert.deepEqual(
+      history.slice(-3).map((entry) => entry.day),
+      [now - 2 * day, now - day, now].map((time) => new Date(time).toISOString().slice(0, 10))
+    );
+    assert.equal(usageHistory(1, now).length, 1);
+    recordUsage(now - 4 * 366 * day, true);
+    recordUsage(now, true);
+    assert.ok(usageHistory(5000, now).every((entry) => entry.day >= new Date(now - 3 * 366 * day).toISOString().slice(0, 10)));
   });
 });

@@ -1,11 +1,9 @@
 import { createTheme, type Shadows } from '@mui/material/styles';
-import { buildScheme, FILE_TYPE_COLORS, folderColors, type M3Tokens } from './scheme';
+import { FILE_TYPE_COLORS, folderColors, type M3Tokens, type Palette } from './scheme';
 import { c, curve, duration, elevation, fonts, layer, mix, radius } from './tokens';
 
 export interface ThemeOptions {
-  seed: string;
-  contrast: number;
-  trueBlack: boolean;
+  palette: Palette;
   corners: number;
 }
 
@@ -56,14 +54,14 @@ const shadows = Array.from({ length: 25 }, (_, index) =>
   index === 0 ? 'none' : elevation[Math.min(5, Math.ceil(index / 3)) as 1 | 2 | 3 | 4 | 5]
 ) as Shadows;
 
-export function createAppTheme({ seed, contrast, trueBlack, corners }: ThemeOptions) {
+export function createAppTheme({ palette, corners }: ThemeOptions) {
   const r = (value: number) => (value >= radius.full ? value : Math.round(value * corners));
   return createTheme({
     cssVariables: { colorSchemeSelector: 'data-mui-color-scheme', nativeColor: true },
     defaultColorScheme: 'dark',
     colorSchemes: {
-      dark: { palette: paletteFor(buildScheme(seed, true, contrast, trueBlack), 'dark') },
-      light: { palette: paletteFor(buildScheme(seed, false, contrast), 'light') },
+      dark: { palette: paletteFor(palette.dark, 'dark') },
+      light: { palette: paletteFor(palette.light, 'light') },
     },
     shape: { borderRadius: r(radius.tile) },
     shadows,

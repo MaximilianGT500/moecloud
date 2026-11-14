@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = [
   'app_password_created',
   'app_password_removed',
   'sessions_revoked',
+  'sso_unlinked',
+  'account_exported',
   'registered',
   'user_created',
   'user_updated',
@@ -34,6 +36,7 @@ export const AUDIT_ACTIONS = [
   'invite_deleted',
   'settings_changed',
   'mail_changed',
+  'sso_changed',
   'scan_changed',
   'webhook_changed',
   'link_removed',
@@ -47,6 +50,7 @@ export const AUDIT_ACTIONS = [
   'group_created',
   'group_updated',
   'group_deleted',
+  'users_imported',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -64,6 +68,8 @@ export const SECURITY_ACTIONS: AuditAction[] = [
   'app_password_created',
   'app_password_removed',
   'sessions_revoked',
+  'sso_unlinked',
+  'account_exported',
   'admin_password_set',
   'admin_2fa_reset',
   'admin_logout',

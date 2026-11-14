@@ -24,6 +24,8 @@ interface SystemInfo {
   dataDir: string;
   storage: string | null;
   database: number;
+  databaseKind: 'sqlite' | 'postgres';
+  databaseVersion: string;
   tools: { ffmpeg: boolean; ffprobe: boolean; pdftoppm: boolean; pdftotext: boolean };
   processing: { pending: number; processed: number; failed: number };
   metrics: boolean;
@@ -146,7 +148,7 @@ export function SystemSection() {
                 {info.dataDir}
               </Box>,
             ],
-            [t('Datenbank'), formatBytes(info.database)],
+            [t('Datenbank'), `${info.databaseVersion} · ${formatBytes(info.database)}`],
             [
               t('Neueste Version'),
               updates.locked

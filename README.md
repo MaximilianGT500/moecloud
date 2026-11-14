@@ -47,6 +47,7 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - [Kommentare, Aktivität und Benachrichtigungen](#kommentare-aktivität-und-benachrichtigungen)
 - [Als Laufwerk einbinden](#als-laufwerk-einbinden)
 - [Konto und Sicherheit](#konto-und-sicherheit)
+- [Anmeldung über SSO](#anmeldung-über-sso)
 - [Verwaltung](#verwaltung)
 - [Virenscan mit ClamAV](#virenscan-mit-clamav)
 - [E-Mail](#e-mail)
@@ -55,6 +56,7 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - [Metriken für Prometheus](#metriken-für-prometheus)
 - [Versionsprüfung](#versionsprüfung)
 - [Updates](#updates)
+- [Datenbank](#datenbank)
 - [Datensicherung](#datensicherung)
 - [Kommandozeile](#kommandozeile)
 - [API](#api)
@@ -65,30 +67,35 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 
 - **Hochladen** per Drag & Drop, über „Neu“ oder mit Strg+V aus der Zwischenablage, einzelne Dateien und ganze Ordner samt Unterordnern
 - **Große Dateien** gehen in Teilen von 16 MB hoch. Bricht die Verbindung ab, setzt der Upload an derselben Stelle wieder an
-- **Vorschau** für Bilder, Videos, Audio, PDFs, Markdown, Code mit Hervorhebung, CSV, JSON, Word, Excel, ZIP-Archive und Schriften. Dazu gehören Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF und Photoshop-Dateien. Textdateien bearbeitest du direkt im Browser, Bilder drehst du mit einem Klick
+- **Vorschau** für Bilder, Videos, Audio, PDFs, Markdown, Code mit Hervorhebung, CSV, JSON, Word, Excel, ZIP-Archive, E-Mails, Termine, Kontakte und Schriften. Dazu gehören Kamera-Rohformate wie DNG vom iPhone, HEIC, TIFF und Photoshop-Dateien. Textdateien bearbeitest du direkt im Browser, Bilder drehst du mit einem Klick
 - **Bearbeiten** direkt in der Cloud: Bilder zuschneiden, drehen, spiegeln und als JPEG, PNG, WebP oder AVIF speichern, PDF-Seiten ordnen, drehen und PDFs zusammenfügen, Textversionen Zeile für Zeile vergleichen
 - **Musik** im Player am unteren Rand mit Warteschlange und Medientasten, **Videos** mit Untertiteln aus SRT und VTT, die an der letzten Stelle weiterlaufen
 - **ZIP-Archive** entpacken und packen direkt in der Cloud, mit Virenscan für jede Datei darin
 - **Schlagwörter** in zehn Farben für Dateien und Ordner, auch für Geteiltes, und eine eigene Ansicht dafür
 - **Viele Dateien auf einmal umbenennen**: Text ersetzen oder ergänzen, durchnummerieren oder das Aufnahmedatum voranstellen, mit Vorschau
 - **Vorschaubilder** für Fotos, Rohdateien, Videos, PDFs, Musik mit Cover und Dokumente, die ein Vorschaubild mitbringen, etwa aus LibreOffice, Keynote oder als E-Book
-- **Fotos** zeigt alle Bilder und Videos nach Aufnahmedatum, die Bildansicht Kamera, Objektiv und Belichtung, dazu eine Diashow. **Alben** sammeln Fotos aus beliebigen Ordnern, ohne sie zu verschieben
-- **Volltextsuche** in Texten, PDFs und Office-Dokumenten, mit Filtern für die Art, das Änderungsdatum, die Größe und Schlagwörter
+- **Fotos** zeigt alle Bilder und Videos nach Aufnahmedatum, die Bildansicht Kamera, Objektiv und Belichtung, dazu eine Diashow. **An diesem Tag** holt Fotos vom selben Tag aus früheren Jahren nach oben. **Alben** sammeln Fotos aus beliebigen Ordnern, ohne sie zu verschieben
+- **Volltextsuche** in Texten, PDFs und Office-Dokumenten, mit Filtern für die Art, das Änderungsdatum, die Größe und Schlagwörter. Häufige Suchen speicherst du und rufst sie aus der leeren Suchleiste wieder auf
+- **Aus dem Internet laden**: MoeCloud holt eine Datei von einer Adresse selbst in einen Ordner und meldet sich, wenn sie da ist
 - **Ordnerfarben**, Favoriten, Zuletzt und ein Papierkorb, aus dem Gelöschtes 30 Tage lang zurückkommt. Eine README.md im Ordner erscheint als Beschreibung über der Liste
-- **Versionen**: Ersetzt du eine Datei oder speicherst einen Text, bleibt die alte Fassung erhalten und lässt sich zurückholen
-- **Speicher** zeigt, was wie viel Platz belegt, die größten und die doppelten Dateien
+- **Versionen**: Ersetzt du eine Datei oder speicherst einen Text, bleibt die alte Fassung erhalten und lässt sich zurückholen. Wie viele es pro Datei gibt und nach wie vielen Tagen sie gehen, legt die Verwaltung fest
+- **Speicher** zeigt, was wie viel Platz belegt, die größten und die doppelten Dateien, und räumt Kopien mit einem Klick auf
+- **Aufräumregeln** legen Dateien, die eine Weile unverändert in einem Ordner liegen, von selbst in den Papierkorb, etwa in Downloads oder Scans
 - **Grenzen** für den Speicher pro Person und die Größe einzelner Dateien, mit Hinweis, wenn der Speicher fast voll ist
 - **Teilen mit Personen und Gruppen**: Ordner und Dateien für andere Konten oder eine ganze Gruppe freigeben, zum Ansehen oder zum Bearbeiten, auf Wunsch mit Ablaufdatum
-- **Öffentliche Links** mit Bezeichnung, Passwort, Ablaufdatum, Grenze für Downloads, QR-Code und Zählern für Aufrufe und Downloads, jederzeit pausierbar und direkt per E-Mail verschickt. Ordner gibt es als ZIP
+- **Öffentliche Links** mit Bezeichnung, Passwort, Ablaufdatum, Grenze für Downloads, QR-Code und Zählern für Aufrufe und Downloads, jederzeit pausierbar und direkt per E-Mail verschickt. Ordner gibt es als ZIP, Fotos kommen ohne GPS-Daten
 - **Dateien anfragen**: Ein Link nur zum Hochladen sammelt Dateien von anderen ein, auf Wunsch mit Benachrichtigung
 - **Kommentare und Aktivität** an jeder Datei und jedem Ordner, dazu Benachrichtigungen in der App und per E-Mail, auch für Änderungen in Ordnern, die du beobachtest
 - **Virenscan** mit ClamAV für alle Uploads, mit gesperrten Dateien und erneuter Prüfung
 - **WebDAV** zum Einbinden als Laufwerk, mit eigenen App-Passwörtern pro Gerät
 - **Live**: Änderungen erscheinen sofort auf allen Geräten, auf denen MoeCloud offen ist
 - **Sparsamer Speicher**: Gleiche Dateien liegen nur einmal auf der Platte, auch wenn sie mehrfach hochgeladen werden
-- **Anmeldung** mit Passwort, Authenticator-App samt Wiederherstellungscodes oder Passkey, „Passwort vergessen“ per E-Mail und ein Protokoll aller Anmeldungen. Admins können die Zwei-Faktor-Anmeldung für alle vorschreiben
-- **Verwaltung** im Browser: Übersicht mit Zustand, Personen, Einladungen per E-Mail, alle Links, Protokoll, Virenscan, E-Mail, Webhooks, Sicherungen, Wartungsmodus und Hinweise für alle
-- **Für den Dauerbetrieb**: Installationsskript mit Prüfung des Servers und automatischen Updates, nächtliche Sicherungen der Datenbank, Versionsprüfung, Metriken für Prometheus, Health-Check und Logs als Text oder JSON
+- **Anmeldung** mit Passwort, Authenticator-App samt Wiederherstellungscodes oder Passkey, „Passwort vergessen“ per E-Mail und ein Protokoll aller Anmeldungen. Meldet sich jemand von einem neuen Gerät an, gibt MoeCloud Bescheid. Admins können die Zwei-Faktor-Anmeldung für alle vorschreiben
+- **Datenexport**: Alle eigenen Dateien und eine Übersicht über das Konto als ein ZIP
+- **Single Sign-on** über OpenID Connect mit Authentik, Keycloak, Authelia, Zitadel, Google oder Microsoft, auf Wunsch mit automatisch angelegten Konten und Admin-Rechten aus einer Gruppe
+- **Verwaltung** im Browser: Übersicht mit Zustand und Speicherverlauf, Personen samt Import aus CSV, Einladungen per E-Mail, alle Links, Protokoll, Virenscan, E-Mail, Webhooks, Sicherungen, Wartungsmodus und Hinweise für alle
+- **SQLite oder PostgreSQL** als Datenbank, mit einem Befehl in beide Richtungen umgezogen
+- **Für den Dauerbetrieb**: Installationsskript mit Prüfung des Servers und automatischen Updates, nächtliche Sicherungen der Datenbank mit Kopie in einen zweiten Ordner, Versionsprüfung, Metriken für Prometheus, Health-Check und Logs als Text oder JSON
 - **Material You** mit Farben aus einer Grundfarbe, dunkel als Standard, mit hellem Design, mehr Kontrast, echtem Schwarz und wählbaren Ecken
 - **Auf dem Handy** mit eigener Navigation am unteren Rand
 - **Deutsch und Englisch**, jede Person wählt ihre Sprache selbst
@@ -99,13 +106,13 @@ Am schnellsten geht es mit dem [Installationsskript](#mit-dem-installationsskrip
 
 ### Mit dem Installationsskript
 
-Auf einem Linux-Server richtet ein Skript alles ein: Docker (falls es fehlt, über das offizielle Skript von get.docker.com), die Dateien von MoeCloud in `/opt/moecloud`, auf Wunsch Caddy für HTTPS und ClamAV als Virenscan.
+Auf einem Linux-Server richtet ein Skript alles ein: Docker (falls es fehlt, über das offizielle Skript von get.docker.com), die Dateien von MoeCloud in `/opt/moecloud`, auf Wunsch Caddy für HTTPS, ClamAV als Virenscan und PostgreSQL als Datenbank.
 
 ```bash
 curl -fsSL https://moecloud.moestudio.net/install.sh | sudo bash
 ```
 
-Vorher prüft das Skript den Server: Architektur, Arbeitsspeicher, freien Platz, ob die nötigen Ports frei sind, ob die Domain auf den Server zeigt und ob die Registry erreichbar ist. Dann fragt es nach Domain, ClamAV und automatischen Updates, startet MoeCloud, wartet, bis es antwortet, und zeigt den Link zum Einrichtungsassistenten. Ohne Rückfragen geht es mit Optionen:
+Vorher prüft das Skript den Server: Architektur, Arbeitsspeicher, freien Platz, ob die nötigen Ports frei sind, ob die Domain auf den Server zeigt und ob die Registry erreichbar ist. Dann fragt es nach Domain, ClamAV, Datenbank und automatischen Updates, startet MoeCloud, wartet, bis es antwortet, und zeigt den Link zum Einrichtungsassistenten. Ohne Rückfragen geht es mit Optionen:
 
 ```bash
 curl -fsSL https://moecloud.moestudio.net/install.sh | sudo bash -s -- --domain cloud.example.com --clamav --auto-update --yes
@@ -117,6 +124,8 @@ curl -fsSL https://moecloud.moestudio.net/install.sh | sudo bash -s -- --domain 
 | `--port ZAHL`      | Port auf dem Server ohne Domain, Standard `3000`                                 |
 | `--clamav`         | ClamAV als Virenscan mitstarten                                                  |
 | `--no-clamav`      | ClamAV nicht einrichten                                                          |
+| `--postgres`       | PostgreSQL als eigenen Dienst mitstarten, siehe [Datenbank](#datenbank)          |
+| `--sqlite`         | SQLite als Datenbank nehmen, das ist der Standard                                |
 | `--version X.Y.Z`  | Genau diese Version installieren und festhalten, `--version latest` hebt das auf |
 | `--auto-update`    | Updates jede Nacht zwischen 4 und 5 Uhr einspielen                               |
 | `--no-auto-update` | Automatische Updates ausschalten                                                 |
@@ -127,17 +136,18 @@ curl -fsSL https://moecloud.moestudio.net/install.sh | sudo bash -s -- --domain 
 
 Mit Domain bindet das Skript MoeCloud nur an `127.0.0.1`, erreichbar ist es dann ausschließlich über Caddy. Ist Port 3000 dafür schon belegt, nimmt es den nächsten freien. Alles, was das Skript tut, steht in `/var/log/moecloud-install.log`, bei einem Fehler zeigt es die letzten Zeilen daraus. Außerdem legt es den Befehl `moecloud` an:
 
-| Befehl                                   | Zweck                                                                                    |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `sudo moecloud status`                   | Zustand, Version, Adresse, freier Platz, Virenscan und Updates auf einen Blick           |
-| `sudo moecloud doctor`                   | Typische Probleme finden: Container, Ports, Zertifikat, Platz, Sicherungen und ClamAV    |
-| `sudo moecloud update [--version X.Y.Z]` | Datenbank sichern, auf die neueste oder eine bestimmte Version aktualisieren             |
-| `sudo moecloud auto-update [on \| off]`  | Automatische Updates jede Nacht ein- oder ausschalten, ohne Angabe den Stand zeigen      |
-| `sudo moecloud logs [dienst]`            | Logs ansehen, ohne Angabe von MoeCloud, sonst etwa von `caddy` oder `clamav`             |
-| `sudo moecloud restart [dienst]`         | MoeCloud oder einen anderen Dienst neu starten                                           |
-| `sudo moecloud stop`                     | MoeCloud und alle Dienste daneben beenden, `start` startet sie wieder                    |
-| `sudo moecloud uninstall`                | Container, Images, Befehl und Zeitplan entfernen, deine Daten in `/opt/moecloud` bleiben |
-| `sudo moecloud …`                        | Alle anderen Befehle der [Kommandozeile](#kommandozeile), etwa `backup` oder `users`     |
+| Befehl                                        | Zweck                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `sudo moecloud status`                        | Zustand, Version, Adresse, freier Platz, Virenscan und Updates auf einen Blick           |
+| `sudo moecloud doctor`                        | Typische Probleme finden: Container, Ports, Zertifikat, Platz, Sicherungen und ClamAV    |
+| `sudo moecloud update [--version X.Y.Z]`      | Datenbank sichern, auf die neueste oder eine bestimmte Version aktualisieren             |
+| `sudo moecloud auto-update [on \| off]`       | Automatische Updates jede Nacht ein- oder ausschalten, ohne Angabe den Stand zeigen      |
+| `sudo moecloud logs [dienst]`                 | Logs ansehen, ohne Angabe von MoeCloud, sonst etwa von `caddy` oder `clamav`             |
+| `sudo moecloud restart [dienst]`              | MoeCloud oder einen anderen Dienst neu starten                                           |
+| `sudo moecloud database [postgres \| sqlite]` | Datenbank zeigen oder mit allen Daten zwischen SQLite und PostgreSQL umziehen            |
+| `sudo moecloud stop`                          | MoeCloud und alle Dienste daneben beenden, `start` startet sie wieder                    |
+| `sudo moecloud uninstall`                     | Container, Images, Befehl und Zeitplan entfernen, deine Daten in `/opt/moecloud` bleiben |
+| `sudo moecloud …`                             | Alle anderen Befehle der [Kommandozeile](#kommandozeile), etwa `backup` oder `users`     |
 
 Festgehaltene Versionen bleiben auch bei `update` und den automatischen Updates gleich. Auf eine ältere Version geht das Skript nicht zurück, weil sich die Datenbank verändert haben kann, dafür spielst du eine [Sicherung](#datensicherung) ein.
 
@@ -154,7 +164,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.3.4` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.4.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
 
 Was der Stack mitbringt:
 
@@ -166,7 +176,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.3.4`, `1.3` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.4.0`, `1.4` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -180,6 +190,20 @@ docker compose up -d
 ```
 
 Beim ersten Start lädt ClamAV seine Signaturen, das dauert ein paar Minuten. Der Container braucht etwa 3 GB Arbeitsspeicher. Mehr dazu unter [Virenscan mit ClamAV](#virenscan-mit-clamav).
+
+### PostgreSQL dazunehmen
+
+Die Ergänzung [`docker/postgres.yml`](docker/postgres.yml) startet PostgreSQL 18 als eigenen Container. Seine Daten liegen im Ordner `postgres/` neben der `docker-compose.yml`, das Passwort kommt aus der `.env`:
+
+```bash
+mkdir -p docker
+curl -o docker/postgres.yml https://raw.githubusercontent.com/MaximilianGT500/moecloud/main/docker/postgres.yml
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+echo "COMPOSE_FILE=docker-compose.yml:docker/postgres.yml" >> .env
+docker compose up -d
+```
+
+Mit ClamAV zusammen heißt die Zeile `COMPOSE_FILE=docker-compose.yml:docker/clamav.yml:docker/postgres.yml`. Läuft MoeCloud schon mit SQLite, ziehst du die Daten vor dem ersten Start um, wie unter [Datenbank](#datenbank) beschrieben.
 
 ### Mit eigener Domain und HTTPS
 
@@ -275,17 +299,19 @@ Unter **Dateien** liegen deine Ordner und Dateien, als Liste oder als Kacheln mi
 - **Hochladen**: Zieh Dateien oder Ordner ins Fenster oder direkt auf einen Ordner, oder nimm **Neu › Dateien hochladen** und **Neu › Ordner hochladen**. Gibt es eine Datei schon, wählst du zwischen „Beide behalten“ und „Ersetzen“. Beim Ersetzen bleibt die alte Fassung als Version erhalten.
 - **Einfügen**: Strg+V oder ⌘V lädt Dateien und Bilder aus der Zwischenablage in den offenen Ordner. Ein Screenshot heißt dann „Eingefügtes Bild“ mit Datum und Uhrzeit.
 - **Neue Textdatei** und **Neuer Ordner** findest du ebenfalls unter **Neu**.
+- **Aus dem Internet laden**: Unter **Neu** trägst du die Adresse einer Datei ein. MoeCloud lädt sie im Hintergrund in den offenen Ordner, mit Virenscan und deinen Speichergrenzen, und meldet sich in den Benachrichtigungen, wenn sie da ist oder etwas schiefging. Den Namen nimmt es aus der Antwort des Servers oder aus der Adresse. Adressen im lokalen Netz wie der Router oder andere Dienste auf dem Server bleiben gesperrt, auch nach Weiterleitungen, außer die Verwaltung erlaubt sie unter **Admin › Einstellungen › Speicher**.
 - **Ordnen**: Zieh Elemente auf einen Ordner oder in die Pfadleiste, oder verschieben und kopieren über das Menü. Mehrere wählst du mit Strg, ⌘ oder Umschalt aus.
 - **Ordnerfarben**: Im Menü eines Ordners gibt **Farbe** ihm eine von zehn Farben, auch für mehrere Ordner auf einmal.
 - **Schlagwörter**: Im Menü oder in den Details vergibst du Schlagwörter in zehn Farben, auch für mehrere Elemente auf einmal und für Dinge, die andere mit dir teilen. Sie erscheinen als Punkte hinter dem Namen und nur bei dir. Unter **Schlagwörter** in der Navigation siehst du alle mit Anzahl, benennst sie um, färbst sie neu und öffnest, was dazugehört.
 - **Mehrere umbenennen**: Wählst du mehrere Elemente und drückst F2 oder **Umbenennen**, ersetzt du Text, ergänzt Text vor oder nach dem Namen, nummerierst durch (wie in der Liste oder nach Aufnahmedatum) oder stellst das Aufnahmedatum voran. Eine Vorschau zeigt jeden neuen Namen, Endungen bleiben, wie sie sind. Gibt es einen Namen schon, sagt MoeCloud das, bevor sich etwas ändert.
 - **Als ZIP packen**: Eine Auswahl aus Dateien und Ordnern wird ein ZIP-Archiv im selben Ordner, ohne Download und Upload. Darfst du dort nichts anlegen, landet es in deinen eigenen Dateien.
 - **Ordnerbeschreibung**: Liegt in einem Ordner eine `README.md` oder `LIESMICH.md`, zeigt MoeCloud sie formatiert über der Liste, zuerst eingeklappt. Auf öffentlichen Ordner-Links gilt das ebenso.
-- **Herunterladen**: Dateien einzeln, Ordner und mehrere Elemente als ZIP. Unter **Konto** lädst du alle eigenen Dateien als ein ZIP herunter.
+- **Herunterladen**: Dateien einzeln, Ordner und mehrere Elemente als ZIP. Unter **Konto** lädt **Daten exportieren** alle eigenen Dateien und eine Übersicht über dein Konto als ein ZIP herunter, siehe [Konto und Sicherheit](#konto-und-sicherheit).
+- **Aufräumregel**: Im Menü eines eigenen Ordners legt **Aufräumregel** fest, dass Dateien nach 7, 14, 30, 90 oder 365 Tagen ohne Änderung von selbst in den Papierkorb wandern. Das gilt auch für Unterordner und für alles, was andere dort ablegen. Ein Symbol oben im Ordner zeigt die Regel, wer den Ordner sehen darf, erfährt so davon. MoeCloud prüft die Regeln jede Stunde und meldet in der Glocke, was es aufgeräumt hat. Stellst du etwas aus dem Papierkorb wieder her, beginnt die Frist für diese Dateien neu.
 - **Entpacken**: Im Menü eines ZIP-Archivs packt **Entpacken** den Inhalt in einen neuen Ordner daneben, samt Unterordnern und Änderungsdatum. Jede Datei geht durch den Virenscan. Schadsoftware, verschlüsselte Einträge, Pfade, die aus dem Ordner herausführen, und Dateien über der Größengrenze überspringt MoeCloud und sagt, wie viele es waren. Vorher prüft es, ob dein Speicher und der Platz auf dem Server reichen.
 - **Zuletzt** zeigt, was du zuletzt hochgeladen oder geändert hast, daneben die **Aktivität** in all deinen Ordnern. **Favoriten** sammelt alles mit Stern.
-- **Suche**: Die Suchleiste findet Dateien und Ordner nach Namen und Wörter im Inhalt von Texten, PDFs und Office-Dokumenten. Filter grenzen auf Ordner, Bilder, Videos, Audio, PDFs oder Dokumente ein, dazu auf das Änderungsdatum, die Größe und ein Schlagwort. Die Filter gehen auch ohne Suchbegriff, der Knopf rechts in der Suchleiste öffnet sie. Treffer im Inhalt erscheinen mit der passenden Stelle.
-- **Speicher** zeigt, was wie viel Platz belegt, die größten Dateien und Dateien mit genau gleichem Inhalt. Du erreichst die Seite über dein Bild unten links und unter **Konto**. Ist dein Speicher zu 90 % voll, bekommst du eine Benachrichtigung.
+- **Suche**: Die Suchleiste findet Dateien und Ordner nach Namen und Wörter im Inhalt von Texten, PDFs und Office-Dokumenten. Filter grenzen auf Ordner, Bilder, Videos, Audio, PDFs oder Dokumente ein, dazu auf das Änderungsdatum, die Größe und ein Schlagwort. Die Filter gehen auch ohne Suchbegriff, der Knopf rechts in der Suchleiste öffnet sie. Treffer im Inhalt erscheinen mit der passenden Stelle. **Suche speichern** merkt sich Begriff und Filter unter einem Namen. Gespeicherte Suchen stehen als Chips über den Treffern und erscheinen, sobald du in die leere Suchleiste klickst.
+- **Speicher** zeigt, was wie viel Platz belegt, die größten Dateien und Dateien mit genau gleichem Inhalt. **Nur eine behalten** legt die Kopien einer Datei in den Papierkorb, die älteste bleibt, **Alle aufräumen** macht das für alle Gruppen. Du erreichst die Seite über dein Bild unten links und unter **Konto**. Ist dein Speicher zu 90 % voll, bekommst du eine Benachrichtigung.
 - **Papierkorb**: Gelöschtes bleibt dort 30 Tage, danach räumt MoeCloud es weg. Ordner kommen samt Inhalt zurück. Die Frist stellst du unter **Admin › Einstellungen › Speicher** ein.
 
 <p align="center">
@@ -335,9 +361,18 @@ Ein Doppelklick öffnet eine Datei in der Vollbildansicht, mit den Pfeiltasten o
 | Word und Excel             | Word-Dokumente mit Seiten, Excel-Tabellen mit allen Blättern                                          |
 | Dokumente mit Vorschaubild | Das Vorschaubild aus der Datei und der Knopf zum Herunterladen                                        |
 | ZIP-Archive                | Inhalt mit Größen und Datum, durchsuchbar, einzelne Dateien daraus herunterladen                      |
+| E-Mails (`.eml`)           | Betreff, Absender, Empfänger, Datum und Anhänge, der Inhalt abgeschottet ohne Bilder aus dem Internet |
+| Termine (`.ics`)           | Alle Termine mit Zeit, Ort und Beschreibung, sortiert nach Datum                                      |
+| Kontakte (`.vcf`)          | Karten mit Telefon, E-Mail, Adresse, Geburtstag und Webseite                                          |
 | Schriften                  | TTF, OTF, WOFF und WOFF2 mit eigenem Beispieltext                                                     |
 
 Vorschaubilder erzeugt MoeCloud im Hintergrund, für Videos mit ffmpeg, für PDFs mit Poppler und für Musik aus dem eingebetteten Cover. Dabei liest es auch Bildinfos, Musik-Tags und den Text für die Suche aus. Für Dateien, die schon vor dem Update da waren, holt MoeCloud das nach dem Start selbst nach. Dateien, in denen der Virenscan etwas gefunden hat, öffnet die Vorschau nicht. Kann dein Browser ein Video oder eine Audiodatei nicht abspielen, zeigt MoeCloud einen Hinweis und den Knopf zum Herunterladen.
+
+E-Mails zeigt MoeCloud wie ein Mailprogramm, den Inhalt aber in einem abgeschotteten Bereich ohne Skripte. Bilder, die in der E-Mail stecken, erscheinen, Bilder aus dem Internet lädt MoeCloud nicht, so bekommt der Absender keine Lesebestätigung über ein Zählpixel. Links öffnen sich in einem neuen Tab, Anhänge lädst du einzeln herunter.
+
+<p align="center">
+  <img src="docs/screenshots/email.png" alt="Eine E-Mail mit Absender, Empfängern und Anhang in der Vorschau" width="80%">
+</p>
 
 ### Bildformate
 
@@ -386,7 +421,9 @@ Sagt die Endung nichts über den Inhalt, schaut MoeCloud in den Anfang der Datei
 
 ## Fotos und Alben
 
-**Fotos** zeigt alle Bilder und Videos aus deinen Ordnern, nach Monaten gruppiert und sortiert nach dem Aufnahmedatum aus den EXIF-Daten. Fehlt es, zählt das Änderungsdatum. Ein Klick öffnet die Bildansicht, ▶ startet dort eine Diashow mit allen Bildern.
+**Fotos** zeigt alle Bilder und Videos aus deinen Ordnern, nach Monaten gruppiert und sortiert nach dem Aufnahmedatum aus den EXIF-Daten. Fehlt es, zählt das Änderungsdatum. Ein Klick öffnet die Bildansicht, ▶ startet dort eine Diashow mit allen Bildern. Auch bei zehntausenden Fotos lädt jede Seite der Zeitleiste in wenigen Millisekunden.
+
+**An diesem Tag** steht über der Zeitleiste, wenn es Fotos vom heutigen Tag aus früheren Jahren gibt, etwa „Vor 3 Jahren“. Ein Klick öffnet sie in der Bildansicht, das Kreuz blendet die Erinnerungen für heute aus.
 
 **Alben** findest du unter **Fotos › Alben**. Mit dem Kästchen auf einem Foto oder langem Drücken wählst du aus und legst die Auswahl in ein Album, in Dateien heißt der Menüpunkt **Zum Album hinzufügen**. Die Fotos bleiben dabei, wo sie sind. Jedes Album hat ein Titelbild, eine Diashow und einen Download als ZIP, Alben gehören nur dir.
 
@@ -406,7 +443,9 @@ Sagt die Endung nichts über den Inhalt, schaut MoeCloud in den Anfang der Datei
 
 **Dateien anfragen**: Mit „Nur hochladen“ sehen Besucher nur ein Feld zum Hochladen. Die Dateien landen in deinem Ordner, gleichnamige Dateien überschreiben dabei nichts. Mit „Benachrichtigen, wenn etwas ankommt“ meldet MoeCloud neue Uploads gesammelt in der Glocke und auf Wunsch per E-Mail.
 
-Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abschalten, ein Passwort für alle Links verlangen und eine längste Gültigkeit festlegen. Ein Link ohne Passwort schützt nur durch seine Länge: Gib ihn nur Personen, die den Inhalt sehen sollen, und setz bei Bedarf ein Ablaufdatum.
+**Standort in Fotos**: Öffnet oder lädt jemand Fotos über einen Link, entfernt MoeCloud die GPS-Daten, auch in ZIP-Downloads. Das klappt bei JPEG, HEIC und WebP ohne erneutes Speichern des Bildes, Kamera, Aufnahmedatum und Ausrichtung bleiben. Die Originale in deinen Dateien und für Personen, mit denen du teilst, bleiben unverändert.
+
+Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abschalten, ein Passwort für alle Links verlangen, eine längste Gültigkeit festlegen und das Entfernen der GPS-Daten abschalten. Ein Link ohne Passwort schützt nur durch seine Länge: Gib ihn nur Personen, die den Inhalt sehen sollen, und setz bei Bedarf ein Ablaufdatum.
 
 <p align="center">
   <img src="docs/screenshots/public.png" alt="Ein geteilter Ordner, wie ihn Besucher sehen" width="80%">
@@ -417,7 +456,7 @@ Unter **Admin › Einstellungen › Teilen** lassen sich Links und Freigaben abs
 - **Kommentare**: Im Detailbereich unter **Kommentare** schreiben alle, die Zugriff haben, an Dateien und Ordner. Alle anderen mit Zugriff und alle, die dort schon kommentiert haben, bekommen eine Benachrichtigung.
 - **Aktivität**: Der Reiter **Aktivität** zeigt für jede Datei und jeden Ordner, wer etwas hochgeladen, bearbeitet, umbenannt, verschoben, kopiert, geteilt, kommentiert oder gelöscht hat. Unter **Zuletzt › Aktivität** steht alles aus deinen Ordnern, nach Tagen sortiert. Mit wem ein Ordner geteilt ist, steht nur in deiner eigenen Aktivität. Andere mit Zugriff sehen das dort nicht, und Links sehen nur Personen, die bearbeiten dürfen.
 - **Ordner beobachten**: Über **Beobachten** im Menü eines Ordners oder die Glocke in seiner Kopfzeile bekommst du eine Nachricht, wenn andere darin etwas hochladen, ändern oder löschen, auch in Unterordnern. Mehrere Änderungen kommen nach einer Minute Ruhe gesammelt.
-- **Benachrichtigungen**: Die Glocke oben rechts sammelt neue Freigaben, Kommentare, Uploads über deine Links, Änderungen in beobachteten Ordnern und Hinweise zu deinem Speicher, Admins sehen dort auch Meldungen zum System. Unter **Konto › E-Mail-Benachrichtigungen** wählt jede Person, was zusätzlich per E-Mail kommt.
+- **Benachrichtigungen**: Die Glocke oben rechts sammelt neue Freigaben, Kommentare, Uploads über deine Links, Änderungen in beobachteten Ordnern, Anmeldungen von neuen Geräten, Aufgeräumtes und Hinweise zu deinem Speicher, Admins sehen dort auch Meldungen zum System. Unter **Konto › E-Mail-Benachrichtigungen** wählt jede Person, was zusätzlich per E-Mail kommt.
 
 <p align="center">
   <img src="docs/screenshots/notifications.png" alt="Benachrichtigungen zu Kommentaren und einer neuen Freigabe" width="80%">
@@ -449,15 +488,19 @@ Dein Konto öffnest du über dein Bild unten links und **Konto und Sicherheit**,
 </p>
 
 - **Profil**: Name, E-Mail und Sprache. Den Benutzernamen ändert ein Admin.
-- **Speicher**: belegter Platz, ein Link zur Speicheransicht und alle eigenen Dateien als ZIP.
+- **Speicher**: belegter Platz und ein Link zur Speicheransicht.
+- **Daten exportieren**: ein ZIP mit allen eigenen Dateien im Ordner `Dateien/` und der Datei `konto.json`. Darin stehen Profil, Einstellungen, Favoriten, Schlagwörter, Alben, Links ohne ihre Adressen, Freigaben, was andere mit dir teilen, deine Kommentare, gespeicherte Suchen und die Namen deiner Passkeys und App-Passwörter. Der Papierkorb gehört nicht dazu. Jeder Export steht im Sicherheitsprotokoll.
 - **Darstellung**: Hell, Dunkel oder wie das System, 3 Stufen Kontrast, runde, weiche oder kantige Ecken und echtes Schwarz für OLED-Bildschirme. Das gilt pro Browser.
-- **E-Mail-Benachrichtigungen**: für Freigaben, Uploads über Links, Kommentare und bei Admins für Meldungen zum System.
+- **E-Mail-Benachrichtigungen**: für Freigaben, Uploads über Links, Kommentare, beobachtete Ordner, Anmeldungen von neuen Geräten und bei Admins für Meldungen zum System.
 - **Passwort**: Ändern meldet alle anderen Geräte ab. Ist der E-Mail-Versand eingerichtet, gibt es auf der Anmeldeseite „Passwort vergessen“.
 - **Authenticator-App**: Einrichten per QR-Code, dazu 10 Wiederherstellungscodes für den Fall, dass das Handy fehlt.
 - **Passkeys**: Anmelden mit Fingerabdruck, Gesicht oder Sicherheitsschlüssel, ganz ohne Passwort. Nach der Anmeldung mit Passwort bestätigt ein Passkey auch den zweiten Schritt.
 - **WebDAV und App-Passwörter**: siehe [Als Laufwerk einbinden](#als-laufwerk-einbinden).
 - **Sitzungen**: alle angemeldeten Browser mit Gerät und letzter Aktivität, einzeln oder alle anderen abmelden.
+- **Neue Geräte**: Jeder Browser bekommt bei der Anmeldung ein eigenes Cookie, das sich MoeCloud als Prüfsumme merkt. Meldet sich jemand von einem Gerät an, das für dein Konto neu ist, erscheint eine Benachrichtigung mit Browser, System und gekürzter IP-Adresse, auf Wunsch auch per E-Mail. Das allererste Gerät nach dem Einrichten oder einem Update meldet MoeCloud nicht. **Alle anderen abmelden** und ein neues Passwort lassen MoeCloud alle anderen Geräte vergessen, eine erneute Anmeldung von dort meldet es dann wieder. Geräte, die 400 Tage nicht mehr da waren, vergisst MoeCloud von selbst.
 - **Sicherheitsprotokoll**: Anmeldungen, fehlgeschlagene Versuche und Änderungen an deinem Zugang.
+
+Ist dein Konto mit einem Anbieter für [Single Sign-on](#anmeldung-über-sso) verknüpft, steht das ebenfalls hier. **Trennen** löst die Verknüpfung, sobald du ein Passwort hast.
 
 Admins können unter **Admin › Einstellungen › Anmeldung** die Zwei-Faktor-Anmeldung für Admins oder für alle vorschreiben. Wer dann noch keine Authenticator-App und keinen Passkey hat, kommt nach der Anmeldung nur in die Kontoeinstellungen und richtet dort einen zweiten Faktor ein, erst danach geht es weiter. Bis dahin funktionieren auch App-Passwörter und WebDAV nicht. Den letzten zweiten Faktor lässt MoeCloud nicht entfernen, solange die Pflicht gilt. Hat jemand nur einen Passkey, fragt die Anmeldung mit Passwort danach. Damit du dich nicht selbst aussperrst, lässt sich die Pflicht erst einschalten, wenn dein eigenes Konto einen zweiten Faktor hat.
 
@@ -469,26 +512,61 @@ So geht MoeCloud mit deinen Daten um:
 - Seiten laufen mit einer strengen Content Security Policy und Schutz gegen Anfragen von fremden Seiten. Hochgeladene Dateien liefert MoeCloud so aus, dass sie im Browser keinen Code ausführen können.
 - Deine Dateien liegen unverschlüsselt im Datenordner. Wer Zugriff auf den Server oder eine Sicherung hat, kann sie lesen. Eine Ende-zu-Ende-Verschlüsselung gibt es nicht.
 
+## Anmeldung über SSO
+
+Mit OpenID Connect melden sich alle über das Konto eines Anbieters an, etwa Authentik, Keycloak, Authelia, Zitadel, Google oder Microsoft Entra ID. Passwörter und Passkeys funktionieren daneben weiter.
+
+1. Leg beim Anbieter eine Anwendung als vertraulichen Client mit dem Ablauf „Authorization Code“ an und trag als Redirect URI `https://cloud.example.com/login/oidc/callback` ein. Die genaue Adresse steht unter **Admin › Single Sign-on**.
+2. Trag dort die Adresse des Anbieters ein, die Issuer-URL, zum Beispiel `https://auth.example.com/application/o/moecloud/` bei Authentik oder `https://auth.example.com/realms/home` bei Keycloak, dazu Client-ID und Client-Secret.
+3. Speichere, prüf mit **Verbindung testen** und schalte **Anmeldung über SSO anbieten** ein. Auf der Anmeldeseite erscheint dann ein eigener Knopf, dessen Text du festlegst.
+
+MoeCloud fragt die Scopes `openid email profile` an, mit Gruppe für Admins zusätzlich `groups`, nutzt PKCE, prüft State und Nonce und meldet sich am Token-Endpunkt mit `client_secret_basic` an. Ohne Client-Secret gilt der Client als öffentlich und nutzt nur PKCE. Wer sich zum ersten Mal anmeldet, landet so:
+
+- **Bekannte E-Mail-Adresse**: Bestätigt der Anbieter die Adresse (`email_verified`) und gehört sie zu einem Konto, verknüpft MoeCloud beide. Ungeprüfte Adressen verknüpft es nie.
+- **Neue Person**: Mit **Konten automatisch anlegen** bekommt sie ein Konto, der Benutzername kommt aus `preferred_username` oder der E-Mail-Adresse. Ohne den Schalter kommen nur bekannte Konten herein, alle anderen lädst du vorher ein.
+- **Admins**: Steht der Name aus **Gruppe für Admins** im Feld `groups`, wird das Konto Admin. Rechte entzieht MoeCloud dabei nie, das geht weiter unter **Admin › Personen**.
+
+<p align="center">
+  <img src="docs/screenshots/admin-sso.png" alt="Einstellungen für Single Sign-on in der Verwaltung" width="80%">
+</p>
+
+Eine Anmeldung über SSO gilt als vollständig, auch wenn die Verwaltung einen zweiten Faktor verlangt. Den prüft dann der Anbieter. Konten ohne eigenes Passwort, die nur über SSO hereinkommen, brauchen auch für App-Passwörter und WebDAV keinen zweiten Faktor in MoeCloud. Startwerte setzt du auch mit `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE=true` und `OIDC_ADMIN_GROUP`, gespeicherte Werte unter **Admin › Single Sign-on** haben Vorrang.
+
 ## Verwaltung
 
 Admins finden unter **Admin** diese Bereiche:
 
-| Bereich           | Inhalt                                                                                                                                                                                                                                                                                                                                        |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Übersicht**     | Personen, Dateien, belegter und freier Speicher, was das Zusammenlegen gleicher Dateien spart, Speicher nach Art, wer am meisten belegt und der Zustand von E-Mail, Virenscan, Sicherungen, Verarbeitung und Anmeldungen. **Jetzt aufräumen** leert abgelaufene Papierkörbe, alte Uploads und verwaiste Dateien sofort                        |
-| **Personen**      | Konten anlegen, auf Wunsch mit Link per E-Mail statt Passwort, Name, E-Mail, Rolle und Speicher ändern, ein neues Passwort setzen oder einen Link zum Zurücksetzen schicken, sperren, Authenticator-App zurücksetzen, Passkeys entfernen, überall abmelden, löschen. Gilt die Zwei-Faktor-Pflicht, steht bei wem der zweite Faktor noch fehlt |
-| **Gruppen**       | Gruppen zum Teilen anlegen, umbenennen und löschen, Mitglieder hinzufügen und entfernen. Beim Löschen verlieren die Mitglieder den Zugriff auf alles, was mit der Gruppe geteilt war, die Dateien bleiben                                                                                                                                     |
-| **Einladungen**   | Links, mit denen sich eine Person selbst ein Konto anlegt, auf Wunsch gleich per E-Mail verschickt. Jeder Link funktioniert einmal, gilt 1 bis 90 Tage und kann einen eigenen Speicher mitbringen, auch wenn die Registrierung geschlossen ist                                                                                                |
-| **Links**         | Alle öffentlichen Links aller Personen, mit Suche und zum Entfernen                                                                                                                                                                                                                                                                           |
-| **Protokoll**     | Anmeldungen, fehlgeschlagene Versuche, Änderungen der Verwaltung und Funde des Virenscans, filterbar nach Bereich und Person                                                                                                                                                                                                                  |
-| **Virenscan**     | Verbindung zu ClamAV, Prüfung vorhandener Dateien und gesperrte Dateien, siehe [Virenscan mit ClamAV](#virenscan-mit-clamav)                                                                                                                                                                                                                  |
-| **E-Mail**        | SMTP-Server und Test-E-Mail, siehe [E-Mail](#e-mail)                                                                                                                                                                                                                                                                                          |
-| **Webhooks**      | Meldungen an Discord, Slack, Matrix, Telegram, ntfy und eigene Empfänger, siehe [Webhooks](#webhooks)                                                                                                                                                                                                                                         |
-| **Sicherungen**   | Sicherungen der Datenbank anlegen, herunterladen und löschen, Zeitplan, siehe [Datensicherung](#datensicherung)                                                                                                                                                                                                                               |
-| **Einstellungen** | Siehe [Einstellungen und Umgebungsvariablen](#einstellungen-und-umgebungsvariablen), dazu Hinweise für alle und der Wartungsmodus                                                                                                                                                                                                             |
-| **System**        | Version und Update-Befehl, gefundene Programme für Vorschauen, Warteschlange und Suchindex, Metriken                                                                                                                                                                                                                                          |
+| Bereich            | Inhalt                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Übersicht**      | Personen, Dateien, belegter und freier Speicher, was das Zusammenlegen gleicher Dateien spart, Speicher nach Art, wer am meisten belegt, der **Speicherverlauf** der letzten 365 Tage als Diagramm oder Tabelle und der Zustand von E-Mail, Virenscan, Sicherungen, Verarbeitung und Anmeldungen. **Jetzt aufräumen** leert abgelaufene Papierkörbe, alte Uploads und verwaiste Dateien sofort       |
+| **Personen**       | Konten anlegen, auf Wunsch mit Link per E-Mail statt Passwort, oder viele auf einmal aus einer CSV-Datei importieren, Name, E-Mail, Rolle und Speicher ändern, ein neues Passwort setzen oder einen Link zum Zurücksetzen schicken, sperren, Authenticator-App zurücksetzen, Passkeys entfernen, überall abmelden, löschen. Gilt die Zwei-Faktor-Pflicht, steht bei wem der zweite Faktor noch fehlt |
+| **Gruppen**        | Gruppen zum Teilen anlegen, umbenennen und löschen, Mitglieder hinzufügen und entfernen. Beim Löschen verlieren die Mitglieder den Zugriff auf alles, was mit der Gruppe geteilt war, die Dateien bleiben                                                                                                                                                                                            |
+| **Einladungen**    | Links, mit denen sich eine Person selbst ein Konto anlegt, auf Wunsch gleich per E-Mail verschickt. Jeder Link funktioniert einmal, gilt 1 bis 90 Tage und kann einen eigenen Speicher mitbringen, auch wenn die Registrierung geschlossen ist                                                                                                                                                       |
+| **Links**          | Alle öffentlichen Links aller Personen, mit Suche und zum Entfernen                                                                                                                                                                                                                                                                                                                                  |
+| **Protokoll**      | Anmeldungen, fehlgeschlagene Versuche, Änderungen der Verwaltung und Funde des Virenscans, filterbar nach Bereich und Person                                                                                                                                                                                                                                                                         |
+| **Virenscan**      | Verbindung zu ClamAV, Prüfung vorhandener Dateien und gesperrte Dateien, siehe [Virenscan mit ClamAV](#virenscan-mit-clamav)                                                                                                                                                                                                                                                                         |
+| **E-Mail**         | SMTP-Server und Test-E-Mail, siehe [E-Mail](#e-mail)                                                                                                                                                                                                                                                                                                                                                 |
+| **Single Sign-on** | Anbieter für OpenID Connect, Test der Verbindung und Zahl der verknüpften Konten, siehe [Anmeldung über SSO](#anmeldung-über-sso)                                                                                                                                                                                                                                                                    |
+| **Webhooks**       | Meldungen an Discord, Slack, Matrix, Telegram, ntfy und eigene Empfänger, siehe [Webhooks](#webhooks)                                                                                                                                                                                                                                                                                                |
+| **Sicherungen**    | Sicherungen der Datenbank anlegen, herunterladen und löschen, Zeitplan und Stand der Kopie im zweiten Ordner, siehe [Datensicherung](#datensicherung)                                                                                                                                                                                                                                                |
+| **Einstellungen**  | Siehe [Einstellungen und Umgebungsvariablen](#einstellungen-und-umgebungsvariablen), dazu Hinweise für alle und der Wartungsmodus                                                                                                                                                                                                                                                                    |
+| **System**         | Version und Update-Befehl, gefundene Programme für Vorschauen, Warteschlange und Suchindex, Metriken                                                                                                                                                                                                                                                                                                 |
 
 Beim Löschen einer Person überträgt MoeCloud ihre Dateien auf Wunsch an eine andere Person, sie landen dort im Ordner „Von …“. Den letzten Admin lässt MoeCloud nicht löschen oder herabstufen.
+
+**Personen importieren**: Unter **Admin › Personen › Importieren** wählst du eine CSV-Datei oder fügst ihren Inhalt ein, getrennt mit Komma oder Semikolon, so wie Excel und LibreOffice sie speichern. Die erste Zeile nennt die Spalten, Pflicht sind `username` und `name`, dazu passen `email`, `role` (`user` oder `admin`), `quota` (etwa `10 GB`, leer für den Standard), `password` und `language` (`de` oder `en`). Deutsche Spaltennamen wie `Benutzername`, `E-Mail`, `Rolle`, `Speicher`, `Passwort` und `Sprache` gehen auch. **Prüfen** zeigt für jede Zeile, ob sie angelegt, übersprungen oder abgelehnt wird und warum, angelegt wird erst danach. Wer kein Passwort hat, bekommt einen Link per E-Mail, um selbst eins festzulegen. Bis zu 500 Personen gehen auf einmal.
+
+```csv
+username;name;email;role;quota
+lea;Lea Hoffmann;lea@example.com;user;10 GB
+mia;Mia Weber;mia@example.com;admin;
+```
+
+Der **Speicherverlauf** in der Übersicht merkt sich jeden Tag, wie viel belegt ist, wie viel davon auf der Platte liegt und wie viele Dateien es sind. Mit der Maus oder den Pfeiltasten siehst du die Werte eines Tages, **Als Tabelle** zeigt alle Tage untereinander. Die Werte bleiben drei Jahre.
+
+<p align="center">
+  <img src="docs/screenshots/admin-usage.png" alt="Speicherverlauf der letzten Wochen mit dem Wert eines Tages" width="80%">
+</p>
 
 **Hinweise für alle** erscheinen oben auf jeder Seite, als Information oder Warnung und auf Wunsch bis zu einem Datum. Jede Person kann sie ausblenden. **Im Wartungsmodus** kommen nur Admins hinein, alle anderen sehen eine Wartungsseite mit deiner Nachricht, und Links und WebDAV sind gesperrt.
 
@@ -545,41 +623,46 @@ Eigene Empfänger bekommen ein JSON mit `event`, `level` (`info` oder `error`), 
 
 Alle Einstellungen stehen in der Datenbank und werden unter **Admin › Einstellungen** geändert. Sie gelten sofort.
 
-| Bereich                  | Einstellungen                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------------- |
-| Allgemein                | Name der Cloud, Adresse, Standardsprache                                                          |
-| Hinweis für alle         | Text, Art und wie lange er erscheint                                                              |
-| Wartungsmodus            | An oder aus, dazu die Nachricht auf der Wartungsseite                                             |
-| Aussehen                 | Grundfarbe für alle                                                                               |
-| Anmeldung                | Wer sich registrieren darf (nur Admins, mit Einladungslink, alle), Passkeys, Zwei-Faktor-Pflicht  |
-| Speicher                 | Speicher pro Person, größte Datei, Frist für den Papierkorb, Versionen pro Datei, Suche im Inhalt |
-| Teilen                   | Öffentliche Links, Passwort für Links, längste Gültigkeit, Teilen mit Personen, Personen finden   |
-| Aufbewahrung und Updates | Wie lange Protokoll und Aktivität bleiben, Versionsprüfung                                        |
-| Rechtliches              | Impressum und Datenschutz, als Adresse einer anderen Seite oder als Text                          |
+| Bereich                  | Einstellungen                                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Allgemein                | Name der Cloud, Adresse, Standardsprache                                                                                               |
+| Hinweis für alle         | Text, Art und wie lange er erscheint                                                                                                   |
+| Wartungsmodus            | An oder aus, dazu die Nachricht auf der Wartungsseite                                                                                  |
+| Aussehen                 | Grundfarbe für alle                                                                                                                    |
+| Anmeldung                | Wer sich registrieren darf (nur Admins, mit Einladungslink, alle), Passkeys, Zwei-Faktor-Pflicht                                       |
+| Speicher                 | Speicher pro Person, größte Datei, Frist für den Papierkorb, Versionen pro Datei, Suche im Inhalt                                      |
+| Teilen                   | Öffentliche Links, Passwort für Links, längste Gültigkeit, Standort aus Fotos in Links entfernen, Teilen mit Personen, Personen finden |
+| Aufbewahrung und Updates | Wie lange Protokoll und Aktivität bleiben, Versionsprüfung                                                                             |
+| Rechtliches              | Impressum und Datenschutz, als Adresse einer anderen Seite oder als Text                                                               |
 
 Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie in eine `.env` neben der `docker-compose.yml` ein, ohne Docker setzt du sie beim Start:
 
-| Variable                                                                                               | Standard                                      | Bedeutung                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                                                                                 | `3000`                                        | Port, auf dem MoeCloud lauscht                                                                                                          |
-| `HOST`                                                                                                 | `0.0.0.0`                                     | Adresse, auf der MoeCloud lauscht                                                                                                       |
-| `DATA_DIR`                                                                                             | `data/` im Projekt, im Container `/data`      | Ordner für Datenbank und Dateien                                                                                                        |
-| `PUBLIC_URL`                                                                                           |                                               | Vorgabe für die Adresse im Einrichtungslink und im Assistenten, solange MoeCloud noch nicht eingerichtet ist                            |
-| `TRUST_PROXY`                                                                                          | `loopback,linklocal,uniquelocal`              | Welchen Proxys MoeCloud `X-Forwarded-*` glaubt: `true` für alle, `false` für keinen, sonst Adressen oder Netze durch Kommas getrennt    |
-| `LOG_LEVEL`                                                                                            | `info`                                        | `debug`, `info`, `warn` oder `error`                                                                                                    |
-| `LOG_FORMAT`                                                                                           | `pretty`                                      | `pretty` für die Konsole, `json` für Loki, Graylog und Co.                                                                              |
-| `TZ`                                                                                                   | Systemzeit, mit Docker `Europe/Berlin`        | Zeitzone für Log und nächtliche Sicherung                                                                                               |
-| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_SOCKET`                                                        | Port `3310`                                   | Vorgabe für die Verbindung zu ClamAV. Ist `CLAMAV_HOST` oder `CLAMAV_SOCKET` gesetzt, ist der Virenscan von Anfang an eingeschaltet     |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME` | Port `587` mit `starttls`                     | Vorgaben für den E-Mail-Versand, siehe [E-Mail](#e-mail)                                                                                |
-| `METRICS_TOKEN`                                                                                        |                                               | Token für `/metrics`, siehe [Metriken für Prometheus](#metriken-für-prometheus)                                                         |
-| `UPDATE_CHECK_URL`                                                                                     | `https://moecloud.moestudio.net/version.json` | Adresse für die [Versionsprüfung](#versionsprüfung), mit `off` fest aus                                                                 |
-| `FFMPEG_PATH`, `FFPROBE_PATH`, `PDFTOPPM_PATH`, `PDFTOTEXT_PATH`                                       | Suche im `PATH`                               | Pfade zu den Programmen für Vorschauen                                                                                                  |
-| `MOECLOUD_INSTALL`                                                                                     | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
-| `PUID` / `PGID`                                                                                        | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
-| `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                      | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
-| `MOECLOUD_VERSION`                                                                                     | `latest`                                      | Nur Docker: Tag des Images, etwa `1.3.4`. Das Installationsskript trägt hier die installierte Version ein                               |
-| `DOMAIN`                                                                                               |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
-| `VITE_DEV_SERVER`                                                                                      |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
+| Variable                                                                                                    | Standard                                      | Bedeutung                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                                                                                      | `3000`                                        | Port, auf dem MoeCloud lauscht                                                                                                          |
+| `HOST`                                                                                                      | `0.0.0.0`                                     | Adresse, auf der MoeCloud lauscht                                                                                                       |
+| `DATA_DIR`                                                                                                  | `data/` im Projekt, im Container `/data`      | Ordner für Datenbank und Dateien                                                                                                        |
+| `PROCESSING_WORKERS`                                                                                        | Kerne minus eins, höchstens 4                 | Wie viele Dateien gleichzeitig Vorschaubilder, Bildinfos und Suchtext bekommen                                                          |
+| `BACKUP_COPY_DIR`                                                                                           |                                               | Zweiter Ordner, in den jede Sicherung zusätzlich kopiert wird, siehe [Datensicherung](#datensicherung)                                  |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE`, `OIDC_ADMIN_GROUP` |                                               | Startwerte für die [Anmeldung über SSO](#anmeldung-über-sso)                                                                            |
+| `DATABASE_URL` / `DATABASE_URL_FILE`                                                                        | `data/moecloud.db`                            | SQLite-Datei oder Adresse einer PostgreSQL-Datenbank, siehe [Datenbank](#datenbank)                                                     |
+| `POSTGRES_PASSWORD`                                                                                         |                                               | Nur Docker mit `docker/postgres.yml`: Passwort für PostgreSQL, das Installationsskript erzeugt es                                       |
+| `PUBLIC_URL`                                                                                                |                                               | Vorgabe für die Adresse im Einrichtungslink und im Assistenten, solange MoeCloud noch nicht eingerichtet ist                            |
+| `TRUST_PROXY`                                                                                               | `loopback,linklocal,uniquelocal`              | Welchen Proxys MoeCloud `X-Forwarded-*` glaubt: `true` für alle, `false` für keinen, sonst Adressen oder Netze durch Kommas getrennt    |
+| `LOG_LEVEL`                                                                                                 | `info`                                        | `debug`, `info`, `warn` oder `error`                                                                                                    |
+| `LOG_FORMAT`                                                                                                | `pretty`                                      | `pretty` für die Konsole, `json` für Loki, Graylog und Co.                                                                              |
+| `TZ`                                                                                                        | Systemzeit, mit Docker `Europe/Berlin`        | Zeitzone für Log und nächtliche Sicherung                                                                                               |
+| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_SOCKET`                                                             | Port `3310`                                   | Vorgabe für die Verbindung zu ClamAV. Ist `CLAMAV_HOST` oder `CLAMAV_SOCKET` gesetzt, ist der Virenscan von Anfang an eingeschaltet     |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`      | Port `587` mit `starttls`                     | Vorgaben für den E-Mail-Versand, siehe [E-Mail](#e-mail)                                                                                |
+| `METRICS_TOKEN`                                                                                             |                                               | Token für `/metrics`, siehe [Metriken für Prometheus](#metriken-für-prometheus)                                                         |
+| `UPDATE_CHECK_URL`                                                                                          | `https://moecloud.moestudio.net/version.json` | Adresse für die [Versionsprüfung](#versionsprüfung), mit `off` fest aus                                                                 |
+| `FFMPEG_PATH`, `FFPROBE_PATH`, `PDFTOPPM_PATH`, `PDFTOTEXT_PATH`                                            | Suche im `PATH`                               | Pfade zu den Programmen für Vorschauen                                                                                                  |
+| `MOECLOUD_INSTALL`                                                                                          | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script` |
+| `PUID` / `PGID`                                                                                             | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                   |
+| `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                           | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                               |
+| `MOECLOUD_VERSION`                                                                                          | `latest`                                      | Nur Docker: Tag des Images, etwa `1.4.0`. Das Installationsskript trägt hier die installierte Version ein                               |
+| `DOMAIN`                                                                                                    |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                               |
+| `VITE_DEV_SERVER`                                                                                           |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                              |
 
 ## Metriken für Prometheus
 
@@ -603,9 +686,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.3.4",
-  "date": "2026-11-11",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.3.4",
+  "version": "1.4.0",
+  "date": "2026-11-14",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.4.0",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -622,9 +705,46 @@ Was neu ist und worauf du achten musst, steht im [Changelog](CHANGELOG.md).
 - **Mit Docker**: `docker compose pull` und `docker compose up -d`. Hast du `MOECLOUD_VERSION` gesetzt, trägst du dort vorher die neue Version ein
 - **Mit Node.js**: `git pull`, `npm ci`, `npm run build` und MoeCloud neu starten
 
-Ändert sich mit einem Update die Datenbank, sichert MoeCloud sie beim ersten Start als `moecloud-update-…db` in `data/backups/` und bringt sie danach auf den neuen Stand. Beim Update von 1.0.0 auf 1.1.0 kommen die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links dazu, beim Update von 0.1.0 auf 1.0.0 die Tabellen für Protokoll, Aktivität, Benachrichtigungen, Kommentare, Webhooks und den Suchindex. Version 1.2.0 ändert den Aufbau der Datenbank nicht. Beim ersten Start ordnet sie Rohdateien als Bilder ein und merkt Dateien, die jetzt eine Vorschau bekommen, für die Verarbeitung vor. Vorhandene Dateien liest MoeCloud danach im Hintergrund für Vorschaubilder, Fotos und Suche ein, das läuft nebenher und braucht nichts von dir. Den Fortschritt siehst du unter **Admin › System**.
+Ändert sich mit einem Update die Datenbank, sichert MoeCloud sie beim ersten Start als `moecloud-update-…db` in `data/backups/` und bringt sie danach auf den neuen Stand. Beim Update auf 1.4.0 kommen die Tabelle für gespeicherte Suchen und eine Spalte samt Index für die Zeitleiste in Fotos dazu, die MoeCloud beim ersten Start für alle vorhandenen Fotos füllt. Beim Update von 1.0.0 auf 1.1.0 kommen die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links dazu, beim Update von 0.1.0 auf 1.0.0 die Tabellen für Protokoll, Aktivität, Benachrichtigungen, Kommentare, Webhooks und den Suchindex. Version 1.2.0 ändert den Aufbau der Datenbank nicht. Beim ersten Start ordnet sie Rohdateien als Bilder ein und merkt Dateien, die jetzt eine Vorschau bekommen, für die Verarbeitung vor. Vorhandene Dateien liest MoeCloud danach im Hintergrund für Vorschaubilder, Fotos und Suche ein, das läuft nebenher und braucht nichts von dir. Den Fortschritt siehst du unter **Admin › System**.
 
 Wer von 0.1.0 kommt, startet für den Virenscan danach ClamAV und schaltet ihn unter **Admin › Virenscan** ein und richtet für E-Mails den Versand unter **Admin › E-Mail** ein. Wer mit dem Installationsskript von 1.0.0 kommt, bekommt beim ersten `sudo moecloud update` auch den neuen Befehl `moecloud` mit `status`, `doctor` und `auto-update`.
+
+## Datenbank
+
+Konten, Ordner, Freigaben und Einstellungen speichert MoeCloud in SQLite oder PostgreSQL. Deine Dateien liegen in beiden Fällen in `data/blobs/`.
+
+- **SQLite** ist der Standard. Die Datenbank ist eine Datei in `data/`, braucht keinen eigenen Dienst und keine Pflege und ist für die meisten Installationen die schnellste Wahl, weil jede Abfrage direkt im Prozess läuft.
+- **PostgreSQL** lohnt sich, wenn `data/` auf einem Netzlaufwerk oder einem FUSE-Dateisystem wie mergerfs liegt, wo die Dateisperren von SQLite nicht zuverlässig funktionieren, wenn viele Konten gleichzeitig arbeiten oder wenn du PostgreSQL schon mit eigener Sicherung betreibst. Jede Abfrage geht dann über eine Verbindung und braucht etwa 0,2 ms länger.
+
+MoeCloud braucht PostgreSQL 15 oder neuer und eine leere Datenbank, die dem Benutzer von MoeCloud gehört. Die Adresse kommt in `DATABASE_URL`:
+
+```bash
+DATABASE_URL=postgres://moecloud:passwort@db.example.com:5432/moecloud
+```
+
+Sonderzeichen im Passwort schreibst du in der Adresse mit `%`, etwa `%40` für `@`, oder du lässt das Passwort weg und setzt es mit `PGPASSWORD`. Für TLS hängst du `?sslmode=verify-full` an, mit eigener Zertifizierungsstelle zusätzlich `&sslrootcert=/pfad/ca.pem`. Für Docker Secrets liest MoeCloud die Adresse mit `DATABASE_URL_FILE` aus einer Datei. Beim ersten Start legt MoeCloud alle Tabellen an. Darf der Benutzer die Erweiterungen `unaccent` und `pg_trgm` einrichten, was der Eigentümer einer Datenbank ab PostgreSQL 13 kann, findet die Suche Wörter auch ohne Akzente und Teile von Namen über einen eigenen Index. Ohne sie funktioniert alles, nur etwas langsamer. Welche Datenbank in welcher Version läuft, zeigen **Admin › System** und `moecloud db`.
+
+### Umziehen
+
+`db copy` kopiert alle Daten von einer Datenbank in eine andere, in beide Richtungen. Das Ziel muss leer sein oder darf nur von MoeCloud angelegt sein, ohne Konten und Dateien. Halte MoeCloud dafür an, die alte Datenbank bleibt unverändert liegen.
+
+Mit dem Installationsskript erledigt das ein Befehl. Er hält MoeCloud an, startet PostgreSQL, kopiert die Daten, stellt die Konfiguration um und startet MoeCloud wieder:
+
+```bash
+sudo moecloud database postgres
+sudo moecloud database sqlite
+```
+
+Mit Docker richtest du PostgreSQL ein wie unter [PostgreSQL dazunehmen](#postgresql-dazunehmen), startest aber noch nicht alles, sondern kopierst die Daten vorher:
+
+```bash
+docker compose stop moecloud
+docker compose up -d postgres
+docker compose run --rm --name moecloud-cli moecloud moecloud db copy --from /data/moecloud.db
+docker compose up -d
+```
+
+Ohne Ziel kopiert `db copy` in die Datenbank aus `DATABASE_URL`. Zurück zu SQLite geht es mit `db copy /data/moecloud.db`, solange dort keine Datei liegt. Danach nimmst du `docker/postgres.yml` aus `COMPOSE_FILE` und startest mit `docker compose up -d --remove-orphans`. Hast du MoeCloud schon mit dem leeren PostgreSQL gestartet, ist das kein Problem: Solange es dort noch keine Konten gibt, nimmt `db copy` die Datenbank als Ziel, und das Log weist beim Start auf eine übrig gebliebene SQLite-Datei mit Konten hin.
 
 ## Datensicherung
 
@@ -647,9 +767,24 @@ Die Datenbank sichert MoeCloud jede Nacht um 3 Uhr als `moecloud-auto-…db` und
 docker compose exec moecloud moecloud backup
 ```
 
+**Zweiter Ordner**: Mit `BACKUP_COPY_DIR` kopiert MoeCloud jede Sicherung zusätzlich dorthin, etwa auf eine andere Platte oder ein Netzlaufwerk, und räumt dort nach denselben Regeln auf. Mit Docker hängst du den Ordner als Volume ein, er muss dem Benutzer aus `PUID` gehören:
+
+```yaml
+services:
+  moecloud:
+    environment:
+      BACKUP_COPY_DIR: /backups
+    volumes:
+      - /mnt/nas/moecloud-sicherungen:/backups
+```
+
+Klappt eine Kopie nicht, bleibt die Sicherung in `data/backups/` trotzdem bestehen. Admins bekommen eine Benachrichtigung und sehen den Grund unter **Admin › Sicherungen**.
+
 Bevor ein Update die Datenbank ändert, legt MoeCloud eine Sicherung `moecloud-update-v3-…db` mit dem alten Stand an und behält die letzten drei. Klappt diese Sicherung nicht, startet MoeCloud nicht und lässt die Datenbank, wie sie ist. Die Meldung im Log nennt dann den Ordner und den Grund. Sicherungen brauchen keine Dateisperren, `data/backups/` darf deshalb auch auf einem Netzlaufwerk liegen. Die Datenbank selbst gehört auf einen lokalen Datenträger.
 
 Die Dateien selbst stecken nicht in diesen Sicherungen. Sichere den Ordner `data/blobs/` zusätzlich, etwa mit `restic`, Borg oder `rsync`. Zum Zurückspielen MoeCloud beenden, die Sicherung als `data/moecloud.db` ablegen, `moecloud.db-wal` und `moecloud.db-shm` löschen, `blobs/` zurückkopieren und MoeCloud wieder starten. `check` zeigt danach, ob alle Dateien da sind.
+
+Mit PostgreSQL sind die Sicherungen ebenfalls SQLite-Dateien, die MoeCloud aus einem festen Stand der Datenbank schreibt. Du kannst sie also genauso herunterladen, ansehen und aufheben. Zum Zurückspielen legst du eine neue, leere Datenbank an und kopierst die Sicherung mit `db copy --from /data/backups/moecloud-auto-….db` hinein. `pg_dump` funktioniert daneben wie gewohnt.
 
 Die Datenbank enthält Passwort-Hashes, die Schlüssel der Authenticator-Apps, das Passwort für den SMTP-Server und den Schlüssel, mit dem MoeCloud App-Passwörter prüft. Bewahre Sicherungen so sicher auf wie den Server selbst.
 
@@ -691,6 +826,8 @@ Ist die Datenbank verloren und es gibt keine Sicherung, liegen deine Dateien tro
 | `mail-test <adresse>`                    | Test-E-Mail schicken                                                                                                                                 |
 | `process`                                | Vorschaubilder, Bildinfos und Suchindex nachholen                                                                                                    |
 | `recover [name] [--dry-run]`             | Dateien aus `data/blobs/` ohne Eintrag in der Datenbank zurückholen, siehe [Dateien ohne Datenbank zurückholen](#dateien-ohne-datenbank-zurückholen) |
+| `db`                                     | Art, Version, Größe und Stand der Datenbank zeigen                                                                                                   |
+| `db copy [--from quelle] [ziel]`         | Alle Daten in eine leere Datenbank kopieren, als SQLite-Datei oder `postgres://…`, siehe [Umziehen](#umziehen)                                       |
 | `reindex`                                | Suchindex für Inhalte neu aufbauen                                                                                                                   |
 | `version`                                | Installierte und neueste Version anzeigen                                                                                                            |
 
@@ -750,15 +887,20 @@ curl -u emi:APP-PASSWORT -F "file=@rechnung.pdf" https://cloud.example.com/api/n
 | `GET`   | `/api/tags`                                                   | Deine Schlagwörter, `POST` legt eins an, `PUT /api/nodes/tags` mit JSON `{ "ids", "add", "remove" }` vergibt sie                                              |
 | `GET`   | `/api/albums`                                                 | Deine Alben, `POST` legt eins an, `POST /api/albums/:id/items` nimmt Fotos auf                                                                                |
 | `PUT`   | `/api/nodes/:id/watch`                                        | Ordner beobachten, JSON `{ "watching" }`                                                                                                                      |
+| `PUT`   | `/api/nodes/:id/cleanup`                                      | Aufräumregel für einen eigenen Ordner, JSON `{ "days" }` mit 1 bis 3650 oder `null` zum Abschalten                                                            |
+| `GET`   | `/api/nodes/:id/email`                                        | Betreff, Absender, Empfänger, Datum und Anhänge einer `.eml`-Datei, den Inhalt unter `/email/body` und Anhänge unter `/email/attachments/:index`              |
 | `POST`  | `/api/nodes/:id/grants`                                       | Teilen, JSON `{ "userId", "permission" }` oder `{ "groupId", "permission" }` mit `view` oder `edit`, optional `expiresAt` in Millisekunden                    |
 | `POST`  | `/api/nodes/:id/links`                                        | Öffentlichen Link anlegen, JSON mit `label`, `password`, `expiresAt`, `maxDownloads`, `allowDownload`, `allowUpload`, `uploadOnly`, `notify`                  |
 | `PATCH` | `/api/links/:id`                                              | Link ändern, dieselben Felder und `paused` zum Pausieren                                                                                                      |
 | `POST`  | `/api/links/:id/send`                                         | Link per E-Mail verschicken, JSON `{ "email" }`. Braucht den eingerichteten E-Mail-Versand                                                                    |
 | `GET`   | `/api/shared`                                                 | Was mit dir geteilt ist und was du teilst                                                                                                                     |
 | `GET`   | `/api/storage`, `/api/storage/report`                         | Belegter Speicher und Grenze, dazu die Aufteilung nach Art, die größten und die doppelten Dateien                                                             |
+| `POST`  | `/api/storage/duplicates`                                     | Doppelte Dateien aufräumen, JSON `{ "keep": [] }` mit den IDs der Kopien, die bleiben. Alle anderen mit gleichem Inhalt kommen in den Papierkorb              |
+| `GET`   | `/api/account/export`                                         | Alle eigenen Dateien und `konto.json` als ZIP                                                                                                                 |
 | `GET`   | `/api/notifications`                                          | Benachrichtigungen, `POST /api/notifications/read` markiert sie als gelesen                                                                                   |
 | `GET`   | `/api/events`                                                 | Änderungen live als Server-Sent Events                                                                                                                        |
 | `GET`   | `/api/admin/groups`                                           | Nur Admins: Gruppen mit Mitgliedern, `POST` legt eine an, `PATCH` und `DELETE` unter `/api/admin/groups/:id` ändern und löschen                               |
+| `POST`  | `/api/admin/users/import`                                     | Nur Admins: Personen aus CSV anlegen, JSON `{ "csv", "sendLinks", "apply" }`. Ohne `apply` kommt nur die Vorschau                                             |
 
 Öffentlich erreichbar sind `/s/:token` (geteilte Links), `/dav/` (WebDAV), `/forgot` und `/reset` (Passwort vergessen), `/impressum`, `/datenschutz`, `/metrics` mit Token und `/healthz` für Health-Checks.
 
@@ -797,37 +939,38 @@ npm run dev
 
 `npm run dev:web` startet Vite auf Port 5173, `npm run dev` startet den Server auf Port 3000 mit `VITE_DEV_SERVER=http://localhost:5173`. Änderungen an der Oberfläche erscheinen sofort, der Server startet bei Änderungen neu. Der Server läuft direkt aus TypeScript, ohne eigenen Build.
 
-| Befehl                                | Zweck                                                                                                                                                                         |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run typecheck`                   | TypeScript für Server und Oberfläche prüfen                                                                                                                                   |
-| `npm run build`                       | Oberfläche nach `dist/web` bauen                                                                                                                                              |
-| `npm test`                            | Tests für API, Anmeldung, Zwei-Faktor-Pflicht, Freigaben, Gruppen, Links, Archive, WebDAV, Virenscan, E-Mail, Vorschauen und Verwaltung. Braucht vorher `npm run build`       |
-| `npm run test:browser`                | Abläufe im Browser mit Chrome prüfen und die Screenshots in `docs/screenshots` neu erzeugen. Braucht vorher `npm run build`, mit `CHROME_PATH` gibst du den Pfad zu Chrome an |
-| `npm run format`                      | Code mit Prettier formatieren                                                                                                                                                 |
-| `npm run check`                       | Formatierung, Typen, Versionsangaben, Übersetzungen, Build und Tests in einem Durchlauf                                                                                       |
-| `node tools/i18n.ts`                  | Prüft, ob alle Texte übersetzt sind und alle Platzhalter stimmen                                                                                                              |
-| `node tools/version.ts [x.y.z]`       | Prüft, ob überall dieselbe Version steht und im Changelog nichts doppelt ist. Mit einer Version trägt es sie überall ein                                                      |
-| `node tools/demo.ts <adresse> [code]` | Legt Beispieldaten mit Emi, Mia und Lea an, mit Code auch gleich die Einrichtung                                                                                              |
-| `node tools/icons.ts`                 | Erzeugt alle Icons aus `public/favicon.svg`                                                                                                                                   |
+| Befehl                                | Zweck                                                                                                                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                   | TypeScript für Server und Oberfläche prüfen                                                                                                                                                        |
+| `npm run build`                       | Oberfläche nach `dist/web` bauen                                                                                                                                                                   |
+| `npm test`                            | Tests für API, Anmeldung, Zwei-Faktor-Pflicht, Freigaben, Gruppen, Links, Archive, WebDAV, Virenscan, E-Mail, Vorschauen und Verwaltung. Braucht vorher `npm run build`                            |
+| `npm run test:postgres`               | Dieselben Tests mit PostgreSQL statt SQLite. `TEST_POSTGRES` zeigt auf einen Server, auf dem der Benutzer Datenbanken anlegen darf, Standard ist `postgres://moecloud:moecloud@localhost/postgres` |
+| `npm run test:browser`                | Abläufe im Browser mit Chrome prüfen und die Screenshots in `docs/screenshots` neu erzeugen. Braucht vorher `npm run build`, mit `CHROME_PATH` gibst du den Pfad zu Chrome an                      |
+| `npm run format`                      | Code mit Prettier formatieren                                                                                                                                                                      |
+| `npm run check`                       | Formatierung, Typen, Versionsangaben, Übersetzungen, Build und Tests in einem Durchlauf                                                                                                            |
+| `node tools/i18n.ts`                  | Prüft, ob alle Texte übersetzt sind und alle Platzhalter stimmen                                                                                                                                   |
+| `node tools/version.ts [x.y.z]`       | Prüft, ob überall dieselbe Version steht und im Changelog nichts doppelt ist. Mit einer Version trägt es sie überall ein                                                                           |
+| `node tools/demo.ts <adresse> [code]` | Legt Beispieldaten mit Emi, Mia und Lea an, mit Code auch gleich die Einrichtung                                                                                                                   |
+| `node tools/icons.ts`                 | Erzeugt alle Icons aus `public/favicon.svg`                                                                                                                                                        |
 
-Die Tests für den Virenscan brauchen kein ClamAV, sie sprechen mit einem nachgebauten `clamd`. E-Mails landen in den Tests in einem Postausgang im Speicher.
+Die Tests für den Virenscan brauchen kein ClamAV, sie sprechen mit einem nachgebauten `clamd`. E-Mails landen in den Tests in einem Postausgang im Speicher, die Anmeldung über SSO läuft gegen `oidc-provider` als Anbieter im Testprozess.
 
 Die Texte sind auf Deutsch geschrieben und dienen gleichzeitig als Schlüssel für die Übersetzung. Die englischen Texte für Oberfläche und Server liegen in `src/i18n/en.json`, Platzhalter wie `{name}` bleiben gleich. Wo Einzahl und Mehrzahl im Deutschen gleich sind, im Englischen aber nicht, stehen beide Formen durch `|` getrennt, etwa `"{count} Ordner": "{count} folder|{count} folders"`.
 
-| Ordner          | Inhalt                                                                                                                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/routes`    | Seiten und API, nach Bereichen getrennt                                                                                      |
-| `src/services`  | Logik für Dateien, Uploads, Vorschauen, Virenscan, E-Mail, Benachrichtigungen, Freigaben, Anmeldung, Sicherungen und Wartung |
-| `src/lib`       | Datenbank, Migrationen, ClamAV, Krypto, HTTP-Helfer, Validierung und Übersetzung                                             |
-| `src/views`     | Seiten ohne JavaScript wie Anmeldung, Registrierung und Passwort vergessen, mit Preact auf dem Server                        |
-| `src/i18n`      | Englische Texte                                                                                                              |
-| `web/src`       | Oberfläche mit React und Material UI, nach Bereichen getrennt, die Vorschauen unter `app/files/preview`                      |
-| `web/src/theme` | Farbschema aus der Grundfarbe, Tokens und MUI-Theme                                                                          |
-| `docker/`       | Startskript, Kommandozeile im Container, der Befehl `moecloud` für den Server, Caddyfile und die Ergänzung für ClamAV        |
-| `test/`         | API-Tests und der Ablauf im Browser                                                                                          |
-| `tools/`        | Übersetzungen und Versionsangaben prüfen, Beispieldaten und Icons                                                            |
-| `cli.ts`        | Befehle für die Kommandozeile                                                                                                |
-| `install.sh`    | Installationsskript, das auch unter moecloud.moestudio.net/install.sh liegt                                                  |
+| Ordner          | Inhalt                                                                                                                                 |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/routes`    | Seiten und API, nach Bereichen getrennt                                                                                                |
+| `src/services`  | Logik für Dateien, Uploads, Vorschauen, Virenscan, E-Mail, Benachrichtigungen, Freigaben, Anmeldung, Sicherungen und Wartung           |
+| `src/lib`       | Datenbank für SQLite und PostgreSQL, Migrationen, Umzug zwischen Datenbanken, ClamAV, Krypto, HTTP-Helfer, Validierung und Übersetzung |
+| `src/views`     | Seiten ohne JavaScript wie Anmeldung, Registrierung und Passwort vergessen, mit Preact auf dem Server                                  |
+| `src/i18n`      | Englische Texte                                                                                                                        |
+| `web/src`       | Oberfläche mit React und Material UI, nach Bereichen getrennt, die Vorschauen unter `app/files/preview`                                |
+| `web/src/theme` | Farbschema aus der Grundfarbe, Tokens und MUI-Theme                                                                                    |
+| `docker/`       | Startskript, Kommandozeile im Container, der Befehl `moecloud` für den Server, Caddyfile und die Ergänzungen für ClamAV und PostgreSQL |
+| `test/`         | API-Tests und der Ablauf im Browser                                                                                                    |
+| `tools/`        | Übersetzungen und Versionsangaben prüfen, Beispieldaten und Icons                                                                      |
+| `cli.ts`        | Befehle für die Kommandozeile                                                                                                          |
+| `install.sh`    | Installationsskript, das auch unter moecloud.moestudio.net/install.sh liegt                                                            |
 
 ## Support, Mitwirken und Lizenz
 

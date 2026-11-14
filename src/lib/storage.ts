@@ -1,4 +1,5 @@
-import { statfsSync } from 'node:fs';
+import { existsSync, statfsSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 
 const SHARED: Record<number, string> = {
   0x6969: 'NFS',
@@ -18,5 +19,19 @@ export function sharedFileSystem(path: string, type?: number) {
     return SHARED[(type ?? Number(statfsSync(path).type)) >>> 0] ?? null;
   } catch {
     return null;
+  }
+}
+
+export function leftoverSqlite(file: string) {
+  if (!existsSync(file)) return 0;
+  let database: DatabaseSync | null = null;
+  try {
+    database = new DatabaseSync(file, { readOnly: true });
+    const row = database.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number } | undefined;
+    return Number(row?.count ?? 0);
+  } catch {
+    return 0;
+  } finally {
+    database?.close();
   }
 }

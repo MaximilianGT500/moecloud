@@ -21,11 +21,12 @@ import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import EditRounded from '@mui/icons-material/EditRounded';
 import PersonAddRounded from '@mui/icons-material/PersonAddRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
+import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
 import { api, errorText } from '../../lib/api';
 import { boot } from '../../lib/boot';
 import { formatBytes, formatDate, formatNumber } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
-import { c, radius } from '../../theme/tokens';
+import { c, fonts, radius } from '../../theme/tokens';
 import { Section, UserAvatar } from '../common/bits';
 import { confirm } from '../common/dialogs';
 import { QuotaField } from '../common/QuotaField';
@@ -411,11 +412,206 @@ function UserDialog({
   );
 }
 
+interface ImportLine {
+  line: number;
+  username: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+  quota: number | null;
+  status: 'ready' | 'created' | 'skipped' | 'error';
+  message: string | null;
+  sent?: boolean;
+}
+
+const IMPORT_EXAMPLE = 'username;name;email;role;quota\nlea;Lea;lea@example.com;user;10 GB\nmia;Mia;mia@example.com;admin;';
+
+function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: boolean; onClose: () => void; onDone: () => void }) {
+  const [csv, setCsv] = useState('');
+  const [sendLinks, setSendLinks] = useState(true);
+  const [lines, setLines] = useState<ImportLine[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const reset = () => {
+    setCsv('');
+    setLines(null);
+    setDone(false);
+  };
+
+  const send = async (apply: boolean) => {
+    setBusy(true);
+    try {
+      const result = await api.post<{ lines: ImportLine[]; created: number }>('/api/admin/users/import', { csv, sendLinks, apply });
+      setLines(result.lines);
+      if (apply) {
+        setDone(true);
+        toast(tn(result.created, 'Eine Person angelegt', '{count} Personen angelegt'));
+        onDone();
+      }
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ready = lines?.filter((line) => line.status === 'ready').length ?? 0;
+  const close = () => {
+    if (busy) return;
+    reset();
+    onClose();
+  };
+  const label: Record<ImportLine['status'], string> = {
+    ready: t('Bereit'),
+    created: t('Angelegt'),
+    skipped: t('Übersprungen'),
+    error: t('Fehler'),
+  };
+
+  return (
+    <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
+      <DialogTitle>{t('Personen aus CSV importieren')}</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {!lines ? (
+          <>
+            <DialogContentText>
+              {t(
+                'Die erste Zeile nennt die Spalten. Pflicht sind username und name, dazu passen email, role, quota, password und language. Trenne mit Komma oder Semikolon.'
+              )}
+            </DialogContentText>
+            <Box
+              component="pre"
+              sx={{ m: 0, p: 1.5, borderRadius: `${radius.sm}px`, bgcolor: c.surfaceContainerHigh, fontSize: 13, overflowX: 'auto' }}
+            >
+              {IMPORT_EXAMPLE}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button component="label" variant="tonal" startIcon={<UploadFileRounded />} disabled={busy}>
+                {t('CSV-Datei wählen')}
+                <input
+                  hidden
+                  type="file"
+                  accept=".csv,text/csv,text/plain"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) void file.text().then(setCsv);
+                  }}
+                />
+              </Button>
+              <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                {t('oder füge den Inhalt unten ein')}
+              </Typography>
+            </Box>
+            <TextField
+              multiline
+              minRows={5}
+              maxRows={12}
+              label={t('CSV')}
+              value={csv}
+              onChange={(event) => setCsv(event.target.value)}
+              disabled={busy}
+              slotProps={{ htmlInput: { spellCheck: false, style: { fontFamily: fonts.mono, fontSize: 13 } } }}
+            />
+            <FormControlLabel
+              disabled={!mail || busy}
+              control={<Switch checked={sendLinks && mail} onChange={(event) => setSendLinks(event.target.checked)} />}
+              label={
+                mail ? t('Wer kein Passwort hat, bekommt einen Link per E-Mail') : t('Ohne E-Mail-Versand braucht jede Person ein Passwort')
+              }
+            />
+          </>
+        ) : (
+          <>
+            <DialogContentText>
+              {done
+                ? t('Fertig. So ist es gelaufen:')
+                : ready
+                  ? tn(ready, 'Eine Person kann angelegt werden.', '{count} Personen können angelegt werden.')
+                  : t('Niemand aus der Datei kann angelegt werden.')}
+            </DialogContentText>
+            <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {lines.map((line) => (
+                <Box
+                  component="li"
+                  key={line.line}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    p: 1,
+                    borderRadius: `${radius.sm}px`,
+                    bgcolor: c.surfaceContainerLow,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ color: c.onSurfaceVariant, minWidth: 28, fontVariantNumeric: 'tabular-nums' }}>
+                    {line.line}
+                  </Typography>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
+                      {line.name || line.username} {line.username ? `@${line.username}` : ''}
+                    </Typography>
+                    <Typography variant="caption" component="p" sx={{ color: line.status === 'error' ? c.error : c.onSurfaceVariant }}>
+                      {line.message ??
+                        [
+                          line.email,
+                          line.role === 'admin' ? t('Admin') : null,
+                          line.quota ? formatBytes(line.quota) : null,
+                          line.sent ? t('Link verschickt') : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    size="small"
+                    label={label[line.status]}
+                    sx={
+                      line.status === 'error'
+                        ? { bgcolor: c.errorContainer, color: c.onErrorContainer }
+                        : line.status === 'skipped'
+                          ? undefined
+                          : { bgcolor: c.primaryContainer, color: c.onPrimaryContainer }
+                    }
+                  />
+                </Box>
+              ))}
+            </Box>
+          </>
+        )}
+      </DialogContent>
+      <DialogActions>
+        {lines && !done && (
+          <Button onClick={() => setLines(null)} disabled={busy} sx={{ mr: 'auto' }}>
+            {t('Zurück')}
+          </Button>
+        )}
+        <Button onClick={close} disabled={busy}>
+          {done ? t('Schließen') : t('Abbrechen')}
+        </Button>
+        {!lines && (
+          <Button variant="contained" onClick={() => void send(false)} disabled={busy || !csv.trim()}>
+            {t('Prüfen')}
+          </Button>
+        )}
+        {lines && !done && (
+          <Button variant="contained" onClick={() => void send(true)} disabled={busy || !ready}>
+            {tn(ready, 'Eine Person anlegen', '{count} Personen anlegen')}
+          </Button>
+        )}
+      </DialogActions>
+      {busy && <LinearProgress aria-label={t('Lädt')} />}
+    </Dialog>
+  );
+}
+
 export function PeopleSection() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [mail, setMail] = useState(false);
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState<{ user: AdminUser | null } | null>(null);
+  const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
 
   const load = () =>
@@ -448,9 +644,14 @@ export function PeopleSection() {
         users ? `${tn(users.length, '{count} Konto', '{count} Konten')} · ${t('zusammen {size}', { size: formatBytes(total) })}` : undefined
       }
       action={
-        <Button variant="contained" startIcon={<PersonAddRounded />} onClick={() => setEditing({ user: null })}>
-          {t('Person anlegen')}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Button variant="tonal" startIcon={<UploadFileRounded />} onClick={() => setImporting(true)}>
+            {t('Importieren')}
+          </Button>
+          <Button variant="contained" startIcon={<PersonAddRounded />} onClick={() => setEditing({ user: null })}>
+            {t('Person anlegen')}
+          </Button>
+        </Box>
       }
     >
       {!users ? (
@@ -561,6 +762,7 @@ export function PeopleSection() {
         }}
       />
       <DeleteDialog user={deleting} people={users ?? []} onClose={() => setDeleting(null)} onDeleted={() => void load()} />
+      <ImportDialog open={importing} mail={mail} onClose={() => setImporting(false)} onDone={() => void load()} />
     </Section>
   );
 }

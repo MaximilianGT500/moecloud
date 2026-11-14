@@ -27,7 +27,7 @@ import { triggerDownload } from './actions';
 import { Fact, MetaFacts, ScanState } from './facts';
 import { FileIcon, contentUrl, kindColor, kindLabel, previewType, thumbUrl, type Item } from './kinds';
 import { canEdit } from './model';
-import { useMeta } from './preview/media';
+import { useMeta } from './preview/meta';
 import { Preview } from './preview/Preview';
 
 const SLIDE_SECONDS = 5;

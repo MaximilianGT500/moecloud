@@ -1,4 +1,4 @@
-import { all, one, placeholders, run, tx } from '../lib/db.ts';
+import { all, dialect, IN_LIST, one, run, tx, type Param } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
 import { badRequest, conflict, forbidden, insufficientStorage, notFound } from '../lib/errors.ts';
 import { publish } from '../lib/events.ts';
@@ -41,13 +41,13 @@ export interface Access {
 }
 
 const CHAIN = `WITH RECURSIVE chain(id, depth) AS (
-  SELECT ?, 0
+  SELECT CAST(? AS TEXT) COLLATE BINARY, 0
   UNION ALL
   SELECT n.parent_id, c.depth + 1 FROM nodes n JOIN chain c ON n.id = c.id WHERE n.parent_id IS NOT NULL AND c.depth < 256
 )`;
 
-const TREE = (filter: string) => `WITH RECURSIVE tree(id, depth) AS (
-  SELECT ?, 0
+export const TREE = (filter: string) => `WITH RECURSIVE tree(id, depth) AS (
+  SELECT CAST(? AS TEXT) COLLATE BINARY, 0
   UNION ALL
   SELECT n.id, t.depth + 1 FROM nodes n JOIN tree t ON n.parent_id = t.id ${filter}
 )`;
@@ -454,7 +454,12 @@ export function restore(user: UserRow, ids: string[]) {
       const parentId = parent && !parent.trashed_at ? parent.id : user.root_id;
       const name = uniqueName(node.name, node.type === 'folder', taken(parentId));
       run('UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, trash_root = 0 WHERE id = ?', parentId, name, nameKey(name), id);
-      run(`${TREE('WHERE n.trashed_at = ?')} UPDATE nodes SET trashed_at = NULL WHERE id IN (SELECT id FROM tree)`, id, node.trashed_at);
+      run(
+        `${TREE('WHERE n.trashed_at = ?')} UPDATE nodes SET trashed_at = NULL, updated_at = ? WHERE id IN (SELECT id FROM tree)`,
+        id,
+        node.trashed_at,
+        Date.now()
+      );
       folders.add(parentId);
       restored.push(getNode(id)!);
       record({ owner: node.owner_id, actor: user.id, node: id, parent: parentId, action: 'restore', name });
@@ -572,6 +577,50 @@ function contentQuery(text: string) {
   return words.map((word, index) => `"${word}"${index === words.length - 1 && word.length >= 2 ? '*' : ''}`).join(' ');
 }
 
+function postgresQuery(text: string) {
+  const words = text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .slice(0, 8);
+  if (!words.length) return null;
+  return words.map((word, index) => `'${word}'${index === words.length - 1 && word.length >= 2 ? ':*' : ''}`).join(' & ');
+}
+
+function searchContent(user: UserRow, text: string, filter: { sql: string; params: Param[] }): Found[] {
+  if (dialect() === 'postgres') {
+    const match = postgresQuery(text);
+    if (!match) return [];
+    return all<Found>(
+      `SELECT n.*, p.name AS parent_name,
+         ts_headline('moecloud', left(b.content, 200000), q, 'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxWords=16, MinWords=6, MaxFragments=1') AS snippet
+       FROM blob_text b
+       CROSS JOIN to_tsquery('moecloud', ?) AS q
+       JOIN nodes n ON n.sha256 = b.sha256
+       LEFT JOIN nodes p ON p.id = n.parent_id
+       WHERE b.search @@ q AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+       ORDER BY ts_rank(b.search, q) DESC LIMIT 60`,
+      match,
+      user.id,
+      ...filter.params
+    );
+  }
+  const match = contentQuery(text);
+  if (!match) return [];
+  return all<Found>(
+    `SELECT n.*, p.name AS parent_name, snippet(blob_text_fts, 0, char(1), char(2), '…', 14) AS snippet
+     FROM blob_text_fts f
+     JOIN blob_text b ON b.id = f.rowid
+     JOIN nodes n ON n.sha256 = b.sha256
+     LEFT JOIN nodes p ON p.id = n.parent_id
+     WHERE blob_text_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+     ORDER BY rank LIMIT 60`,
+    match,
+    user.id,
+    ...filter.params
+  );
+}
+
 export interface SearchFilters {
   kind?: string;
   after?: number;
@@ -622,7 +671,7 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
     );
   }
   let byName: Found[];
-  if ([...text].length >= 3) {
+  if ([...text].length >= 3 && dialect() === 'sqlite') {
     byName = all<Found>(
       `SELECT n.*, p.name AS parent_name FROM nodes_fts f
        JOIN nodes n ON n.seq = f.rowid
@@ -644,22 +693,10 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
       ...filter.params
     );
   }
-  const match = content && filters.kind !== 'folder' ? contentQuery(text) : null;
-  if (!match) return byName;
+  if (!content || filters.kind === 'folder') return byName;
   let inside: Found[] = [];
   try {
-    inside = all<Found>(
-      `SELECT n.*, p.name AS parent_name, snippet(blob_text_fts, 0, char(1), char(2), '…', 14) AS snippet
-       FROM blob_text_fts f
-       JOIN blob_text b ON b.id = f.rowid
-       JOIN nodes n ON n.sha256 = b.sha256
-       LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE blob_text_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
-       ORDER BY rank LIMIT 60`,
-      match,
-      user.id,
-      ...filter.params
-    );
+    inside = searchContent(user, text, filter);
   } catch {
     inside = [];
   }
@@ -673,12 +710,6 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
     }
   }
   return byName;
-}
-
-function inChunks<T>(values: string[], fn: (chunk: string[]) => T[]): T[] {
-  const out: T[] = [];
-  for (let index = 0; index < values.length; index += 500) out.push(...fn(values.slice(index, index + 500)));
-  return out;
 }
 
 export interface Presented {
@@ -711,85 +742,84 @@ export interface Presented {
   snippet?: string | null;
   progress: number | null;
   watching: boolean;
+  cleanup: number | null;
 }
 
 type BlobInfo = Pick<BlobRow, 'sha256' | 'thumb' | 'meta' | 'scan_status' | 'taken_at' | 'width' | 'height'>;
 
 export function blobInfo(shas: string[]) {
+  if (shas.length === 0) return new Map<string, BlobInfo>();
   return new Map(
-    inChunks([...new Set(shas)], (chunk) =>
-      all<BlobInfo>(
-        `SELECT sha256, thumb, meta, scan_status, taken_at, width, height FROM blobs WHERE sha256 IN (${placeholders(chunk.length)})`,
-        ...chunk
-      )
+    all<BlobInfo>(
+      `SELECT sha256, thumb, meta, scan_status, taken_at, width, height FROM blobs WHERE sha256 ${IN_LIST}`,
+      JSON.stringify([...new Set(shas)])
     ).map((row) => [row.sha256, row])
   );
 }
 
 export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: NodeRow) => Role) = 'owner'): Presented[] {
   if (nodes.length === 0) return [];
-  const ids = nodes.map((node) => node.id);
+  const ids = JSON.stringify(nodes.map((node) => node.id));
   const stars = new Set(
-    inChunks(ids, (chunk) =>
-      all<{ node_id: string }>(
-        `SELECT node_id FROM stars WHERE user_id = ? AND node_id IN (${placeholders(chunk.length)})`,
-        viewer.id,
-        ...chunk
-      )
-    ).map((row) => row.node_id)
+    all<{ node_id: string }>(`SELECT node_id FROM stars WHERE user_id = ? AND node_id ${IN_LIST}`, viewer.id, ids).map((row) => row.node_id)
   );
   const tagged = new Map<string, string[]>();
-  for (const row of inChunks(ids, (chunk) =>
-    all<{ node_id: string; tag_id: string }>(
-      `SELECT nt.node_id, nt.tag_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id
-       WHERE t.owner_id = ? AND nt.node_id IN (${placeholders(chunk.length)}) ORDER BY t.name_key`,
-      viewer.id,
-      ...chunk
-    )
+  for (const row of all<{ node_id: string; tag_id: string }>(
+    `SELECT nt.node_id, nt.tag_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id
+     WHERE t.owner_id = ? AND nt.node_id ${IN_LIST} ORDER BY t.name_key`,
+    viewer.id,
+    ids
   )) {
     tagged.set(row.node_id, [...(tagged.get(row.node_id) ?? []), row.tag_id]);
   }
   const files = new Map(nodes.filter((node) => node.sha256).map((node) => [node.id, node.sha256]));
   const progress = new Map(
-    inChunks([...files.keys()], (chunk) =>
-      all<{ node_id: string; sha256: string; seconds: number; duration: number }>(
-        `SELECT node_id, sha256, seconds, duration FROM positions WHERE user_id = ? AND node_id IN (${placeholders(chunk.length)})`,
-        viewer.id,
-        ...chunk
-      )
+    (files.size
+      ? all<{ node_id: string; sha256: string; seconds: number; duration: number }>(
+          `SELECT node_id, sha256, seconds, duration FROM positions WHERE user_id = ? AND node_id ${IN_LIST}`,
+          viewer.id,
+          JSON.stringify([...files.keys()])
+        )
+      : []
     )
       .filter((row) => files.get(row.node_id) === row.sha256 && row.duration > 0)
       .map((row) => [row.node_id, Math.min(1, Math.round((row.seconds / row.duration) * 1000) / 1000)])
   );
   const shared = new Set(
-    inChunks(ids, (chunk) =>
-      all<{ node_id: string }>(
-        `SELECT node_id FROM links WHERE node_id IN (${placeholders(chunk.length)})
-         UNION SELECT node_id FROM grants WHERE node_id IN (${placeholders(chunk.length)})
-         UNION SELECT node_id FROM group_grants WHERE node_id IN (${placeholders(chunk.length)})`,
-        ...chunk,
-        ...chunk,
-        ...chunk
-      )
+    all<{ node_id: string }>(
+      `SELECT node_id FROM links WHERE node_id ${IN_LIST}
+       UNION SELECT node_id FROM grants WHERE node_id ${IN_LIST}
+       UNION SELECT node_id FROM group_grants WHERE node_id ${IN_LIST}`,
+      ids,
+      ids,
+      ids
     ).map((row) => row.node_id)
   );
   const folderIds = nodes.filter((node) => node.type === 'folder').map((node) => node.id);
+  const folders = JSON.stringify(folderIds);
   const counts = new Map(
-    inChunks(folderIds, (chunk) =>
-      all<{ parent_id: string; count: number }>(
-        `SELECT parent_id, COUNT(*) AS count FROM nodes WHERE parent_id IN (${placeholders(chunk.length)}) AND trashed_at IS NULL GROUP BY parent_id`,
-        ...chunk
-      )
+    (folderIds.length
+      ? all<{ parent_id: string; count: number }>(
+          `SELECT parent_id, COUNT(*) AS count FROM nodes WHERE parent_id ${IN_LIST} AND trashed_at IS NULL GROUP BY parent_id`,
+          folders
+        )
+      : []
     ).map((row) => [row.parent_id, row.count])
   );
   const watching = new Set(
-    inChunks(folderIds, (chunk) =>
-      all<{ node_id: string }>(
-        `SELECT node_id FROM watches WHERE user_id = ? AND node_id IN (${placeholders(chunk.length)})`,
-        viewer.id,
-        ...chunk
-      )
-    ).map((row) => row.node_id)
+    folderIds.length
+      ? all<{ node_id: string }>(`SELECT node_id FROM watches WHERE user_id = ? AND node_id ${IN_LIST}`, viewer.id, folders).map(
+          (row) => row.node_id
+        )
+      : []
+  );
+  const cleanup = new Map(
+    folderIds.length
+      ? all<{ node_id: string; days: number }>(`SELECT node_id, days FROM rules WHERE node_id ${IN_LIST}`, folders).map((row) => [
+          row.node_id,
+          Number(row.days),
+        ])
+      : []
   );
   const blobs = blobInfo(nodes.filter((node) => node.sha256).map((node) => node.sha256!));
   const owners = new Map<number, string>();
@@ -828,6 +858,7 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       snippet: 'snippet' in node ? ((node as { snippet?: string | null }).snippet ?? null) : undefined,
       progress: progress.get(node.id) ?? null,
       watching: watching.has(node.id),
+      cleanup: cleanup.get(node.id) ?? null,
     };
   });
 }

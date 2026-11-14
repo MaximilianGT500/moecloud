@@ -1,17 +1,12 @@
 import type { FastifyRequest } from 'fastify';
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-  type AuthenticationResponseJSON,
-  type RegistrationResponseJSON,
-} from '@simplewebauthn/server';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { createHash } from 'node:crypto';
 import { all, one, run } from '../lib/db.ts';
 import { badRequest, notFound, unauthorized } from '../lib/errors.ts';
 import * as settings from './settings.ts';
 import { getUser, type UserRow } from './users.ts';
+
+const webauthn = () => import('@simplewebauthn/server');
 
 export interface PasskeyRow {
   id: string;
@@ -64,6 +59,7 @@ export function presentPasskey(passkey: PasskeyRow) {
 
 export async function registrationOptions(request: FastifyRequest, user: UserRow, sessionId: string) {
   const rp = relyingParty(request);
+  const { generateRegistrationOptions } = await webauthn();
   const options = await generateRegistrationOptions({
     rpName: rp.name,
     rpID: rp.rpID,
@@ -90,6 +86,7 @@ export async function register(
 ) {
   const rp = relyingParty(request);
   const expectedChallenge = take(`register:${sessionId}`);
+  const { verifyRegistrationResponse } = await webauthn();
   let verification;
   try {
     verification = await verifyRegistrationResponse({
@@ -122,6 +119,7 @@ export async function register(
 
 export async function authenticationOptions(request: FastifyRequest, key: string, user?: UserRow) {
   const rp = relyingParty(request);
+  const { generateAuthenticationOptions } = await webauthn();
   const options = await generateAuthenticationOptions({
     rpID: rp.rpID,
     userVerification: user ? 'discouraged' : 'preferred',
@@ -141,6 +139,7 @@ export async function authenticate(request: FastifyRequest, key: string, respons
   const expectedChallenge = take(`login:${key}`);
   const passkey = one<PasskeyRow>('SELECT * FROM passkeys WHERE id = ?', response.id);
   if (!passkey) throw unauthorized('Diesen Passkey kennt der Server nicht');
+  const { verifyAuthenticationResponse } = await webauthn();
   let verification;
   try {
     verification = await verifyAuthenticationResponse({

@@ -4,7 +4,7 @@ import { insertNode, taken } from './nodes.ts';
 import type { UserRow } from './users.ts';
 
 const SUBTREE = `WITH RECURSIVE tree(id) AS (
-  SELECT ?
+  SELECT CAST(? AS TEXT) COLLATE BINARY
   UNION ALL
   SELECT n.id FROM nodes n JOIN tree t ON n.parent_id = t.id
 )`;

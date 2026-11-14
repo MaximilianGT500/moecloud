@@ -84,7 +84,7 @@ function location(data: Buffer, table: Box, wanted: number) {
   return null;
 }
 
-export async function heifExif(path: string): Promise<Buffer | null> {
+export async function heifExifRange(path: string): Promise<{ offset: number; length: number } | null> {
   const data = await readRange(path, 0, HEAD);
   const meta = boxes(data, 0, data.length).find((box) => box.type === 'meta');
   if (!meta) return null;
@@ -94,7 +94,12 @@ export async function heifExif(path: string): Promise<Buffer | null> {
   const id = list ? exifItem(data, list) : 0;
   const found = table && id ? location(data, table, id) : null;
   if (!found || found.length < 12) return null;
-  const item = await readRange(path, found.offset, Math.min(found.length, MAX_EXIF));
-  const skip = item.length >= 4 ? 4 + item.readUInt32BE(0) : 0;
-  return skip > 0 && skip < item.length ? item.subarray(skip) : null;
+  const head = await readRange(path, found.offset, 4);
+  const skip = head.length === 4 ? 4 + head.readUInt32BE(0) : 0;
+  return skip > 0 && skip < found.length ? { offset: found.offset + skip, length: found.length - skip } : null;
+}
+
+export async function heifExif(path: string): Promise<Buffer | null> {
+  const range = await heifExifRange(path);
+  return range ? readRange(path, range.offset, Math.min(range.length, MAX_EXIF)) : null;
 }

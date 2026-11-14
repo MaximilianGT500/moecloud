@@ -1,7 +1,7 @@
 import { config } from './config.ts';
-import { closeDatabase, openDatabase, updateBackup } from './lib/db.ts';
+import { closeDatabase, dialect, openDatabase, updateBackup, value } from './lib/db.ts';
 import { buildApp } from './app.ts';
-import { sharedFileSystem } from './lib/storage.ts';
+import { leftoverSqlite, sharedFileSystem } from './lib/storage.ts';
 import { tidyBackups } from './services/backups.ts';
 import { ensureDirs } from './services/blobs.ts';
 import { startJobs } from './services/jobs.ts';
@@ -11,13 +11,22 @@ import * as settings from './services/settings.ts';
 import { isSetUp, setupCode } from './services/setup.ts';
 
 await ensureDirs();
-openDatabase(config.paths.db, config.paths.backups);
+openDatabase(config.database, config.paths.backups);
 settings.secret();
 
 const app = await buildApp();
 if (updateBackup) app.log.info(`Vor dem Update der Datenbank wurde eine Sicherung angelegt: ${updateBackup}`);
 const storage = sharedFileSystem(config.dataDir);
-if (storage) {
+if (dialect() === 'postgres' && !value<number>('SELECT COUNT(*) FROM users')) {
+  const accounts = leftoverSqlite(config.paths.db);
+  if (accounts) {
+    app.log.warn(
+      `PostgreSQL ist noch leer, in ${config.paths.db} liegt aber eine SQLite-Datenbank mit ${accounts === 1 ? 'einem Konto' : `${accounts} Konten`}. ` +
+        `Willst du sie übernehmen, halte MoeCloud an und führ aus: moecloud db copy --from ${config.paths.db}`
+    );
+  }
+}
+if (storage && dialect() === 'sqlite') {
   app.log.warn(
     `${config.dataDir} liegt auf ${storage}. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, ` +
       'Befehle wie moecloud backup laufen dann nur bei angehaltenem Server. Leg den Datenordner am besten auf einen lokalen Datenträger.'

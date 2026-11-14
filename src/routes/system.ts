@@ -22,6 +22,7 @@ export async function systemRoutes(app: FastifyInstance) {
       index: false,
       immutable: true,
       maxAge: '365d',
+      preCompressed: true,
       allowedPath: (path) => !path.includes('.vite'),
     });
   }

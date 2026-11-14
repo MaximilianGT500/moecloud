@@ -16,6 +16,7 @@ import { c, fileTypeColor, radius } from '../../theme/tokens';
 import { Section, UserAvatar } from '../common/bits';
 import { toast } from '../common/toast';
 import { Loading, Stat, StatusDot } from './shared';
+import { UsageSection, type UsageDay } from './UsageChart';
 
 type Group = 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other';
 
@@ -36,6 +37,7 @@ export interface UpdateInfo {
 }
 
 interface Overview {
+  history: UsageDay[];
   version: string;
   users: number;
   active: number;
@@ -390,6 +392,7 @@ export function OverviewSection() {
           )}
         </Section>
       </Box>
+      <UsageSection history={data.history} />
       {data.updates.latest?.checkedAt ? (
         <Typography variant="caption" sx={{ color: c.onSurfaceVariant, px: 1 }}>
           {t('Version {version}, zuletzt nach Updates gesucht am {date}', {

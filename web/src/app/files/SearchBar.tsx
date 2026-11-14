@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import MenuItem from '@mui/material/MenuItem';
+import MenuList from '@mui/material/MenuList';
+import Paper from '@mui/material/Paper';
+import Popper from '@mui/material/Popper';
 import InputBase from '@mui/material/InputBase';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
-import { c, curve, radius } from '../../theme/tokens';
+import { c, curve, elevation, radius } from '../../theme/tokens';
+import { searchHref, useSavedSearches } from './searches';
 
 const FILTER_KEYS = ['type', 'date', 'size', 'tag'];
 
@@ -27,7 +36,12 @@ function target(value: string) {
 
 export function SearchBar({ initial, active }: { initial: string; active: boolean }) {
   const [text, setText] = useState(initial);
+  const [focused, setFocused] = useState(false);
+  const [used, setUsed] = useState(false);
+  const saved = useSavedSearches(used);
   const input = useRef<HTMLInputElement>(null);
+  const [anchor, setAnchor] = useState<HTMLFormElement | null>(null);
+  const open = focused && !text && saved.length > 0;
   const first = useRef(true);
 
   useEffect(() => {
@@ -61,6 +75,15 @@ export function SearchBar({ initial, active }: { initial: string; active: boolea
     <Box
       component="form"
       role="search"
+      onFocus={(event) => {
+        setAnchor(event.currentTarget as HTMLFormElement);
+        setFocused(true);
+        setUsed(true);
+      }}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || (!event.currentTarget.contains(next) && !document.getElementById('saved-searches')?.contains(next))) setFocused(false);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         if (text.trim()) navigate(target(text.trim()), { replace: active });
@@ -110,6 +133,37 @@ export function SearchBar({ initial, active }: { initial: string; active: boolea
           </IconButton>
         </Tooltip>
       )}
+      <Popper open={open} anchorEl={anchor} placement="bottom-start" sx={{ zIndex: 1300, width: anchor?.offsetWidth }}>
+        <Paper
+          id="saved-searches"
+          sx={{ mt: 1, py: 1, borderRadius: `${radius.lg}px`, bgcolor: c.surfaceContainer, boxShadow: elevation[2] }}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || (!event.currentTarget.contains(next) && !anchor?.contains(next))) setFocused(false);
+          }}
+        >
+          <Typography variant="caption" component="p" sx={{ px: 2, pb: 0.5, color: c.onSurfaceVariant }}>
+            {t('Gespeicherte Suchen')}
+          </Typography>
+          <MenuList aria-label={t('Gespeicherte Suchen')} sx={{ py: 0 }}>
+            {saved.map((entry) => (
+              <MenuItem
+                key={entry.id}
+                onClick={() => {
+                  setFocused(false);
+                  input.current?.blur();
+                  navigate(searchHref(entry), { replace: active });
+                }}
+              >
+                <ListItemIcon>
+                  <BookmarkRounded fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{entry.name}</ListItemText>
+              </MenuItem>
+            ))}
+          </MenuList>
+        </Paper>
+      </Popper>
     </Box>
   );
 }

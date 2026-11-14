@@ -1,5 +1,6 @@
-import { all, placeholders, value } from '../lib/db.ts';
-import type { NodeRow } from './nodes.ts';
+import { all, IN_LIST, value } from '../lib/db.ts';
+import { notFound } from '../lib/errors.ts';
+import { getNode, trash, type NodeRow } from './nodes.ts';
 import { quotaOf, usageOf, type UserRow } from './users.ts';
 
 export interface PhotoCursor {
@@ -9,15 +10,12 @@ export interface PhotoCursor {
 
 export function photos(user: UserRow, cursor: PhotoCursor | null, limit = 120) {
   const rows = all<NodeRow & { sort_at: number }>(
-    `SELECT n.*, COALESCE(b.taken_at, n.modified_at) AS sort_at
-     FROM nodes n JOIN blobs b ON b.sha256 = n.sha256
-     WHERE n.owner_id = ? AND n.type = 'file' AND n.trashed_at IS NULL AND n.size > 0
-       AND (n.mime LIKE 'image/%' OR n.mime LIKE 'video/%')
-       AND (b.scan_status IS NULL OR b.scan_status != 'infected')
-       AND (COALESCE(b.taken_at, n.modified_at) < ? OR (COALESCE(b.taken_at, n.modified_at) = ? AND n.seq < ?))
-     ORDER BY sort_at DESC, n.seq DESC LIMIT ?`,
+    `SELECT n.*, n.media_at AS sort_at FROM nodes n
+     WHERE n.owner_id = ? AND n.media_at IS NOT NULL AND n.trashed_at IS NULL AND n.size > 0
+       AND (n.media_at, n.seq) < (?, ?)
+       AND NOT EXISTS (SELECT 1 FROM blobs b WHERE b.sha256 = n.sha256 AND b.scan_status = 'infected')
+     ORDER BY n.media_at DESC, n.seq DESC LIMIT ?`,
     user.id,
-    cursor?.at ?? Number.MAX_SAFE_INTEGER,
     cursor?.at ?? Number.MAX_SAFE_INTEGER,
     cursor?.seq ?? Number.MAX_SAFE_INTEGER,
     limit + 1
@@ -25,6 +23,39 @@ export function photos(user: UserRow, cursor: PhotoCursor | null, limit = 120) {
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   return { nodes: page, next: rows.length > limit && last ? { at: last.sort_at, seq: last.seq } : null };
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+const MEMORY_YEARS = 30;
+const MEMORY_ITEMS = 24;
+
+export function memories(user: UserRow, date: string, offset: number) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return [];
+  const [year, month, day] = match.slice(1).map(Number);
+  const shift = Number.isFinite(offset) && Math.abs(offset) <= 14 * 60 ? Math.round(offset) * 60_000 : 0;
+  const windows: { year: number; from: number; to: number }[] = [];
+  for (let past = year - 1; past >= Math.max(1970, year - MEMORY_YEARS); past--) {
+    const start = Date.UTC(past, month - 1, day);
+    if (new Date(start).getUTCDate() !== day) continue;
+    windows.push({ year: past, from: start + shift, to: start + shift + DAY });
+  }
+  if (windows.length === 0) return [];
+  const rows = all<NodeRow & { sort_at: number }>(
+    `SELECT n.*, n.media_at AS sort_at FROM nodes n
+     WHERE n.owner_id = ? AND n.media_at IS NOT NULL AND n.trashed_at IS NULL AND n.size > 0
+       AND (${windows.map(() => '(n.media_at >= ? AND n.media_at < ?)').join(' OR ')})
+       AND NOT EXISTS (SELECT 1 FROM blobs b WHERE b.sha256 = n.sha256 AND b.scan_status = 'infected')
+     ORDER BY n.media_at, n.seq LIMIT 1000`,
+    user.id,
+    ...windows.flatMap((window) => [window.from, window.to])
+  );
+  return windows
+    .map((window) => ({
+      year: window.year,
+      nodes: rows.filter((row) => row.sort_at >= window.from && row.sort_at < window.to).slice(0, MEMORY_ITEMS),
+    }))
+    .filter((group) => group.nodes.length > 0);
 }
 
 export const KIND_GROUPS = ['image', 'video', 'audio', 'document', 'archive', 'other'] as const;
@@ -79,6 +110,8 @@ function byGroup(rows: { mime: string | null; size: number; count: number }[]) {
   return totals;
 }
 
+const DUPLICATES_SHOWN = 25;
+
 export function storageReport(user: UserRow) {
   const active = all<{ mime: string | null; size: number; count: number }>(
     "SELECT mime, COALESCE(SUM(size), 0) AS size, COUNT(*) AS count FROM nodes WHERE owner_id = ? AND type = 'file' AND trashed_at IS NULL GROUP BY mime",
@@ -100,11 +133,14 @@ export function storageReport(user: UserRow) {
   );
   const duplicates = groups.length
     ? all<NodeRow & { parent_name: string | null }>(
-        `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-         WHERE n.owner_id = ? AND n.type = 'file' AND n.trashed_at IS NULL AND n.sha256 IN (${placeholders(groups.length)})
-         ORDER BY n.sha256, n.created_at`,
+        `SELECT * FROM (
+           SELECT n.*, p.name AS parent_name, ROW_NUMBER() OVER (PARTITION BY n.sha256 ORDER BY n.created_at, n.seq) AS position
+           FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
+           WHERE n.owner_id = ? AND n.type = 'file' AND n.trashed_at IS NULL AND n.sha256 ${IN_LIST}
+         ) ranked WHERE position <= ? ORDER BY sha256, position`,
         user.id,
-        ...groups.map((group) => group.sha256)
+        JSON.stringify(groups.map((group) => group.sha256)),
+        DUPLICATES_SHOWN
       )
     : [];
   return {
@@ -117,10 +153,36 @@ export function storageReport(user: UserRow) {
     duplicates: groups.map((group) => ({
       sha256: group.sha256,
       size: group.size,
+      count: group.count,
       wasted: group.size * (group.count - 1),
       nodes: duplicates.filter((node) => node.sha256 === group.sha256),
     })),
   };
+}
+
+export function cleanDuplicates(user: UserRow, keep: string[]) {
+  let removed = 0;
+  let size = 0;
+  for (const id of new Set(keep)) {
+    const node = getNode(id);
+    if (!node || node.owner_id !== user.id || node.type !== 'file' || node.trashed_at || !node.sha256) {
+      throw notFound('Diese Datei oder diesen Ordner gibt es nicht mehr');
+    }
+    const copies = all<{ id: string; size: number }>(
+      "SELECT id, size FROM nodes WHERE owner_id = ? AND sha256 = ? AND type = 'file' AND trashed_at IS NULL AND id != ?",
+      user.id,
+      node.sha256,
+      node.id
+    );
+    if (!copies.length) continue;
+    trash(
+      user,
+      copies.map((copy) => copy.id)
+    );
+    removed += copies.length;
+    size += copies.reduce((sum, copy) => sum + Number(copy.size), 0);
+  }
+  return { removed, size };
 }
 
 export function serverGroups() {

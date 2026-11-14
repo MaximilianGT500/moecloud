@@ -90,6 +90,7 @@ export interface LoginView {
   registration: boolean;
   passkeys: boolean;
   forgot: boolean;
+  sso?: { label: string; href: string } | null;
   announcement?: { text: string; level: 'info' | 'warning' } | null;
 }
 
@@ -101,6 +102,14 @@ export function loginPage(request: FastifyRequest, view: LoginView) {
       <p class="auth__lead">${t(lang, 'Melde dich an, um zu deinen Dateien zu kommen.')}</p>
       ${view.announcement ? alert(view.announcement.level === 'warning' ? 'warning' : 'info', view.announcement.text) : null}
       ${alert('error', view.error)} ${alert('success', view.notice)}
+      ${
+        view.sso
+          ? html`<a class="button button--tonal auth__sso" href=${view.sso.href}>
+                ${icon('login', 'icon button__icon')}<span>${view.sso.label}</span>
+              </a>
+              <div class="divider"><span>${t(lang, 'oder mit Passwort')}</span></div>`
+          : null
+      }
       <form method="post" action="/login" class="form" data-login>
         ${hidden('_csrf', view.csrf)} ${hidden('next', view.next)}
         ${field({ name: 'login', label: t(lang, 'Benutzername oder E-Mail'), autocomplete: 'username webauthn', value: view.login, autofocus: !view.login })}

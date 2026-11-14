@@ -2,6 +2,56 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.0] · 2026-11-14
+
+Diese Version bringt PostgreSQL als zweite Datenbank, Anmeldung über Single Sign-on und viele neue Funktionen, von Warnungen bei fremden Anmeldungen über Aufräumregeln bis zur Vorschau für E-Mails, Termine und Kontakte. Dazu lädt die Oberfläche spürbar schneller, der Server startet schneller und braucht weniger Speicher.
+
+### Neu
+
+- **PostgreSQL** statt SQLite, wenn du willst: `DATABASE_URL=postgres://…` genügt, MoeCloud legt alle Tabellen selbst an. Die Ergänzung `docker/postgres.yml` startet PostgreSQL 18 als eigenen Container, das Installationsskript fragt danach oder nimmt `--postgres`. SQLite bleibt der Standard
+- `moecloud db copy` zieht alle Daten in eine neue Datenbank um, in beide Richtungen, und `moecloud db` zeigt Art, Version, Größe und Stand. Mit dem Installationsskript erledigen `sudo moecloud database postgres` und `sudo moecloud database sqlite` den ganzen Umzug samt Konfiguration
+- Sicherungen sind auch mit PostgreSQL SQLite-Dateien aus einem festen Stand und lassen sich mit `db copy` in eine leere Datenbank zurückspielen. Startet MoeCloud mit einem leeren PostgreSQL, während noch eine SQLite-Datei mit Konten daliegt, weist das Log darauf hin
+- **Single Sign-on** über OpenID Connect mit Authentik, Keycloak, Authelia, Zitadel, Google oder Microsoft. Unter **Admin › Single Sign-on** trägst du den Anbieter ein und testest die Verbindung. Konten werden über die bestätigte E-Mail-Adresse verknüpft oder auf Wunsch neu angelegt, eine Gruppe vom Anbieter kann Admin-Rechte geben. Unter **Konto** lässt sich die Verknüpfung wieder trennen
+- **Aus dem Internet laden** unter **Neu**: MoeCloud lädt eine Datei von einer Adresse im Hintergrund in den Ordner, mit Virenscan und Speichergrenzen, und meldet sich, wenn sie da ist. Adressen im lokalen Netz bleiben gesperrt, auch nach Weiterleitungen
+- **An diesem Tag** zeigt in Fotos Bilder vom heutigen Tag aus früheren Jahren
+- **Gespeicherte Suchen** merken sich Begriff und Filter und erscheinen über den Treffern und unter der leeren Suchleiste
+- Alte Versionen löscht MoeCloud auf Wunsch nach einer festen Zahl von Tagen, einstellbar unter **Admin › Einstellungen › Speicher**
+- Mit `BACKUP_COPY_DIR` landet jede Sicherung zusätzlich in einem zweiten Ordner, etwa auf einer anderen Platte. Den Stand zeigt **Admin › Sicherungen**
+- `sudo moecloud status` und `doctor` kennen PostgreSQL, `doctor` empfiehlt bei einem Datenordner auf einem Netzlaufwerk den Umzug dorthin
+- **Warnung bei neuen Geräten**: Meldet sich jemand von einem Gerät an, das MoeCloud für dein Konto noch nicht kennt, erscheint eine Benachrichtigung mit Browser, System und IP-Adresse, auf Wunsch auch per E-Mail. Meldest du unter **Konto › Sitzungen** alle anderen Geräte ab oder änderst dein Passwort, vergisst MoeCloud die übrigen Geräte
+- **Daten exportieren** unter **Konto** lädt alle deine Dateien und eine Übersicht über dein Konto als ZIP herunter. In `konto.json` stehen Profil, Einstellungen, Favoriten, Schlagwörter, Alben, Links, Freigaben, Kommentare und gespeicherte Suchen
+- **Aufräumregeln** für Ordner: Dateien, die länger als 7, 14, 30, 90 oder 365 Tage unverändert in einem Ordner liegen, wandern von selbst in den Papierkorb. Das passt zu Ordnern wie Downloads oder Scans. Die Regel gilt auch für Unterordner, und was du wiederherstellst, bekommt wieder die volle Frist
+- Im Speicherbericht räumt **Nur eine behalten** doppelte Dateien auf, die älteste Kopie bleibt. **Alle aufräumen** erledigt das für alle Gruppen auf einmal
+- **Personen importieren** unter **Admin › Personen** legt viele Konten aus einer CSV-Datei an, mit Komma oder Semikolon, und zeigt vorher, wer angelegt, übersprungen oder abgelehnt wird. Wer kein Passwort hat, bekommt einen Link per E-Mail
+- **Standort aus Fotos entfernen**: Wer Fotos über einen Link öffnet oder herunterlädt, bekommt sie ohne GPS-Daten, auch im ZIP. Das klappt bei JPEG, HEIC und WebP ohne Qualitätsverlust, die Originale bleiben unverändert. Abschalten lässt es sich unter **Admin › Einstellungen › Teilen**
+- **E-Mails** (`.eml`) zeigt die Vorschau mit Absender, Empfängern, Datum und Anhängen. Der Inhalt läuft abgeschottet ohne Skripte, Bilder aus dem Internet lädt MoeCloud nicht
+- **Termine** aus `.ics`-Dateien erscheinen als Liste mit Zeit, Ort und Beschreibung, **Kontakte** aus `.vcf`-Dateien als Karten mit Telefon, E-Mail und Adresse
+- **Speicherverlauf** unter **Admin › Übersicht** zeigt, wie viel an jedem Tag belegt war, als Diagramm oder als Tabelle
+
+### Schneller
+
+- Die Dateiansicht lädt beim ersten Aufruf rund 30 % weniger JavaScript. Ansichten, Dialoge, Bildansicht und Player kommen erst, wenn du sie brauchst, die Farbberechnung nur bei eigenen Farben oder mehr Kontrast
+- JavaScript und CSS liegen fertig komprimiert vor. Das spart bei Brotli rund 15 % Übertragung und dem Server die Arbeit, jede Datei beim Abruf neu zu packen
+- Die Zeitleiste in Fotos nutzt einen eigenen Index. Bei 10.000 Fotos braucht eine Seite statt rund 28 ms nur noch 2 ms, und die Zeit wächst nicht mehr mit der Größe der Bibliothek
+- Ordner mit tausenden Einträgen fragen Sterne, Schlagwörter, Freigaben und Zähler mit je einer Abfrage ab statt in Blöcken. Mit PostgreSQL braucht die Liste eines Ordners mit 5.000 Dateien damit rund ein Drittel weniger Zeit
+- Vorschaubilder, Bildinfos und Suchtext entstehen auf Servern mit mehreren Kernen parallel, einstellbar mit `PROCESSING_WORKERS`
+- Der Speicherbericht zeigt je Gruppe doppelter Dateien höchstens 25 Einträge und die Gesamtzahl. Bei vielen Kopien derselben Datei war die Antwort sonst mehrere Megabyte groß
+- Der Server startet rund ein Viertel schneller und braucht im Leerlauf rund 35 MB weniger Speicher, weil Bibliotheken für Passkeys, E-Mail, Bilder, Musik und PDFs erst laden, wenn sie gebraucht werden. Befehle wie `moecloud users` antworten in rund 200 statt 330 ms
+- ZIP-Downloads mit vielen kleinen Dateien sind rund ein Viertel schneller
+- SQLite hält mehr der Datenbank im Speicher. Suchen mit Filtern und der Speicherbericht sind bei großen Bibliotheken damit bis zu 20 % schneller
+
+### Behoben
+
+- Lädt nach einem Update ein Teil der Oberfläche nicht mehr, weil der Browser noch die alte Seite offen hat, lädt MoeCloud die Seite einmal neu. Bei einem anderen Fehler erscheint eine Meldung mit **Neu laden** statt einer leeren Seite
+- Fehlte der Inhalt einer Datei in `data/blobs/` oder war er kürzer als erwartet, beendete ein ZIP-Download den ganzen Server. Jetzt fehlt nur diese Datei im ZIP
+
+### Kleinigkeiten
+
+- Neue Abhängigkeiten: `pg` 8.23.1, `openid-client` 6.9.0 und `postal-mime` 4.2.1, für die Tests `oidc-provider` 9.15.0
+- Die Datenbank bekommt Stand 5 mit Tabellen für gespeicherte Suchen, bekannte Geräte, Aufräumregeln und den Speicherverlauf und einer Spalte für die Zeitleiste in Fotos. Vorher legt MoeCloud wie gewohnt eine Sicherung an
+- Die Kacheln in **Admin › Übersicht** zeigen große Zahlen mit normalen statt gleich breiten Ziffern
+- 199 neue Texte mit englischer Übersetzung
+
 ## [1.3.4] · 2026-11-11
 
 Diese Version macht die Ausgabe von `recover` eindeutig.
@@ -376,6 +426,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.4.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.4.0
 [1.3.4]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.4
 [1.3.3]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.3
 [1.3.2]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.2

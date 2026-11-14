@@ -3,6 +3,7 @@ set -euo pipefail
 
 DIR="${MOECLOUD_DIR:-/opt/moecloud}"
 SITE="https://moecloud.moestudio.net"
+REPO="MaximilianGT500/moecloud"
 
 bold=""
 green=""
@@ -34,8 +35,26 @@ command -v docker >/dev/null 2>&1 || fail "Docker fehlt auf diesem Server."
 
 compose() { (cd "$DIR" && docker compose "$@"); }
 env_get() { sed -n "s/^$1=//p" "$DIR/.env" 2>/dev/null | tail -n 1 || true; }
+env_set() {
+  local key="$1" value="$2" file="$DIR/.env"
+  touch "$file"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+env_unset() { sed -i "/^$1=/d" "$DIR/.env" 2>/dev/null || true; }
+
+agree() {
+  local answer=""
+  printf '%s (j/n) ' "$1"
+  IFS= read -r answer </dev/tty || answer=""
+  case "$answer" in j | J | ja | y | yes) return 0 ;; *) return 1 ;; esac
+}
 
 offline() {
+  if postgres_enabled; then compose up -d --wait postgres >/dev/null 2>&1 || true; fi
   if [ -t 0 ] && [ -t 1 ]; then
     compose run --rm --no-deps --name moecloud-cli moecloud moecloud "$@"
   else
@@ -44,10 +63,9 @@ offline() {
 }
 
 paused() {
-  local answer="" status=0
-  printf '\nDafür muss MoeCloud kurz anhalten. Jetzt anhalten, den Befehl ausführen und danach wieder starten? (j/n) '
-  IFS= read -r answer </dev/tty || answer=""
-  case "$answer" in j | J | ja | y | yes) ;; *) fail "Abgebrochen, MoeCloud läuft weiter." ;; esac
+  local status=0
+  printf '\n'
+  agree "Dafür muss MoeCloud kurz anhalten. Jetzt anhalten, den Befehl ausführen und danach wieder starten?" || fail "Abgebrochen, MoeCloud läuft weiter."
   compose stop moecloud
   offline "$@" || status=$?
   compose start moecloud
@@ -98,6 +116,17 @@ address() {
 
 clamav_enabled() { case "$(env_get COMPOSE_FILE)" in *clamav*) return 0 ;; *) return 1 ;; esac; }
 
+postgres_enabled() { case "$(env_get COMPOSE_FILE)" in *postgres*) return 0 ;; *) return 1 ;; esac; }
+
+compose_files() {
+  local files="docker-compose.yml"
+  if clamav_enabled; then files="$files:docker/clamav.yml"; fi
+  if [ "$1" = "postgres" ]; then files="$files:docker/postgres.yml"; fi
+  if [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
+}
+
+restore_files() { if [ -n "$1" ]; then env_set COMPOSE_FILE "$1"; else env_unset COMPOSE_FILE; fi; }
+
 timer_enabled() { command -v systemctl >/dev/null 2>&1 && systemctl is-enabled moecloud-update.timer >/dev/null 2>&1; }
 
 version_label() {
@@ -118,6 +147,11 @@ status() {
   printf '  %-16s %s\n' "Adresse" "$(address)"
   printf '  %-16s %s\n' "Ordner" "$DIR"
   printf '  %-16s %s\n' "Freier Platz" "$(df -Ph "$DIR" 2>/dev/null | awk 'NR == 2 { print $4 }' || echo '?')"
+  if postgres_enabled; then
+    printf '  %-16s %s\n' "Datenbank" "PostgreSQL, $(state_of postgres)"
+  else
+    printf '  %-16s %s\n' "Datenbank" "SQLite"
+  fi
   if clamav_enabled; then
     printf '  %-16s %s\n' "Virenscan" "ClamAV, $(state_of clamav)"
   else
@@ -166,11 +200,25 @@ doctor() {
   fs="$(stat -f -c %T "$DIR/data" 2>/dev/null || true)"
   case "$fs" in
     nfs* | cifs | smb* | fuse* | 9p | ceph | vboxsf)
-      warn "Der Datenordner liegt auf $fs. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, leg $DIR/data am besten auf einen lokalen Datenträger"
+      if postgres_enabled; then
+        ok "Der Datenordner liegt auf $fs, die Datenbank läuft getrennt davon in PostgreSQL"
+      else
+        warn "Der Datenordner liegt auf $fs. Dort funktionieren die Dateisperren von SQLite oft nicht zuverlässig, leg $DIR/data auf einen lokalen Datenträger oder zieh mit sudo moecloud database postgres auf PostgreSQL um"
+      fi
       ;;
     "") ;;
     *) ok "Der Datenordner liegt auf $fs" ;;
   esac
+  if postgres_enabled; then
+    case "$(stat -f -c %T "$DIR/postgres" 2>/dev/null || true)" in
+      nfs* | cifs | smb* | fuse* | 9p | ceph | vboxsf) warn "Die Daten von PostgreSQL in $DIR/postgres liegen auf einem Netzlaufwerk, leg sie am besten auf einen lokalen Datenträger" ;;
+    esac
+    case "$(state_of postgres)" in
+      healthy) ok "PostgreSQL läuft" ;;
+      starting) warn "PostgreSQL startet gerade noch, versuch es gleich noch einmal" ;;
+      *) warn "PostgreSQL läuft nicht. Mehr zeigt: sudo moecloud logs postgres" ;;
+    esac
+  fi
   memory="$(awk '/MemAvailable/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null || echo 0)"
   if [ "${memory:-0}" -lt 256 ]; then warn "Nur noch ${memory:-0} MB Arbeitsspeicher frei"; else ok "${memory} MB Arbeitsspeicher frei"; fi
   backup="$(newest_backup)"
@@ -260,11 +308,10 @@ auto_update() {
 }
 
 uninstall() {
-  local answer=""
+  local postgres=0
+  postgres_enabled && postgres=1
   if [ "${1:-}" != "--yes" ]; then
-    printf 'MoeCloud stoppen und entfernen? Deine Daten in %s bleiben erhalten. (j/n) ' "$DIR"
-    IFS= read -r answer </dev/tty || answer=""
-    case "$answer" in j | J | ja | y | yes) ;; *) fail "Abgebrochen." ;; esac
+    agree "MoeCloud stoppen und entfernen? Deine Daten in $DIR bleiben erhalten." || fail "Abgebrochen."
   fi
   compose down --remove-orphans --rmi all --volumes || true
   systemctl disable --now moecloud-update.timer >/dev/null 2>&1 || true
@@ -272,13 +319,118 @@ uninstall() {
   systemctl daemon-reload >/dev/null 2>&1 || true
   rm -f "$(readlink -f "${BASH_SOURCE[0]}")"
   ok "MoeCloud ist entfernt."
-  printf 'Deine Dateien und die Datenbank liegen weiter in %s/data.\n' "$DIR"
+  if [ "$postgres" -eq 1 ]; then
+    printf 'Deine Dateien liegen weiter in %s/data, die Datenbank in %s/postgres.\n' "$DIR" "$DIR"
+  else
+    printf 'Deine Dateien und die Datenbank liegen weiter in %s/data.\n' "$DIR"
+  fi
   printf 'Brauchst du sie nicht mehr, lösch den Ordner selbst mit: sudo rm -rf %s\n' "$DIR"
+}
+
+wait_ready() {
+  local state="" _
+  printf 'MoeCloud startet … '
+  for _ in $(seq 1 90); do
+    state="$(state_of moecloud)"
+    case "$state" in
+      healthy)
+        printf '%sbereit%s\n' "$green" "$reset"
+        return 0
+        ;;
+      unhealthy | exited | dead) break ;;
+    esac
+    sleep 2
+  done
+  printf '%snicht bereit%s\n' "$red" "$reset"
+  fail "MoeCloud ist nicht hochgekommen ($state). Mehr zeigt: sudo moecloud logs"
+}
+
+fetch_postgres() {
+  local version ref="main"
+  [ -f "$DIR/docker/postgres.yml" ] && return 0
+  version="$(env_get MOECLOUD_VERSION)"
+  case "$version" in [0-9]*.[0-9]*.[0-9]*) ref="v$version" ;; esac
+  mkdir -p "$DIR/docker"
+  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${ref}/docker/postgres.yml" -o "$DIR/docker/postgres.yml.neu" ||
+    fail "docker/postgres.yml ließ sich nicht von GitHub laden."
+  mv "$DIR/docker/postgres.yml.neu" "$DIR/docker/postgres.yml"
+}
+
+to_postgres() {
+  local previous
+  postgres_enabled && fail "MoeCloud nutzt schon PostgreSQL."
+  [ -f "$DIR/data/moecloud.db" ] || fail "In $DIR/data liegt keine SQLite-Datenbank, die MoeCloud mitnehmen könnte."
+  fetch_postgres
+  printf 'MoeCloud zieht von SQLite nach PostgreSQL um. Konten, Ordner, Freigaben und Einstellungen kommen mit, deine Dateien bleiben in %s/data.\n' "$DIR"
+  agree "MoeCloud dafür kurz anhalten und jetzt umziehen?" || fail "Abgebrochen, MoeCloud nutzt weiter SQLite."
+  previous="$(env_get COMPOSE_FILE)"
+  [ -n "$(env_get POSTGRES_PASSWORD)" ] || env_set POSTGRES_PASSWORD "$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+  mkdir -p "$DIR/postgres"
+  compose_files postgres
+  compose stop moecloud
+  if ! compose up -d --wait postgres || ! offline db copy --from /data/moecloud.db; then
+    restore_files "$previous"
+    compose up -d --remove-orphans
+    fail "Der Umzug hat nicht geklappt, MoeCloud nutzt weiter SQLite. Was schiefging, steht oben."
+  fi
+  compose up -d --remove-orphans
+  wait_ready
+  ok "MoeCloud nutzt jetzt PostgreSQL"
+  printf 'Die alte Datei %s/data/moecloud.db bleibt liegen, MoeCloud braucht sie nicht mehr.\n' "$DIR"
+}
+
+to_sqlite() {
+  local previous stamp suffix moved=0
+  postgres_enabled || fail "MoeCloud nutzt schon SQLite."
+  printf 'MoeCloud zieht von PostgreSQL zurück nach SQLite. Alle Daten kommen nach %s/data/moecloud.db.\n' "$DIR"
+  agree "MoeCloud dafür kurz anhalten und jetzt umziehen?" || fail "Abgebrochen, MoeCloud nutzt weiter PostgreSQL."
+  previous="$(env_get COMPOSE_FILE)"
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  compose stop moecloud
+  if [ -e "$DIR/data/moecloud.db" ]; then
+    for suffix in "" -wal -shm; do
+      if [ -e "$DIR/data/moecloud.db$suffix" ]; then mv "$DIR/data/moecloud.db$suffix" "$DIR/data/moecloud-alt-$stamp.db$suffix"; fi
+    done
+    moved=1
+  fi
+  if ! offline db copy /data/moecloud.db; then
+    if [ "$moved" -eq 1 ]; then
+      for suffix in "" -wal -shm; do
+        if [ -e "$DIR/data/moecloud-alt-$stamp.db$suffix" ]; then mv "$DIR/data/moecloud-alt-$stamp.db$suffix" "$DIR/data/moecloud.db$suffix"; fi
+      done
+    fi
+    restore_files "$previous"
+    compose up -d
+    fail "Der Umzug hat nicht geklappt, MoeCloud nutzt weiter PostgreSQL. Was schiefging, steht oben."
+  fi
+  compose_files sqlite
+  compose up -d --remove-orphans
+  wait_ready
+  ok "MoeCloud nutzt wieder SQLite"
+  if [ "$moved" -eq 1 ]; then printf 'Die ältere SQLite-Datei liegt jetzt unter %s/data/moecloud-alt-%s.db.\n' "$DIR" "$stamp"; fi
+  printf 'Die Daten von PostgreSQL liegen weiter in %s/postgres. Brauchst du sie nicht mehr, lösch den Ordner mit: sudo rm -rf %s/postgres\n' "$DIR" "$DIR"
+}
+
+database() {
+  case "${1:-}" in
+    postgres | postgresql) to_postgres ;;
+    sqlite) to_sqlite ;;
+    "")
+      if postgres_enabled; then printf 'MoeCloud nutzt PostgreSQL (%s).\n' "$(state_of postgres)"; else printf 'MoeCloud nutzt SQLite.\n'; fi
+      cli db 2>/dev/null | sed 's/^/  /' || true
+      if postgres_enabled; then
+        printf 'Zurück zu SQLite mit: sudo moecloud database sqlite\n'
+      else
+        printf 'Umziehen auf PostgreSQL mit: sudo moecloud database postgres\n'
+      fi
+      ;;
+    *) fail "Möglich sind: moecloud database, moecloud database postgres und moecloud database sqlite" ;;
+  esac
 }
 
 help() {
   printf '%sMoeCloud auf diesem Server%s\n\n' "$bold" "$reset"
-  printf '  %-30s %s\n' \
+  printf '  %-36s %s\n' \
     "moecloud status" "Zustand, Version und Adresse" \
     "moecloud doctor" "Typische Probleme finden" \
     "moecloud logs [dienst]" "Logs ansehen, zum Beispiel von caddy oder clamav" \
@@ -286,6 +438,7 @@ help() {
     "moecloud auto-update [on|off]" "Automatische Updates jede Nacht" \
     "moecloud start | stop" "MoeCloud mit allen Diensten starten oder anhalten" \
     "moecloud restart [dienst]" "MoeCloud oder einen anderen Dienst neu starten" \
+    "moecloud database [postgres|sqlite]" "Datenbank zeigen oder zwischen SQLite und PostgreSQL umziehen" \
     "moecloud uninstall" "Container entfernen, deine Daten bleiben"
   printf '\nIm Container:\n'
   cli help 2>/dev/null | sed -n '3,$p' || printf '  MoeCloud läuft gerade nicht, starte es mit: sudo moecloud start\n'
@@ -298,6 +451,7 @@ case "$command" in
   doctor) doctor ;;
   update) update "$@" ;;
   auto-update) auto_update "$@" ;;
+  database) database "$@" ;;
   logs)
     service="moecloud"
     if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then

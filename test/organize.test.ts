@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { renameSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
 import yauzl from 'yauzl';
+import { one } from '../src/lib/db.ts';
+import { blobPath } from '../src/services/blobs.ts';
 import { Client, createApp, login, setUp } from './helpers.ts';
 import { plain } from './images.ts';
 
@@ -339,6 +342,21 @@ describe('Als ZIP packen', () => {
     const again = await emi.json('POST', '/api/nodes/zip', { ids: [notes], name: 'Paket.zip' });
     assert.equal(again.json().node.name, 'Paket (2).zip');
     assert.equal((await emi.json('POST', '/api/nodes/zip', { ids: [notes], name: ' ' })).statusCode, 400);
+  });
+
+  it('überspringt fehlende Dateiinhalte im ZIP statt abzustürzen', async () => {
+    const lost = await file(place, 'Verloren.txt', 'Weg ist weg, sagt Lea');
+    const path = blobPath(one<{ sha256: string }>('SELECT sha256 FROM nodes WHERE id = ?', lost)!.sha256);
+    renameSync(path, `${path}.weg`);
+    try {
+      const download = await emi.get(`/api/zip?ids=${place}`);
+      assert.equal(download.statusCode, 200);
+      const names = await zipNames(download.rawPayload);
+      assert.ok(names.includes('Packen/Notizen.txt'));
+      assert.ok(!names.includes('Packen/Verloren.txt'));
+    } finally {
+      renameSync(`${path}.weg`, path);
+    }
   });
 
   it('legt das Archiv ohne Schreibrecht in die eigenen Dateien', async () => {

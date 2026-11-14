@@ -32,6 +32,7 @@ export interface UserPrefs {
   mailComments: boolean;
   mailWatch: boolean;
   mailAdmin: boolean;
+  mailLogins: boolean;
   storageWarned: boolean;
 }
 
@@ -44,6 +45,7 @@ const PREF_DEFAULTS: UserPrefs = {
   mailComments: true,
   mailWatch: true,
   mailAdmin: true,
+  mailLogins: true,
   storageWarned: false,
 };
 

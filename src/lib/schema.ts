@@ -421,6 +421,62 @@ const MIGRATIONS = [
   );
   CREATE INDEX watches_node ON watches(node_id);
   `,
+  `
+  CREATE TABLE searches (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    query TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX searches_user ON searches(user_id, created_at);
+
+  ALTER TABLE nodes ADD COLUMN media_at INTEGER;
+  UPDATE nodes SET media_at = COALESCE((SELECT taken_at FROM blobs WHERE blobs.sha256 = nodes.sha256), modified_at)
+    WHERE type = 'file' AND (mime LIKE 'image/%' OR mime LIKE 'video/%');
+  CREATE INDEX nodes_media ON nodes(owner_id, media_at, seq) WHERE media_at IS NOT NULL AND trashed_at IS NULL;
+
+  CREATE TRIGGER nodes_media_insert AFTER INSERT ON nodes
+  WHEN NEW.type = 'file' AND (NEW.mime LIKE 'image/%' OR NEW.mime LIKE 'video/%') BEGIN
+    UPDATE nodes SET media_at = COALESCE((SELECT taken_at FROM blobs WHERE sha256 = NEW.sha256), NEW.modified_at) WHERE seq = NEW.seq;
+  END;
+  CREATE TRIGGER nodes_media_update AFTER UPDATE OF sha256, mime, modified_at, type ON nodes BEGIN
+    UPDATE nodes SET media_at = CASE
+      WHEN NEW.type = 'file' AND (NEW.mime LIKE 'image/%' OR NEW.mime LIKE 'video/%')
+      THEN COALESCE((SELECT taken_at FROM blobs WHERE sha256 = NEW.sha256), NEW.modified_at)
+      ELSE NULL END
+    WHERE seq = NEW.seq;
+  END;
+  CREATE TRIGGER blobs_media_taken AFTER UPDATE OF taken_at ON blobs BEGIN
+    UPDATE nodes SET media_at = COALESCE(NEW.taken_at, modified_at) WHERE sha256 = NEW.sha256 AND media_at IS NOT NULL;
+  END;
+
+  CREATE TABLE devices (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    hash TEXT NOT NULL,
+    agent TEXT,
+    created_at INTEGER NOT NULL,
+    seen_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, hash)
+  );
+
+  CREATE TABLE rules (
+    node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    days INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    run_at INTEGER
+  );
+  CREATE INDEX rules_user ON rules(user_id);
+
+  CREATE TABLE usage_days (
+    day TEXT PRIMARY KEY,
+    users INTEGER NOT NULL,
+    files INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    stored INTEGER NOT NULL
+  );
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

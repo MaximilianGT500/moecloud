@@ -13,7 +13,7 @@ import { renderDocument } from './lib/html.ts';
 import { setLogger } from './lib/log.ts';
 import { maintenancePage, messagePage } from './views/pages.ts';
 import { basicAuth } from './services/apppasswords.ts';
-import { needsSecondFactor } from './services/auth.ts';
+import { secondFactorPending } from './services/auth.ts';
 import { readSession } from './services/sessions.ts';
 import { CSRF_COOKIE, LANG_COOKIE, type RequestAuth } from './lib/request.ts';
 import * as settings from './services/settings.ts';
@@ -181,7 +181,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         body: maintenancePage(request, settings.get('maintenance.message')),
       });
     }
-    if (auth && needsSecondFactor(auth.user)) {
+    if (auth && secondFactorPending(auth.user, auth.session?.method)) {
       if (!auth.session) request.auth = null;
       else if (request.url.startsWith('/api/')) {
         if (!secondFactorRoutes.has(`${request.method} ${request.routeOptions.url ?? ''}`)) {
@@ -215,9 +215,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (request.protocol === 'https' && !isLocalHost(request.host)) reply.header('Strict-Transport-Security', 'max-age=15552000');
     const type = String(reply.getHeader('content-type') ?? '');
     if (type.startsWith('text/html')) {
-      reply.header('Content-Security-Policy', pagePolicy(request.nonce));
+      if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', pagePolicy(request.nonce));
       reply.header('Cross-Origin-Opener-Policy', 'same-origin');
-      reply.header('X-Frame-Options', 'DENY');
+      if (!reply.hasHeader('X-Frame-Options')) reply.header('X-Frame-Options', 'DENY');
     }
     return payload;
   });

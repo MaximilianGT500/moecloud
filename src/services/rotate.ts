@@ -1,5 +1,6 @@
-import sharp, { type FormatEnum } from 'sharp';
+import type { FormatEnum } from 'sharp';
 import { badRequest } from '../lib/errors.ts';
+import { loadSharp } from '../lib/sharp.ts';
 import { record } from './activity.ts';
 import { blobPath, getBlob, typeOf } from './blobs.ts';
 import { ingestBuffer } from './ingest.ts';
@@ -17,6 +18,7 @@ export async function rotateImage(user: UserRow, node: NodeRow, degrees: 90 | 18
   assertNotInfected(node.sha256);
   if (!TYPES.has(typeOf(node, getBlob(node.sha256)))) throw badRequest('Dieses Bildformat kann MoeCloud nicht drehen');
   if (node.size > MAX_BYTES) throw badRequest('Das Bild ist zu groß zum Drehen');
+  const sharp = await loadSharp();
   const source = sharp(blobPath(node.sha256), { failOn: 'error' });
   const meta = await source.metadata().catch(() => null);
   if (!meta?.format || !FORMATS.has(meta.format) || (meta.pages ?? 1) > 1) {

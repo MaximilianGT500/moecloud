@@ -20,6 +20,7 @@ import {
 } from '../services/auth.ts';
 import { mailReady } from '../services/mail.ts';
 import { notifyAdmins } from '../services/notify.ts';
+import { beginLogin, finishLogin, oidcEnabled, oidcLabel, userFor } from '../services/oidc.ts';
 import { completeReset, findReset, requestReset } from '../services/resets.ts';
 import { findInvite, useInvite } from '../services/invites.ts';
 import { authenticate, authenticationOptions } from '../services/passkeys.ts';
@@ -27,9 +28,11 @@ import { clearSessionCookie, createSession, destroySession } from '../services/s
 import * as settings from '../services/settings.ts';
 import { isSetUp } from '../services/setup.ts';
 import { createUser, type UserRow } from '../services/users.ts';
+import { baseUrl } from '../services/links.ts';
 
 const PENDING_COOKIE = 'moe_2fa';
 const PASSKEY_COOKIE = 'moe_wa';
+const OIDC_COOKIE = 'moe_oidc';
 
 const confirmView = (request: FastifyRequest, user: UserRow, next: string, error?: string | null) =>
   secondFactorPage(request, { csrf: request.csrf, next, error, totp: Boolean(user.totp_enabled), passkey: hasPasskey(user) });
@@ -57,6 +60,9 @@ function showLogin(
       registration,
       passkeys: settings.get('auth.passkeys'),
       forgot: mailReady(),
+      sso: oidcEnabled()
+        ? { label: oidcLabel(t(request.lang, 'Mit SSO anmelden')), href: `/login/oidc?next=${encodeURIComponent(options.next)}` }
+        : null,
       announcement: settings.activeNotice(),
     }),
   });
@@ -113,6 +119,64 @@ export async function authRoutes(app: FastifyInstance) {
       return showLogin(request, reply, { next, login, error: message(request, error), status });
     }
   });
+
+  app.get<{ Querystring: { next?: string } }>(
+    '/login/oidc',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const next = safeRedirect(request.query.next);
+      if (!isSetUp()) return reply.redirect('/setup');
+      if (!oidcEnabled()) return reply.redirect(`/login?next=${encodeURIComponent(next)}`);
+      try {
+        const started = await beginLogin(`${baseUrl(request)}/login/oidc/callback`, next);
+        reply.setCookie(OIDC_COOKIE, started.cookie, {
+          path: '/login/oidc',
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: isSecure(request),
+          maxAge: 600,
+        });
+        return reply.redirect(started.url);
+      } catch (error) {
+        return showLogin(request, reply, { next, error: message(request, error), status: 502 });
+      }
+    }
+  );
+
+  app.get<{ Querystring: { error?: string } }>(
+    '/login/oidc/callback',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const cookie = request.cookies[OIDC_COOKIE];
+      reply.clearCookie(OIDC_COOKIE, { path: '/login/oidc' });
+      if (!oidcEnabled()) return reply.redirect('/login');
+      if (request.query.error) {
+        const error =
+          request.query.error === 'access_denied'
+            ? t(request.lang, 'Die Anmeldung wurde abgebrochen')
+            : t(request.lang, 'Der Anbieter hat die Anmeldung abgelehnt');
+        return showLogin(request, reply, { next: '/files', error, status: 401 });
+      }
+      try {
+        const { claims, next, subject } = await finishLogin(request.url.split('?')[1] ?? '', cookie);
+        const { user, created, linked } = await userFor(subject, claims);
+        createSession(request, reply, user, 'oidc');
+        audit('login', {
+          actor: user.id,
+          request,
+          details: { method: 'oidc', ...(created ? { created } : {}), ...(linked ? { linked } : {}) },
+        });
+        if (created) audit('registered', { actor: user.id, subject: user.id, request, details: { method: 'oidc' } });
+        return reply.redirect(next, 303);
+      } catch (error) {
+        if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
+          audit('login_failed', { request, details: { method: 'oidc' } });
+        }
+        const status = error instanceof HttpError ? error.status : 400;
+        return showLogin(request, reply, { next: '/files', error: message(request, error), status });
+      }
+    }
+  );
 
   app.get<{ Querystring: { next?: string } }>('/login/2fa', async (request, reply) => {
     const next = safeRedirect(request.query.next);

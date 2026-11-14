@@ -16,7 +16,7 @@ import { editImage, OUTPUTS } from '../services/editor.ts';
 import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
 import { addComment, deleteComment, listComments } from '../services/comments.ts';
 import { ingest } from '../services/ingest.ts';
-import { photos, storageReport } from '../services/library.ts';
+import { cleanDuplicates, memories, photos, storageReport } from '../services/library.ts';
 import { assertNotInfected } from '../services/scan.ts';
 import {
   breadcrumbs,
@@ -47,8 +47,12 @@ import {
 } from '../services/nodes.ts';
 import { rendition, thumbnail } from '../services/thumbs.ts';
 import { createTextFile, formatBytes } from '../services/uploads.ts';
+import { listImports, startImport } from '../services/imports.ts';
+import { deleteSearch, listSearches, renameSearch, saveSearch } from '../services/searches.ts';
 import { deleteVersion, getVersion, listVersions, restoreVersion, writeContent } from '../services/versions.ts';
-import { zipName, zipStream } from '../services/zip.ts';
+import { EMAIL_CSP, emailAttachment, emailBody, emailSummary } from '../services/email.ts';
+import { blanker, locationBlanks } from '../services/location.ts';
+import { zipName, zipStream, type ZipOptions } from '../services/zip.ts';
 import { storageOf } from '../services/users.ts';
 import * as settings from '../services/settings.ts';
 
@@ -58,26 +62,48 @@ const nameSchema = z.object({ name: z.string().max(1000) });
 const idsSchema = z.object({ ids });
 const moveSchema = z.object({ ids, target: id });
 
-export function sendNode(
+export async function sendNode(
   request: FastifyRequest,
   reply: FastifyReply,
   node: Pick<NodeRow, 'name' | 'mime' | 'sha256' | 'size' | 'modified_at'>,
-  download: boolean
+  download: boolean,
+  options: { strip?: boolean } = {}
 ) {
   if (!node.sha256) throw notFound();
   assertNotInfected(node.sha256);
   const type = typeOf(node, getBlob(node.sha256));
   const inline = download ? null : inlineType(node.name, type);
+  const blanks = options.strip ? await locationBlanks(blobPath(node.sha256), node.sha256, type) : [];
   return sendFile(request, reply, {
     path: blobPath(node.sha256),
     size: node.size,
     type: inline ?? type,
-    etag: node.sha256,
+    etag: blanks.length ? `${node.sha256}-o` : node.sha256,
+    transform: blanks.length ? (start) => blanker(blanks, start) : undefined,
     modified: node.modified_at,
     name: node.name,
     disposition: inline ? 'inline' : 'attachment',
     csp: inline === 'application/pdf' ? PDF_CSP : undefined,
   });
+}
+
+export async function sendEmailBody(reply: FastifyReply, node: NodeRow) {
+  const html = await emailBody(node);
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  reply.header('Content-Security-Policy', EMAIL_CSP);
+  reply.header('X-Frame-Options', 'SAMEORIGIN');
+  reply.header('Referrer-Policy', 'no-referrer');
+  reply.header('Cache-Control', 'private, no-cache');
+  return reply.send(html);
+}
+
+export async function sendEmailAttachment(reply: FastifyReply, node: NodeRow, index: number) {
+  const file = await emailAttachment(node, index);
+  reply.header('Content-Type', 'application/octet-stream');
+  reply.header('Content-Disposition', contentDisposition(file.name, 'attachment'));
+  reply.header('Content-Security-Policy', "sandbox; default-src 'none'");
+  reply.header('Cache-Control', 'private, no-cache');
+  return reply.send(file.data);
 }
 
 export async function sendArchiveEntry(reply: FastifyReply, node: NodeRow, path: string) {
@@ -145,13 +171,13 @@ export async function sendPreview(request: FastifyRequest, reply: FastifyReply, 
   });
 }
 
-export function sendZip(request: FastifyRequest, reply: FastifyReply, roots: NodeRow[], fixed?: string) {
+export function sendZip(request: FastifyRequest, reply: FastifyReply, roots: NodeRow[], fixed?: string, options: ZipOptions = {}) {
   const name = fixed ?? zipName(roots, t(request.lang, 'Dateien'));
   reply.header('Content-Type', 'application/zip');
   reply.header('Content-Disposition', contentDisposition(name, 'attachment'));
   reply.header('Cache-Control', 'no-store');
   reply.header('X-Content-Type-Options', 'nosniff');
-  return reply.send(zipStream(roots));
+  return reply.send(zipStream(roots, options));
 }
 
 export async function fileRoutes(app: FastifyInstance) {
@@ -241,6 +267,34 @@ export async function fileRoutes(app: FastifyInstance) {
     const { starred: value } = parse(z.object({ starred: z.boolean() }), request.body);
     setStar(me(request), request.params.id, value);
     return { starred: value };
+  });
+
+  app.post<IdParams>('/api/nodes/:id/import', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (request, reply) => {
+    const input = parse(z.object({ url: z.string().trim().min(1).max(4000), name: z.string().max(255).optional() }), request.body);
+    const job = startImport(me(request), request.params.id, input, request.lang);
+    return reply.code(202).send({ job });
+  });
+
+  app.get('/api/imports', async (request) => ({ items: listImports(me(request)) }));
+
+  const searchName = z.string().trim().min(1, 'Gib einen Namen ein').max(80, 'Der Name darf höchstens 80 Zeichen haben');
+
+  app.get('/api/searches', async (request) => ({ items: listSearches(me(request)) }));
+
+  app.post('/api/searches', async (request) => {
+    const input = parse(z.object({ name: searchName, query: z.string().max(2000) }), request.body);
+    return { search: saveSearch(me(request), input.name, input.query) };
+  });
+
+  app.patch<{ Params: { id: string } }>('/api/searches/:id', async (request) => {
+    const input = parse(z.object({ name: searchName }), request.body);
+    renameSearch(me(request), request.params.id, input.name);
+    return { ok: true };
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/searches/:id', async (request) => {
+    deleteSearch(me(request), request.params.id);
+    return { ok: true };
   });
 
   app.get('/api/recent', async (request) => {
@@ -432,6 +486,30 @@ export async function fileRoutes(app: FastifyInstance) {
     return { items: present(page.nodes, user), next: page.next };
   });
 
+  app.get<{ Querystring: { date?: string; offset?: string } }>('/api/photos/memories', async (request) => {
+    const user = me(request);
+    const groups = memories(user, String(request.query.date ?? ''), Number(request.query.offset ?? 0));
+    return { groups: groups.map((group) => ({ year: group.year, items: present(group.nodes, user) })) };
+  });
+
+  app.get<IdParams>('/api/nodes/:id/email', async (request) => emailSummary(requireAccess(me(request), request.params.id).node));
+
+  app.get<IdParams>('/api/nodes/:id/email/body', async (request, reply) =>
+    sendEmailBody(reply, requireAccess(me(request), request.params.id).node)
+  );
+
+  app.get<{ Params: { id: string; index: string } }>('/api/nodes/:id/email/attachments/:index', async (request, reply) =>
+    sendEmailAttachment(reply, requireAccess(me(request), request.params.id).node, Number(request.params.index))
+  );
+
+  app.post('/api/storage/duplicates', async (request) => {
+    const input = parse(
+      z.object({ keep: z.array(id).min(1, 'Wähle mindestens ein Element aus').max(100, 'Höchstens 100 auf einmal') }),
+      request.body
+    );
+    return cleanDuplicates(me(request), input.keep);
+  });
+
   app.get('/api/storage/report', async (request) => {
     const user = me(request);
     const report = storageReport(user);
@@ -445,6 +523,7 @@ export async function fileRoutes(app: FastifyInstance) {
       duplicates: report.duplicates.map((group) => ({
         sha256: group.sha256.slice(0, 12),
         size: group.size,
+        count: group.count,
         wasted: group.wasted,
         items: present(group.nodes, user),
       })),

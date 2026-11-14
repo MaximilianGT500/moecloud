@@ -48,8 +48,6 @@ const RATIOS: { key: string; label: string; value: number | null }[] = [
 const SIZES = [null, 4096, 2560, 1920, 1280, 800];
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-export const canEditImage = (item: Item) => item.type === 'file' && item.kind === 'image' && item.thumb && !item.infected;
-
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function fitted(ratio: number) {

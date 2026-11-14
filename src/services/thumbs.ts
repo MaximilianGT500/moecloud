@@ -1,9 +1,10 @@
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import sharp, { type Sharp } from 'sharp';
-import { parseFile } from 'music-metadata';
+import type { Sharp } from 'sharp';
 import { run } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
+import { loadSharp } from '../lib/sharp.ts';
+import { WORKERS } from '../lib/workers.ts';
 import { canThumb, isHeif, isInlineImage, isRaw } from '../lib/mime.ts';
 import { blobPath, getBlob, metaOf, previewPath, thumbPath, typeOf, type BlobRow } from './blobs.ts';
 import { coverImage, hasCover } from './covers.ts';
@@ -11,9 +12,6 @@ import { heifToWebp } from './heif.ts';
 import { canFrame, imageFrame, pdfPage, tools, videoFrame } from './media.ts';
 import type { NodeRow } from './nodes.ts';
 import { rawInfo, readRange } from './raw.ts';
-
-sharp.cache(false);
-sharp.concurrency(1);
 
 const MAX_INPUT = 50 * 1024 * 1024 * 1024;
 const THUMB_EDGE = 480;
@@ -71,7 +69,7 @@ export function previews(
 }
 
 async function slot<T>(fn: () => Promise<T>): Promise<T> {
-  if (active >= 2) await new Promise<void>((resolve) => waiting.push(resolve));
+  if (active > WORKERS) await new Promise<void>((resolve) => waiting.push(resolve));
   active++;
   try {
     return await fn();
@@ -97,6 +95,7 @@ const swapped = (orientation: number, width: number | null, height: number | nul
 
 async function load(job: Job, path: string, edge: number): Promise<{ image: Sharp; size: Size; flatten?: boolean }> {
   const none: Size = { width: null, height: null };
+  const sharp = await loadSharp();
   if (job.source === 'image') {
     const image = sharp(path, OPTIONS);
     const meta = await image.metadata();
@@ -124,6 +123,7 @@ async function load(job: Job, path: string, edge: number): Promise<{ image: Shar
   }
   if (job.source === 'video') return { image: sharp(await videoFrame(path), OPTIONS), size: none };
   if (job.source === 'pdf') return { image: sharp(await pdfPage(path), OPTIONS), size: none, flatten: true };
+  const { parseFile } = await import('music-metadata');
   const tags = await parseFile(path, { skipCovers: false, duration: false });
   const picture = tags.common.picture?.[0];
   if (!picture) throw new Error('no preview');

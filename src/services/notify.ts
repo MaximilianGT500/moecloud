@@ -1,3 +1,4 @@
+import { deviceOf } from '../lib/agent.ts';
 import { all, placeholders, run, value } from '../lib/db.ts';
 import { publish } from '../lib/events.ts';
 import { t, type Lang } from '../lib/i18n.ts';
@@ -14,6 +15,10 @@ export type NotifyKind =
   | 'watch'
   | 'virus'
   | 'storage'
+  | 'import_done'
+  | 'import_failed'
+  | 'login_new'
+  | 'cleanup'
   | 'admin_user'
   | 'admin_virus'
   | 'admin_scan'
@@ -86,6 +91,34 @@ const KINDS: Record<NotifyKind, Kind> = {
     title: (lang, p) => t(lang, 'Dein Speicher ist zu {percent} % voll', p),
     text: (lang) => t(lang, 'Lösch, was du nicht mehr brauchst, oder frag die Verwaltung nach mehr Platz.'),
     action: 'Speicher ansehen',
+  },
+  import_done: {
+    title: (lang, p) => t(lang, '„{name}“ ist fertig geladen', p),
+    text: (lang) => t(lang, 'Der Download aus dem Internet liegt jetzt in deinen Dateien.'),
+    action: 'Zum Ordner',
+  },
+  import_failed: {
+    title: (lang, p) => t(lang, 'Der Download von {host} hat nicht geklappt', p),
+    text: (_lang, p) => String(p.error ?? ''),
+  },
+  login_new: {
+    title: (lang) => t(lang, 'Neue Anmeldung bei deinem Konto'),
+    text: (lang, p) =>
+      t(
+        lang,
+        '{device} mit der IP-Adresse {ip}. Warst du das nicht, ändere dein Passwort und melde das Gerät unter Konto › Sitzungen ab.',
+        {
+          device: deviceOf(lang, String(p.agent ?? '')),
+          ip: p.ip,
+        }
+      ),
+    pref: 'mailLogins',
+    action: 'Sitzungen ansehen',
+  },
+  cleanup: {
+    title: (lang, p) => many(lang, Number(p.count), 'Eine Datei aus „{folder}“ aufgeräumt', '{count} Dateien aus „{folder}“ aufgeräumt', p),
+    text: (lang, p) => t(lang, 'Sie lagen länger als {days} Tage unverändert dort. Im Papierkorb kannst du sie wiederherstellen.', p),
+    action: 'Zum Papierkorb',
   },
   admin_user: {
     title: (lang, p) => t(lang, '{name} hat ein Konto erstellt', p),

@@ -8,7 +8,7 @@ import { formatDateTime, formatDuration, formatNumber } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { c, radius } from '../../theme/tokens';
 import type { Item } from './kinds';
-import type { NodeMeta } from './preview/media';
+import type { NodeMeta } from './preview/meta';
 
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (

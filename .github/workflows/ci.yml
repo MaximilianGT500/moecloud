@@ -61,6 +61,40 @@ jobs:
           path: ${{ runner.temp }}/moecloud-browser-fehler
           if-no-files-found: ignore
 
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: moecloud
+          POSTGRES_PASSWORD: moecloud
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U moecloud"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v7
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests mit PostgreSQL
+        run: npm run test:postgres
+        env:
+          TEST_POSTGRES: postgres://moecloud:moecloud@localhost:5432/postgres
+
   skripte:
     runs-on: ubuntu-latest
     steps:
@@ -82,3 +116,4 @@ jobs:
           export MOECLOUD_VERSION
           docker compose -f docker-compose.yml config --quiet
           COMPOSE_PROFILES=caddy docker compose -f docker-compose.yml -f docker/clamav.yml config --quiet
+          POSTGRES_PASSWORD=geheim docker compose -f docker-compose.yml -f docker/clamav.yml -f docker/postgres.yml config --quiet

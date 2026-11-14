@@ -388,3 +388,76 @@ export function PackDialog({ items, onClose, onDone }: { items: Item[]; onClose:
     </Dialog>
   );
 }
+
+const CLEANUP_DAYS = [7, 14, 30, 90, 365];
+
+export function CleanupDialog({
+  item,
+  trashDays,
+  onClose,
+  onDone,
+}: {
+  item: Item;
+  trashDays: number;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [days, setDays] = useState<number | null>(item.cleanup ?? 30);
+  const [busy, setBusy] = useState(false);
+  const options = CLEANUP_DAYS.includes(item.cleanup ?? 30) ? CLEANUP_DAYS : [...CLEANUP_DAYS, item.cleanup!].sort((a, b) => a - b);
+  const label = (value: number) => (value === 365 ? t('Nach einem Jahr') : tn(value, 'Nach einem Tag', 'Nach {count} Tagen'));
+  const save = async (value: number | null) => {
+    setBusy(true);
+    const result = await attempt(() => api.put<{ cleanup: number | null }>(`/api/nodes/${item.id}/cleanup`, { days: value }));
+    setBusy(false);
+    if (!result) return;
+    toast(result.cleanup ? t('„{name}“ räumt jetzt automatisch auf', { name: item.name }) : t('Aufräumregel ausgeschaltet'));
+    onDone();
+    onClose();
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <DialogTitle>{t('Aufräumregel für „{name}“', { name: item.name })}</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+          {trashDays > 0
+            ? tn(
+                trashDays,
+                'Dateien, die hier länger unverändert liegen, wandern von selbst in den Papierkorb. Dort bleiben sie noch einen Tag.',
+                'Dateien, die hier länger unverändert liegen, wandern von selbst in den Papierkorb. Dort bleiben sie noch {count} Tage.'
+              )
+            : t('Dateien, die hier länger unverändert liegen, wandern von selbst in den Papierkorb.')}
+        </Typography>
+        <TextField
+          select
+          label={t('Aufräumen')}
+          value={days ?? 0}
+          onChange={(event) => setDays(Number(event.target.value) || null)}
+          disabled={busy}
+        >
+          {options.map((value) => (
+            <MenuItem key={value} value={value}>
+              {label(value)}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+          {t('Das gilt auch für Unterordner und für alles, was andere hier ablegen.')}
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        {item.cleanup ? (
+          <Button color="error" onClick={() => void save(null)} disabled={busy} sx={{ mr: 'auto' }}>
+            {t('Ausschalten')}
+          </Button>
+        ) : null}
+        <Button onClick={onClose} disabled={busy}>
+          {t('Abbrechen')}
+        </Button>
+        <Button variant="contained" onClick={() => void save(days)} disabled={busy || !days}>
+          {busy ? <CircularProgress size={20} aria-label={t('Speichert')} /> : t('Speichern')}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

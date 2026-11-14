@@ -13,12 +13,21 @@ function trustProxy(value: string | undefined): boolean | string {
 
 const dataDir = resolve(process.env.DATA_DIR || resolve(root, 'data'));
 
+function databaseUrl() {
+  const file = process.env.DATABASE_URL_FILE;
+  const value = (file ? readFileSync(file, 'utf8') : process.env.DATABASE_URL || '').trim();
+  if (!value) return resolve(dataDir, 'moecloud.db');
+  if (/^postgres(?:ql)?:\/\//i.test(value)) return value;
+  return resolve(value.replace(/^sqlite:(?:\/\/)?/i, ''));
+}
+
 export const config = {
   version: pkg.version,
   root,
   port: Number(process.env.PORT || 3000),
   host: process.env.HOST || '0.0.0.0',
   dataDir,
+  database: databaseUrl(),
   paths: {
     db: resolve(dataDir, 'moecloud.db'),
     blobs: resolve(dataDir, 'blobs'),
@@ -27,6 +36,7 @@ export const config = {
     tmp: resolve(dataDir, 'tmp'),
     backups: resolve(dataDir, 'backups'),
   },
+  backupCopy: process.env.BACKUP_COPY_DIR ? resolve(process.env.BACKUP_COPY_DIR) : null,
   web: resolve(root, 'dist/web'),
   public: resolve(root, 'public'),
   logLevel: process.env.LOG_LEVEL || 'info',

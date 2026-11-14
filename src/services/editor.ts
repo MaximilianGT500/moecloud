@@ -1,10 +1,10 @@
 import { rm } from 'node:fs/promises';
-import sharp, { type Sharp } from 'sharp';
-import exifr from 'exifr';
+import type { Sharp } from 'sharp';
 import { randomId } from '../lib/crypto.ts';
 import { badRequest } from '../lib/errors.ts';
 import { canThumb, isHeif, isRaw } from '../lib/mime.ts';
 import { splitName } from '../lib/names.ts';
+import { loadSharp } from '../lib/sharp.ts';
 import { record } from './activity.ts';
 import { blobPath, getBlob, tmpPath, typeOf } from './blobs.ts';
 import { createDerived, writableFolder } from './derived.ts';
@@ -67,6 +67,7 @@ async function sized(image: Sharp) {
 async function heifTags(path: string) {
   const item = await heifExif(path).catch(() => null);
   if (!item) return undefined;
+  const { default: exifr } = await import('exifr');
   const tags = (await exifr.parse(item, { pick: ['DateTimeOriginal', 'Make', 'Model'], reviveValues: false }).catch(() => null)) as Record<
     string,
     unknown
@@ -77,6 +78,7 @@ async function heifTags(path: string) {
 async function load(node: NodeRow, type: string): Promise<Source> {
   const path = blobPath(node.sha256!);
   const options = { failOn: 'error', limitInputPixels: MAX_PIXELS, animated: false } as const;
+  const sharp = await loadSharp();
   if (canThumb(type)) {
     const image = sharp(path, options);
     return { image: image.autoOrient(), ...(await sized(image)), cleanup: nothing };

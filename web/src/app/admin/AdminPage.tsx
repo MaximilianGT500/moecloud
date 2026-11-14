@@ -9,6 +9,7 @@ import DnsRounded from '@mui/icons-material/DnsRounded';
 import GppGoodRounded from '@mui/icons-material/GppGoodRounded';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
+import LoginRounded from '@mui/icons-material/LoginRounded';
 import MailRounded from '@mui/icons-material/MailRounded';
 import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
@@ -30,12 +31,25 @@ import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
 import { ScanSection } from './Scan';
 import { SettingsSection } from './Settings';
+import { SsoSection } from './Sso';
 import { loadSettings } from './shared';
 import { SystemSection } from './System';
 import { WebhooksSection } from './Webhooks';
 
 type SectionKey =
-  'overview' | 'people' | 'groups' | 'invites' | 'links' | 'audit' | 'scan' | 'mail' | 'webhooks' | 'backups' | 'settings' | 'system';
+  | 'overview'
+  | 'people'
+  | 'groups'
+  | 'invites'
+  | 'links'
+  | 'audit'
+  | 'scan'
+  | 'mail'
+  | 'sso'
+  | 'webhooks'
+  | 'backups'
+  | 'settings'
+  | 'system';
 
 const LEGACY: Record<string, SectionKey> = { users: 'people', invites: 'invites', settings: 'settings', overview: 'overview' };
 
@@ -49,6 +63,7 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
     { key: 'audit', label: t('Protokoll'), icon: <ReceiptLongRounded />, group: 1 },
     { key: 'scan', label: t('Virenscan'), icon: <GppGoodRounded />, group: 2 },
     { key: 'mail', label: t('E-Mail'), icon: <MailRounded />, group: 2 },
+    { key: 'sso', label: t('Single Sign-on'), icon: <LoginRounded />, group: 2 },
     { key: 'webhooks', label: t('Webhooks'), icon: <WebhookRounded />, group: 2 },
     { key: 'backups', label: t('Sicherungen'), icon: <BackupRounded />, group: 2 },
     { key: 'settings', label: t('Einstellungen'), icon: <SettingsRounded />, group: 3 },
@@ -197,6 +212,7 @@ export function AdminPage() {
           {section === 'audit' && <AuditSection />}
           {section === 'scan' && <ScanSection />}
           {section === 'mail' && <MailSection />}
+          {section === 'sso' && <SsoSection />}
           {section === 'webhooks' && <WebhooksSection />}
           {section === 'backups' && <BackupsSection />}
           {section === 'settings' && <SettingsSection onChanged={(settings) => setRegistration(String(settings['auth.registration']))} />}

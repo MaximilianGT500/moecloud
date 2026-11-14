@@ -13,37 +13,13 @@ import Slider from '@mui/material/Slider';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded';
-import { api } from '../../../lib/api';
 import { formatDuration } from '../../../lib/format';
 import { t } from '../../../lib/i18n';
 import { c, elevation, fonts, radius } from '../../../theme/tokens';
 import { contentUrl, previewUrl, thumbUrl, type Item } from '../kinds';
 import { useResume, useSubtitles } from '../playback';
 import { Fallback } from './Fallback';
-
-export interface NodeMeta {
-  width: number | null;
-  height: number | null;
-  takenAt: number | null;
-  processed: boolean;
-  meta: Record<string, string | number | boolean | undefined>;
-  scan: { status: string; signature: string | null; at: number | null } | null;
-}
-
-export function useMeta(item: Item | null, base = '/api') {
-  const [state, setState] = useState<{ key: string; meta: NodeMeta | null } | null>(null);
-  const key = item ? `${base}:${item.id}:${item.version}` : '';
-  useEffect(() => {
-    if (!item || item.type !== 'file' || item.trashedAt) return;
-    const abort = new AbortController();
-    api
-      .get<NodeMeta>(`${base}/nodes/${item.id}/meta`, abort.signal)
-      .then((meta) => setState({ key, meta }))
-      .catch(() => setState({ key, meta: null }));
-    return () => abort.abort();
-  }, [item, base, key]);
-  return state?.key === key ? state.meta : null;
-}
+import { useMeta } from './meta';
 
 interface MediaProps {
   item: Item;

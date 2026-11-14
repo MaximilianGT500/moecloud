@@ -14,8 +14,12 @@ import { TextPreview, TEXT_LIMIT } from './TextPreview';
 
 const DocxPreview = lazy(() => import('./DocxPreview'));
 const ArchivePreview = lazy(() => import('./ArchivePreview'));
+const EmailPreview = lazy(() => import('./EmailPreview'));
+const CalendarPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.CalendarPreview })));
+const ContactPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.ContactPreview })));
 
 const DOCUMENT_LIMIT = 40 * 1024 * 1024;
+const EMAIL_LIMIT = 25 * 1024 * 1024;
 
 export interface PreviewProps {
   item: Item;
@@ -105,6 +109,25 @@ export function Preview({
       return (
         <Suspense fallback={loading}>
           <ArchivePreview item={item} base={base} canDownload={canDownload} />
+        </Suspense>
+      );
+    case 'email':
+      if (item.size > EMAIL_LIMIT) return <Fallback item={item} text={t('Die Datei ist zu groß für die Vorschau.')} action={download} />;
+      return (
+        <Suspense fallback={loading}>
+          <EmailPreview item={item} base={base} canDownload={canDownload} />
+        </Suspense>
+      );
+    case 'calendar':
+      return (
+        <Suspense fallback={loading}>
+          <CalendarPreview item={item} base={base} />
+        </Suspense>
+      );
+    case 'contacts':
+      return (
+        <Suspense fallback={loading}>
+          <ContactPreview item={item} base={base} />
         </Suspense>
       );
     case 'font':

@@ -9,6 +9,7 @@ import { ids, parse } from '../lib/validate.ts';
 import { pdfPage, tools } from '../services/media.ts';
 import { blobPath } from '../services/blobs.ts';
 import { getPosition, savePosition, subtitleNode, subtitlesOf } from '../services/media-state.ts';
+import { setRule } from '../services/rules.ts';
 import { setWatch } from '../services/watches.ts';
 import { children, present, requireAccess, resolveAccess, type NodeRow } from '../services/nodes.ts';
 import { packZip } from '../services/pack.ts';
@@ -98,6 +99,12 @@ export async function toolRoutes(app: FastifyInstance) {
   app.put<IdParams>('/api/nodes/:id/watch', async (request) => {
     const input = parse(z.object({ watching: z.boolean() }), request.body);
     return { watching: setWatch(me(request), request.params.id, input.watching) };
+  });
+
+  app.put<IdParams>('/api/nodes/:id/cleanup', async (request) => {
+    const days = z.number().int().min(1, 'Wähle zwischen 1 und 3650 Tagen').max(3650, 'Wähle zwischen 1 und 3650 Tagen');
+    const input = parse(z.object({ days: days.nullable() }), request.body);
+    return { cleanup: setRule(me(request), request.params.id, input.days) };
   });
 
   app.post('/api/nodes/zip', async (request) => {

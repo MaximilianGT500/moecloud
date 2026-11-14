@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import BackupRounded from '@mui/icons-material/BackupRounded';
+import CopyAllRounded from '@mui/icons-material/CopyAllRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import StorageRounded from '@mui/icons-material/StorageRounded';
@@ -33,6 +34,7 @@ interface BackupView {
   settings: { 'backup.enabled': boolean; 'backup.hour': number; 'backup.keep': number };
   last: number | null;
   dir: string;
+  copy: { dir: string; last: number | null; error: string | null } | null;
 }
 
 function kindLabel(kind: Backup['kind']) {
@@ -138,6 +140,18 @@ export function BackupsSection() {
             ))}
           </TextField>
         </Box>
+        {view.copy ? (
+          <Alert severity={view.copy.error ? 'error' : 'success'} icon={<CopyAllRounded />}>
+            {view.copy.error
+              ? t('Die Kopie nach {dir} hat nicht geklappt: {error}', { dir: view.copy.dir, error: view.copy.error })
+              : view.copy.last
+                ? t('Jede Sicherung landet zusätzlich in {dir}, zuletzt am {date}.', {
+                    dir: view.copy.dir,
+                    date: formatDateTime(view.copy.last),
+                  })
+                : t('Jede Sicherung landet zusätzlich in {dir}.', { dir: view.copy.dir })}
+          </Alert>
+        ) : null}
         <Alert severity="info" icon={<StorageRounded />}>
           {t(
             'Die Dateien selbst liegen im Ordner blobs neben der Datenbank. Sichere den ganzen Datenordner regelmäßig, zum Beispiel mit restic, Borg oder rsync.'

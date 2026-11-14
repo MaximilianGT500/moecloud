@@ -43,10 +43,6 @@ interface Page {
   rotation: number;
 }
 
-const isPdf = (item: Item) => item.type === 'file' && item.mime === 'application/pdf' && !item.infected;
-export const canMergePdfs = (items: Item[]) => items.length >= 2 && items.length <= 50 && items.every(isPdf);
-export const canOrganizePdf = (item: Item) => isPdf(item);
-
 const baseName = (name: string) => splitExtension(name)[0];
 const turn = (value: number, step: number) => (((value + step) % 360) + 360) % 360;
 

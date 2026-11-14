@@ -31,6 +31,8 @@ const GROUPS: Record<string, string[]> = {
     'app_password_created',
     'app_password_removed',
     'sessions_revoked',
+    'sso_unlinked',
+    'account_exported',
   ],
   failed: ['login_failed'],
   people: [
@@ -51,10 +53,12 @@ const GROUPS: Record<string, string[]> = {
     'group_created',
     'group_updated',
     'group_deleted',
+    'users_imported',
   ],
   system: [
     'settings_changed',
     'mail_changed',
+    'sso_changed',
     'scan_changed',
     'webhook_changed',
     'link_removed',

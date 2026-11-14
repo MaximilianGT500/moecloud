@@ -54,10 +54,28 @@ export interface Item {
   progress?: number | null;
   shareEnds?: number | null;
   watching?: boolean;
+  cleanup?: number | null;
 }
 
 export type PreviewType =
-  'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'csv' | 'json' | 'code' | 'text' | 'docx' | 'xlsx' | 'zip' | 'font' | 'cover' | 'none';
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'pdf'
+  | 'markdown'
+  | 'csv'
+  | 'json'
+  | 'code'
+  | 'text'
+  | 'docx'
+  | 'xlsx'
+  | 'zip'
+  | 'email'
+  | 'calendar'
+  | 'contacts'
+  | 'font'
+  | 'cover'
+  | 'none';
 
 const BROWSER_IMAGES = new Set([
   'image/jpeg',
@@ -90,6 +108,9 @@ export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' |
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx') return 'xlsx';
   if (ext === 'zip') return 'zip';
+  if (ext === 'eml' || item.mime === 'message/rfc822') return 'email';
+  if (ext === 'ics' || ext === 'ical' || item.mime === 'text/calendar') return 'calendar';
+  if (ext === 'vcf' || ext === 'vcard' || item.mime === 'text/vcard' || item.mime === 'text/x-vcard') return 'contacts';
   if (['ttf', 'otf', 'woff', 'woff2'].includes(ext)) return 'font';
   if (item.kind === 'code') return 'code';
   if (item.kind === 'text') return 'text';
@@ -158,6 +179,25 @@ export function FileIcon({ item, size = 24 }: { item: Pick<Item, 'kind' | 'share
   const color = item.kind === 'folder' && item.color ? folderColor(item.color) : kindColor(item.kind);
   return <Icon sx={{ fontSize: size, color, flex: 'none' }} aria-hidden />;
 }
+
+export const canEditImage = (item: Item) => item.type === 'file' && item.kind === 'image' && item.thumb && !item.infected;
+
+const isPdf = (item: Item) => item.type === 'file' && item.mime === 'application/pdf' && !item.infected;
+export const canMergePdfs = (items: Item[]) => items.length >= 2 && items.length <= 50 && items.every(isPdf);
+export const canOrganizePdf = (item: Item) => isPdf(item);
+
+export interface DiffVersion {
+  id: string;
+  size: number;
+  modifiedAt: number;
+  author: string | null;
+}
+
+const DIFF_LIMIT = 2 * 1024 * 1024;
+const COMPARABLE = new Set<PreviewType>(['markdown', 'code', 'text', 'csv', 'json']);
+
+export const canCompare = (item: Item, version: DiffVersion) =>
+  COMPARABLE.has(previewType(item)) && item.size <= DIFF_LIMIT && version.size <= DIFF_LIMIT;
 
 export const thumbUrl = (item: Pick<Item, 'id' | 'version'>, base = '/api') => `${base}/nodes/${item.id}/thumb?v=${item.version}`;
 export const contentUrl = (item: Pick<Item, 'id' | 'version'>, base = '/api', download = false) =>

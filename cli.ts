@@ -1,7 +1,10 @@
 import { mkdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { config } from './src/config.ts';
-import { all, closeDatabase, isLockError, openDatabase, run, stamp, snapshotDatabase } from './src/lib/db.ts';
+import { all, closeDatabase, databaseInfo, isLockError, openDatabase, run, stamp, snapshotDatabase } from './src/lib/db.ts';
+import { copyDatabase } from './src/lib/copy.ts';
+import { schemaVersion } from './src/lib/schema.ts';
+import { isPostgresUrl, redactUrl } from './src/lib/postgres.ts';
 import { hashPassword, randomId } from './src/lib/crypto.ts';
 import { audit } from './src/services/audit.ts';
 import { blobPath, ensureDirs } from './src/services/blobs.ts';
@@ -91,6 +94,8 @@ function help() {
     ['mail-test <adresse>', 'Test-E-Mail schicken'],
     ['process', 'Vorschaubilder, Metadaten und Suchindex nachholen'],
     ['recover [name] [--dry-run]', 'Dateien ohne Eintrag in der Datenbank in den Ordner Wiederhergestellt holen'],
+    ['db', 'Art, Version und Größe der Datenbank zeigen'],
+    ['db copy [--from quelle] [ziel]', 'Alle Daten in eine neue, leere Datenbank kopieren, SQLite-Datei oder postgres://'],
     ['reindex', 'Suchindex für Inhalte neu aufbauen'],
     ['version', 'Installierte und neueste Version anzeigen'],
   ];
@@ -142,7 +147,7 @@ function kinds(tally: Tally, lang: Lang) {
 async function main() {
   await ensureDirs();
   try {
-    openDatabase(config.paths.db, config.paths.backups);
+    if (name !== 'db' || positional()[0] !== 'copy') openDatabase(config.database, config.paths.backups);
   } catch (error) {
     if (!isLockError(error)) throw error;
     process.stderr.write(`${lockAdvice(error as Error)}\n`);
@@ -349,6 +354,45 @@ async function main() {
       if (result.imported) {
         out(`Vorschaubilder, Bildinfos und Suchtext erzeugt der Server in den nächsten Minuten. Mit ${command} process geht das sofort.`);
         if (settings.get('scan.enabled')) out(`Mit ${command} scan prüft ClamAV die Dateien gleich.`);
+      }
+      break;
+    }
+    case 'db': {
+      const [action, target] = positional();
+      if (!action) {
+        const info = databaseInfo();
+        out(`${info.version}, ${size(info.size)}, Stand ${schemaVersion()}`);
+        out(`Ort: ${isPostgresUrl(config.database) ? redactUrl(config.database) : config.database}`);
+        break;
+      }
+      if (action !== 'copy') fail(`Unbekannter Befehl db ${action}. Möglich sind db und db copy`);
+      const from = option('from') ?? config.database;
+      const to = target ?? (option('from') ? config.database : undefined);
+      if (!to) fail(`Gib das Ziel an, zum Beispiel: ${command} db copy postgres://moecloud:passwort@db/moecloud`);
+      const source = isPostgresUrl(from) ? from : resolve(from);
+      const destination = isPostgresUrl(to!) ? to! : resolve(to!);
+      if (source === destination)
+        fail('Quelle und Ziel sind dieselbe Datenbank. Gib mit --from eine andere Quelle oder ein anderes Ziel an.');
+      const label = (value: string) => (isPostgresUrl(value) ? redactUrl(value) : value);
+      out(`Kopiere ${label(source)} nach ${label(destination)} …`);
+      let shown = 0;
+      const result = await copyDatabase(source, destination, (table, rows) => {
+        if (Date.now() - shown < 250) return;
+        shown = Date.now();
+        process.stdout.write(`\r${table}: ${amount(rows, 'Zeile', 'Zeilen')}`.padEnd(48));
+      }).catch((error: Error) => fail(error.message));
+      if (shown) out();
+      out(
+        `Fertig: ${amount(result.rows, 'Zeile', 'Zeilen')} aus ${amount(Object.keys(result.tables).length, 'Tabelle', 'Tabellen')} in ${result.seconds.toFixed(1)} s.`
+      );
+      if (destination === config.database) {
+        out('Starte MoeCloud jetzt neu, damit es die kopierten Daten lädt.');
+      } else if (isPostgresUrl(destination)) {
+        out(`Damit MoeCloud die neue Datenbank nutzt, trag DATABASE_URL=${redactUrl(destination)} ein und starte MoeCloud neu.`);
+      } else if (destination === config.paths.db) {
+        out('Damit MoeCloud die neue Datenbank nutzt, nimm DATABASE_URL aus der Konfiguration und starte MoeCloud neu.');
+      } else {
+        out(`Damit MoeCloud die neue Datenbank nutzt, trag DATABASE_URL=sqlite:${destination} ein und starte MoeCloud neu.`);
       }
       break;
     }

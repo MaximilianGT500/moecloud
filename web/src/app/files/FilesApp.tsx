@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -16,6 +16,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
+import AutoDeleteRounded from '@mui/icons-material/AutoDeleteRounded';
 import CheckRounded from '@mui/icons-material/CheckRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
@@ -71,6 +72,7 @@ import { c, folderColor, radius } from '../../theme/tokens';
 import { AppShell, type Destination } from '../shell/AppShell';
 import { EmptyState } from '../common/bits';
 import { choose, pickColor } from '../common/dialogs';
+import { lazyNamed, whenIdle } from '../common/lazy';
 import { toast } from '../common/toast';
 import { ActionMenu, type Action, type Anchor } from './ActionMenu';
 import {
@@ -81,6 +83,7 @@ import {
   download,
   emptyTrash,
   extract,
+  importFromUrl,
   leaveShare,
   renameItem,
   restoreItems,
@@ -88,30 +91,52 @@ import {
   trashItems,
 } from './actions';
 import type { ActivityEntry } from './activity';
-import { ActivityView } from './ActivityView';
-import { AlbumContent, AlbumList, AlbumMenu, AlbumPicker, newAlbum, albumHref } from './Albums';
+import { albumHref, newAlbum } from './album';
 import { Details, type DetailsTab } from './Details';
-import { canEditImage, ImageEditor } from './ImageEditor';
-import { PackDialog, RenameManyDialog } from './Bulk';
-import { MiniPlayer } from './MiniPlayer';
 import { enqueue, forget, playItems, usePlayer } from './player';
 import { FolderReadme, readmeOf } from './Readme';
-import { SearchFilters } from './SearchFilters';
-import { canMergePdfs, canOrganizePdf, PdfMergeDialog, PdfPagesDialog } from './PdfTools';
 import { DRAG_TYPE, Items } from './Items';
-import { FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
-import { Photos } from './Photos';
-import { StorageView } from './Storage';
+import { canEditImage, canMergePdfs, canOrganizePdf, FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
 import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
 import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewMenu } from './Panels';
 import { SearchBar } from './SearchBar';
-import { ShareDialog } from './ShareDialog';
-import { SharedByMe } from './SharedView';
-import { TagDialog, TagMenu, TagsView, useTagSync } from './tags';
-import { Viewer } from './Viewer';
+import { useTagSync } from './tags';
+
+const ActivityView = lazyNamed(() => import('./ActivityView'), 'ActivityView');
+const AlbumContent = lazyNamed(() => import('./Albums'), 'AlbumContent');
+const AlbumList = lazyNamed(() => import('./Albums'), 'AlbumList');
+const AlbumMenu = lazyNamed(() => import('./Albums'), 'AlbumMenu');
+const AlbumPicker = lazyNamed(() => import('./Albums'), 'AlbumPicker');
+const CleanupDialog = lazyNamed(() => import('./Bulk'), 'CleanupDialog');
+const ImageEditor = lazyNamed(() => import('./ImageEditor'), 'ImageEditor');
+const MiniPlayer = lazyNamed(() => import('./MiniPlayer'), 'MiniPlayer');
+const PackDialog = lazyNamed(() => import('./Bulk'), 'PackDialog');
+const PdfMergeDialog = lazyNamed(() => import('./PdfTools'), 'PdfMergeDialog');
+const PdfPagesDialog = lazyNamed(() => import('./PdfTools'), 'PdfPagesDialog');
+const Photos = lazyNamed(() => import('./Photos'), 'Photos');
+const RenameManyDialog = lazyNamed(() => import('./Bulk'), 'RenameManyDialog');
+const SearchFilters = lazyNamed(() => import('./SearchFilters'), 'SearchFilters');
+const ShareDialog = lazyNamed(() => import('./ShareDialog'), 'ShareDialog');
+const SharedByMe = lazyNamed(() => import('./SharedView'), 'SharedByMe');
+const StorageView = lazyNamed(() => import('./Storage'), 'StorageView');
+const TagDialog = lazyNamed(() => import('./TagViews'), 'TagDialog');
+const TagMenu = lazyNamed(() => import('./TagViews'), 'TagMenu');
+const TagsView = lazyNamed(() => import('./TagViews'), 'TagsView');
+const Viewer = lazyNamed(() => import('./Viewer'), 'Viewer');
+
+function Later({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
+
+function useOnce(active: boolean) {
+  const [seen, setSeen] = useState(active);
+  if (active && !seen) setSeen(true);
+  return seen || active;
+}
 
 interface FilesBoot extends Boot {
+  import: boolean;
   share: { links: boolean; users: boolean; requirePassword: boolean; maxDays: number };
   upload: { chunkSize: number; maxUpload: number };
   trashDays: number;
@@ -192,6 +217,7 @@ export function FilesApp() {
   const [pdfMerge, setPdfMerge] = useState<Item[] | null>(null);
   const [renaming, setRenaming] = useState<Item[] | null>(null);
   const [packing, setPacking] = useState<Item[] | null>(null);
+  const [cleanupFor, setCleanupFor] = useState<Item | null>(null);
   const [move, setMove] = useState<MoveRequest | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [detailsTab, setDetailsTab] = useState<DetailsTab>('info');
@@ -219,6 +245,9 @@ export function FilesApp() {
   const uploadTarget = view.kind !== 'folder' || readOnly ? rootId : (folder?.id ?? view.id);
   const files = items.filter((item) => item.type === 'file');
   const viewerIndex = viewer ? files.findIndex((item) => item.id === viewer.id) : -1;
+  const viewing = useOnce(viewerIndex >= 0);
+  const sharing = useOnce(Boolean(share));
+  const playing = useOnce(player.queue.length > 0);
 
   const refreshStorage = () => {
     void api
@@ -283,6 +312,15 @@ export function FilesApp() {
   };
 
   useTagSync();
+
+  useEffect(
+    () =>
+      whenIdle(() => {
+        void Viewer.preload();
+        void ShareDialog.preload();
+      }),
+    []
+  );
 
   useLive((event, payload) => {
     if (event === 'shared') {
@@ -512,6 +550,9 @@ export function FilesApp() {
         onClick: () => void toggleWatch(single),
       });
     }
+    if (single && single.type === 'folder' && single.parentId && single.role === 'owner') {
+      list.push({ key: 'cleanup', label: t('Aufräumregel'), icon: <AutoDeleteRounded />, onClick: () => setCleanupFor(single) });
+    }
     if (view.kind !== 'album' && targets.every((item) => item.type === 'file' && (item.kind === 'image' || item.kind === 'video'))) {
       list.push({
         key: 'album',
@@ -631,6 +672,7 @@ export function FilesApp() {
       refresh();
       setTimeout(() => setViewer({ id: created.id, editing: true }), 350);
     },
+    onImport: data.import ? () => void importFromUrl(uploadTarget) : undefined,
   });
 
   const dropHandlers = {
@@ -734,6 +776,25 @@ export function FilesApp() {
             {t('Papierkorb leeren')}
           </Button>
         )}
+        {view.kind === 'folder' && folder?.cleanup ? (
+          <Tooltip title={tn(folder.cleanup, 'Räumt Dateien nach einem Tag auf', 'Räumt Dateien nach {count} Tagen auf')}>
+            {folder.role === 'owner' ? (
+              <IconButton aria-label={t('Aufräumregel')} onClick={() => setCleanupFor(folder)} sx={{ color: c.primary }}>
+                <AutoDeleteRounded />
+              </IconButton>
+            ) : (
+              <Box
+                component="span"
+                role="img"
+                tabIndex={0}
+                aria-label={tn(folder.cleanup, 'Räumt Dateien nach einem Tag auf', 'Räumt Dateien nach {count} Tagen auf')}
+                sx={{ display: 'inline-flex', p: 1, color: c.primary }}
+              >
+                <AutoDeleteRounded />
+              </Box>
+            )}
+          </Tooltip>
+        ) : null}
         {view.kind === 'folder' && folder?.parentId && (
           <Tooltip title={folder.watching ? t('Du beobachtest diesen Ordner') : t('Ordner beobachten')}>
             <IconButton
@@ -835,7 +896,13 @@ export function FilesApp() {
     if (view.kind === 'album' && listing.data?.album) {
       const album = listing.data.album;
       return (
-        <PageTitle actions={<AlbumMenu album={album} onChanged={refresh} />}>
+        <PageTitle
+          actions={
+            <Later>
+              <AlbumMenu album={album} onChanged={refresh} />
+            </Later>
+          }
+        >
           <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
             <Tooltip title={t('Alle Alben')}>
               <IconButton
@@ -864,7 +931,9 @@ export function FilesApp() {
           actions={
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               {tools}
-              <TagMenu tag={{ ...tag, count: items.length }} onDeleted={() => navigate('/files/tags')} />
+              <Later>
+                <TagMenu tag={{ ...tag, count: items.length }} onDeleted={() => navigate('/files/tags')} />
+              </Later>
             </Box>
           }
         >
@@ -1041,7 +1110,11 @@ export function FilesApp() {
     }
     return (
       <>
-        {view.kind === 'search' && <SearchFilters view={view} />}
+        {view.kind === 'search' && (
+          <Later>
+            <SearchFilters view={view} />
+          </Later>
+        )}
         {view.kind === 'folder' && view.id === rootId && (
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, px: 1.5, pb: 1.5, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {[
@@ -1163,7 +1236,7 @@ export function FilesApp() {
               if (event.target === event.currentTarget && selected.size) setSelected(new Set());
             }}
           >
-            {content()}
+            <Suspense fallback={<LoadingRows />}>{content()}</Suspense>
           </Box>
           <DropOverlay
             active={dragging}
@@ -1175,7 +1248,11 @@ export function FilesApp() {
           />
         </Box>
       </AppShell>
-      <MiniPlayer />
+      {playing && (
+        <Later>
+          <MiniPlayer />
+        </Later>
+      )}
 
       <input
         ref={fileInput}
@@ -1213,33 +1290,72 @@ export function FilesApp() {
 
       <UploadPanel uploader={uploader} />
       <ActionMenu anchor={menu?.anchor ?? null} actions={menu ? actionsFor(menu.items) : []} onClose={() => setMenu(null)} />
-      <Viewer
-        items={files}
-        index={viewerIndex >= 0 ? viewerIndex : null}
-        editing={viewer?.editing ?? false}
-        onIndex={(index) => setViewer(index === null ? null : { id: files[index].id, editing: false })}
-        actions={(item) => actionsFor([item]).filter((action) => action.key === 'share' || action.key === 'trash')}
-        onSaved={() => refresh()}
-      />
-      <ShareDialog item={share} onClose={() => setShare(null)} onChanged={refresh} />
-      {tagging && <TagDialog items={tagging} onClose={() => setTagging(null)} onDone={refresh} />}
-      {pdfPages && <PdfPagesDialog item={pdfPages} onClose={() => setPdfPages(null)} onDone={() => refresh()} />}
-      {pdfMerge && <PdfMergeDialog items={pdfMerge} onClose={() => setPdfMerge(null)} onDone={() => refresh()} />}
-      {renaming && (
-        <RenameManyDialog
-          items={renaming}
-          siblings={view.kind === 'folder' ? items : []}
-          suggestion={view.kind === 'folder' && folder?.parentId ? folder.name : ''}
-          onClose={() => setRenaming(null)}
-          onDone={() => {
-            setSelected(new Set());
-            refresh();
-          }}
-        />
+      {viewing && (
+        <Later>
+          <Viewer
+            items={files}
+            index={viewerIndex >= 0 ? viewerIndex : null}
+            editing={viewer?.editing ?? false}
+            onIndex={(index) => setViewer(index === null ? null : { id: files[index].id, editing: false })}
+            actions={(item) => actionsFor([item]).filter((action) => action.key === 'share' || action.key === 'trash')}
+            onSaved={() => refresh()}
+          />
+        </Later>
       )}
-      {packing && <PackDialog items={packing} onClose={() => setPacking(null)} onDone={() => refresh()} />}
-      {imageEdit && <ImageEditor item={imageEdit} onClose={() => setImageEdit(null)} onSaved={() => refresh()} />}
-      {albumPick && <AlbumPicker items={albumPick} onClose={() => setAlbumPick(null)} onDone={() => setSelected(new Set())} />}
+      {sharing && (
+        <Later>
+          <ShareDialog item={share} onClose={() => setShare(null)} onChanged={refresh} />
+        </Later>
+      )}
+      {tagging && (
+        <Later>
+          <TagDialog items={tagging} onClose={() => setTagging(null)} onDone={refresh} />
+        </Later>
+      )}
+      {pdfPages && (
+        <Later>
+          <PdfPagesDialog item={pdfPages} onClose={() => setPdfPages(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {pdfMerge && (
+        <Later>
+          <PdfMergeDialog items={pdfMerge} onClose={() => setPdfMerge(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {renaming && (
+        <Later>
+          <RenameManyDialog
+            items={renaming}
+            siblings={view.kind === 'folder' ? items : []}
+            suggestion={view.kind === 'folder' && folder?.parentId ? folder.name : ''}
+            onClose={() => setRenaming(null)}
+            onDone={() => {
+              setSelected(new Set());
+              refresh();
+            }}
+          />
+        </Later>
+      )}
+      {packing && (
+        <Later>
+          <PackDialog items={packing} onClose={() => setPacking(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {cleanupFor && (
+        <Later>
+          <CleanupDialog item={cleanupFor} trashDays={data.trashDays} onClose={() => setCleanupFor(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {imageEdit && (
+        <Later>
+          <ImageEditor item={imageEdit} onClose={() => setImageEdit(null)} onSaved={() => refresh()} />
+        </Later>
+      )}
+      {albumPick && (
+        <Later>
+          <AlbumPicker items={albumPick} onClose={() => setAlbumPick(null)} onDone={() => setSelected(new Set())} />
+        </Later>
+      )}
       <MoveDialog
         request={move}
         startId={view.kind === 'folder' ? view.id : undefined}

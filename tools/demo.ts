@@ -228,9 +228,27 @@ const shots: Shot[] = [
   { taken: monthsAgo(2, 27, 16), camera: phone, aperture: '17/10', exposure: '1/250', iso: 64, focal: '69/10' },
   { taken: monthsAgo(4, 9, 12), camera: fuji, lens: 'XF23mmF1.4 R LM WR', aperture: '11/1', exposure: '1/1000', iso: 125, focal: '23/1' },
 ];
+const yearsAgo = (years: number, hour: number) => {
+  const date = new Date(now);
+  date.setFullYear(date.getFullYear() - years);
+  date.setHours(hour, 5, 0, 0);
+  return date;
+};
+const memories: [string, Buffer, Date][] = [
+  ['Lichterfest.jpg', landscape(['#1b1f4b', '#5b2a86'], '#120d2a', '#ffcf6b'), yearsAgo(2, 18)],
+  ['Schnee am Pass.jpg', landscape(['#c9e6ff', '#f4fbff'], '#e9f1f7', '#fffbe6'), yearsAgo(3, 10)],
+];
 const strand = await jpeg(scenes[5][1], shots[5]);
 for (const [index, [name, svg]] of scenes.entries()) {
   await emi.upload(photos, name, index === 5 ? strand : await jpeg(svg, shots[index]), shots[index].taken.getTime());
+}
+for (const [name, svg, taken] of memories) {
+  await emi.upload(
+    photos,
+    name,
+    await jpeg(svg, { taken, camera: phone, aperture: '17/10', exposure: '1/60', iso: 400, focal: '69/10' }),
+    taken.getTime()
+  );
 }
 
 await emi.upload(

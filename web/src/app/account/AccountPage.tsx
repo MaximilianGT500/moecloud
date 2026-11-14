@@ -34,6 +34,7 @@ import EditRounded from '@mui/icons-material/EditRounded';
 import FingerprintRounded from '@mui/icons-material/FingerprintRounded';
 import KeyRounded from '@mui/icons-material/KeyRounded';
 import LockResetRounded from '@mui/icons-material/LockResetRounded';
+import LoginRounded from '@mui/icons-material/LoginRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import PhonelinkLockRounded from '@mui/icons-material/PhonelinkLockRounded';
 import SmartphoneRounded from '@mui/icons-material/SmartphoneRounded';
@@ -58,6 +59,7 @@ interface MailPrefs {
   mailComments: boolean;
   mailWatch: boolean;
   mailAdmin: boolean;
+  mailLogins: boolean;
 }
 
 interface Account {
@@ -70,6 +72,7 @@ interface Account {
     required: boolean;
     setupRequired: boolean;
     hasPassword: boolean;
+    sso: { enabled: boolean } | null;
     totp: boolean;
     recoveryCodes: number;
     passkeys: { id: string; name: string; synced: boolean; createdAt: number; lastUsedAt: number | null }[];
@@ -512,6 +515,11 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
       label: t('Bei Änderungen in beobachteten Ordnern'),
       text: t('Für Ordner, bei denen du „Beobachten“ eingeschaltet hast'),
     },
+    {
+      key: 'mailLogins',
+      label: t('Bei Anmeldung von einem neuen Gerät'),
+      text: t('Damit du merkst, wenn sich jemand anderes mit deinem Konto anmeldet'),
+    },
   ];
   if (account.user.role === 'admin') {
     options.push({
@@ -586,6 +594,12 @@ export function AccountPage() {
   useEffect(() => {
     document.title = `${t('Konto')} » ${boot().site.name}`;
   }, []);
+
+  const ready = Boolean(account);
+  useEffect(() => {
+    if (!ready || !location.hash) return;
+    document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: 'start' });
+  }, [ready]);
 
   const saveProfile = async () => {
     try {
@@ -718,9 +732,11 @@ export function AccountPage() {
                   <Button size="small" variant="tonal" startIcon={<DataUsageRounded />} href="/files/storage">
                     {t('Speicher ansehen')}
                   </Button>
-                  <Button size="small" startIcon={<FolderZipRounded />} href={`/api/zip?ids=${account.user.rootId}`} download>
-                    {t('Alles als ZIP herunterladen')}
-                  </Button>
+                  <Tooltip describeChild title={t('Alle deine Dateien und eine Übersicht über dein Konto als ZIP')}>
+                    <Button size="small" startIcon={<FolderZipRounded />} href="/api/account/export" download>
+                      {t('Daten exportieren')}
+                    </Button>
+                  </Tooltip>
                 </Box>
               </Box>
               <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, flexWrap: 'wrap', width: '100%' }}>
@@ -859,6 +875,41 @@ export function AccountPage() {
                   </Button>
                 }
               />
+              {security.sso && (
+                <>
+                  <Divider />
+                  <Row
+                    icon={<LoginRounded />}
+                    title={t('Single Sign-on')}
+                    text={
+                      security.hasPassword
+                        ? t('Dein Konto ist mit dem Anbieter für die Anmeldung über SSO verknüpft.')
+                        : t('Du meldest dich über den Anbieter an. Leg ein Passwort fest, wenn du die Verknüpfung trennen willst.')
+                    }
+                    action={
+                      <Button
+                        variant="tonal"
+                        disabled={!security.hasPassword}
+                        onClick={async () => {
+                          if (
+                            !(await confirm({
+                              title: t('Verknüpfung trennen?'),
+                              text: t('Danach meldest du dich nur noch mit Benutzername und Passwort an.'),
+                              confirm: t('Trennen'),
+                              danger: true,
+                            }))
+                          )
+                            return;
+                          await api.delete('/api/account/sso').catch((error) => toast(errorText(error)));
+                          void load();
+                        }}
+                      >
+                        {t('Trennen')}
+                      </Button>
+                    }
+                  />
+                </>
+              )}
               <Divider />
               <Row
                 icon={<PhonelinkLockRounded />}
@@ -1012,6 +1063,7 @@ export function AccountPage() {
             )}
 
             <Section
+              id="sitzungen"
               title={t('Sitzungen')}
               description={t('Hier bist du gerade angemeldet.')}
               action={

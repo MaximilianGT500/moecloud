@@ -20,6 +20,7 @@ import type { Action } from './ActionMenu';
 import { download } from './actions';
 import { AlbumPicker, PhotoGrid } from './Albums';
 import type { Item } from './kinds';
+import { Memories } from './Memories';
 import { SelectionBar } from './Panels';
 import { Viewer } from './Viewer';
 
@@ -174,6 +175,7 @@ export function Photos({ actions, onChanged }: { actions: (item: Item) => Action
           </SelectionBar>
         </Box>
       )}
+      <Memories actions={actions} revision={revision} />
       {groups.map((group) => (
         <Box component="section" key={group.key} aria-labelledby={`month-${group.key}`}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, px: 0.5, mb: 1.25 }}>

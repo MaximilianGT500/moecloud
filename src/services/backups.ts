@@ -1,7 +1,7 @@
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../config.ts';
-import { snapshotDatabase, stamp } from '../lib/db.ts';
+import { snapshotDatabaseAsync, stamp } from '../lib/db.ts';
 import { notFound } from '../lib/errors.ts';
 import { log } from '../lib/log.ts';
 import { audit } from './audit.ts';
@@ -70,11 +70,52 @@ export async function createBackup(kind: 'auto' | 'manual', actor: number | null
   await mkdir(config.paths.backups, { recursive: true });
   const name = `moecloud-${kind}-${stamp()}.db`;
   const path = join(config.paths.backups, name);
-  snapshotDatabase(path);
+  await snapshotDatabaseAsync(path);
   const info = await stat(path);
   audit('backup_created', { actor, details: { name, size: info.size, kind } });
   if (kind === 'auto') settings.set('backup.last', Date.now());
+  await copyBackup(path, name, info.size);
   return { name, size: info.size, createdAt: info.mtimeMs, kind } satisfies BackupInfo;
+}
+
+export async function copyBackup(path: string, name: string, size: number) {
+  const target = config.backupCopy;
+  if (!target) return false;
+  const partial = join(target, `${name}.partial`);
+  try {
+    await mkdir(target, { recursive: true });
+    await copyFile(path, partial);
+    if ((await stat(partial)).size !== size) throw new Error('Die Kopie ist unvollständig');
+    await rename(partial, join(target, name));
+    settings.setMany({ 'backup.copied': Date.now(), 'backup.copyError': '' });
+    return true;
+  } catch (error) {
+    await rm(partial, { force: true }).catch(() => undefined);
+    const message = (error as Error).message.slice(0, 300);
+    settings.set('backup.copyError', message);
+    audit('backup_failed', { details: { error: message, copy: target } });
+    notifyAdmins('admin_backup', { error: message }, '/admin/backups');
+    log.error({ error: message, target }, 'Kopie der Sicherung fehlgeschlagen');
+    return false;
+  }
+}
+
+async function pruneCopies(keep: number) {
+  const target = config.backupCopy;
+  if (!target) return 0;
+  const names = (await readdir(target).catch(() => [] as string[])).filter((name) => NAME.test(name));
+  const dated = await Promise.all(
+    names.map(async (name) => ({ name, at: (await stat(join(target, name)).catch(() => null))?.mtimeMs ?? 0, kind: kindOf(name) }))
+  );
+  dated.sort((a, b) => b.at - a.at);
+  const auto = dated.filter((entry) => entry.kind === 'auto');
+  const updates = dated.filter((entry) => entry.kind === 'update');
+  let removed = 0;
+  for (const entry of [...auto.slice(Math.max(1, keep)), ...updates.slice(3)]) {
+    await rm(join(target, entry.name), { force: true });
+    removed++;
+  }
+  return removed;
 }
 
 export async function backupPath(name: string) {
@@ -100,7 +141,7 @@ export async function pruneBackups(keep = settings.get('backup.keep')) {
     await rm(join(config.paths.backups, backup.name), { force: true });
     removed++;
   }
-  return removed;
+  return removed + (await pruneCopies(keep));
 }
 
 export function backupDue(now = new Date()) {

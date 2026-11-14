@@ -155,6 +155,8 @@ export const extensionOf = (name: string) => {
   return index > 0 ? lower.slice(index + 1) : '';
 };
 
+export const extensionFor = (type: string) => mime.extension(type) || '';
+
 export function mimeOf(name: string): string {
   const ext = extensionOf(name);
   return OVERRIDES[ext] || mime.lookup(name) || 'application/octet-stream';

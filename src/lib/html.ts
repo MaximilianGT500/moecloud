@@ -27,6 +27,7 @@ export function siteInfo(request: FastifyRequest) {
     name: settings.get('site.name'),
     url: baseUrl(request),
     seed: settings.get('site.seed'),
+    palette: settings.get('site.palette'),
     version: config.version,
     registration: settings.get('auth.registration'),
     passkeys: settings.get('auth.passkeys'),

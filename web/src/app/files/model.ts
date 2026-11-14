@@ -3,7 +3,7 @@ import { api, errorText } from '../../lib/api';
 import { compareNames } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
-import type { Album } from './Albums';
+import type { Album } from './album';
 import type { Item } from './kinds';
 
 export type View =

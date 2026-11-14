@@ -1,10 +1,9 @@
 import { open } from 'node:fs/promises';
-import sharp from 'sharp';
-import exifr from 'exifr';
-import { parseFile } from 'music-metadata';
 import { all, one, run, tx } from '../lib/db.ts';
 import { canThumb, extensionOf, isHeif, isRaw, isTextual, kindOf, mimeOf, resolveType } from '../lib/mime.ts';
 import { log } from '../lib/log.ts';
+import { loadSharp } from '../lib/sharp.ts';
+import { WORKERS } from '../lib/workers.ts';
 import { documentText } from './archive.ts';
 import { blobPath, getBlob, metaOf } from './blobs.ts';
 import { heifExif } from './heif.ts';
@@ -53,8 +52,11 @@ function clean(value: unknown, digits = 3) {
 
 type Exif = Record<string, unknown>;
 
+const exifReader = () => import('exifr').then((module) => module.default);
+
 async function readExif(data: Buffer): Promise<Exif | undefined> {
   try {
+    const exifr = await exifReader();
     return ((await exifr.parse(data, { pick: EXIF_TAGS })) as Exif | undefined) ?? undefined;
   } catch {
     return undefined;
@@ -63,6 +65,7 @@ async function readExif(data: Buffer): Promise<Exif | undefined> {
 
 async function canonExif(path: string): Promise<Exif | undefined> {
   const found: Exif = {};
+  const exifr = await exifReader();
   for (const box of await canonMeta(path)) {
     try {
       const tags = (await exifr.parse(box, { translateValues: false, gps: false })) as Exif | undefined;
@@ -99,6 +102,7 @@ export async function imageMeta(path: string, type: string) {
   let width: number | null = null;
   let height: number | null = null;
   if (canThumb(type)) {
+    const sharp = await loadSharp();
     const info = await sharp(path, { failOn: 'none', limitInputPixels: 268_402_689 })
       .metadata()
       .catch(() => null);
@@ -125,6 +129,7 @@ export async function imageMeta(path: string, type: string) {
 }
 
 async function audioMeta(path: string) {
+  const { parseFile } = await import('music-metadata');
   const tags = await parseFile(path, { skipCovers: false, duration: true });
   return {
     meta: {
@@ -245,19 +250,26 @@ async function drain() {
   try {
     for (;;) {
       if (stopped) break;
-      const batch = all<{ sha256: string }>('SELECT sha256 FROM blobs WHERE processed = 0 AND refs > 0 ORDER BY created_at LIMIT 8');
+      const batch = all<{ sha256: string }>(
+        'SELECT sha256 FROM blobs WHERE processed = 0 AND refs > 0 ORDER BY created_at LIMIT ?',
+        Math.max(8, WORKERS * 4)
+      );
       if (batch.length === 0) break;
-      for (const row of batch) {
-        if (stopped) break;
-        try {
-          await processBlob(row.sha256);
-          progress.processed++;
-        } catch (error) {
-          progress.failed++;
-          log.warn({ sha: row.sha256, error: (error as Error).message }, 'Verarbeitung fehlgeschlagen');
-          run('UPDATE blobs SET processed = 2 WHERE sha256 = ?', row.sha256);
+      let next = 0;
+      const work = async () => {
+        while (!stopped && next < batch.length) {
+          const row = batch[next++];
+          try {
+            await processBlob(row.sha256);
+            progress.processed++;
+          } catch (error) {
+            progress.failed++;
+            log.warn({ sha: row.sha256, error: (error as Error).message }, 'Verarbeitung fehlgeschlagen');
+            run('UPDATE blobs SET processed = 2 WHERE sha256 = ?', row.sha256);
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(WORKERS, batch.length) }, work));
     }
   } finally {
     running = false;
@@ -300,18 +312,20 @@ const RETYPE = {
   nodes: {
     select: "SELECT seq AS pos, name, mime, sha256 FROM nodes WHERE type = 'file' AND seq > ? ORDER BY seq LIMIT 2000",
     update: 'UPDATE nodes SET mime = ? WHERE seq = ?',
+    start: 0 as number | string,
   },
   versions: {
-    select: `SELECT v.rowid AS pos, n.name, v.mime, v.sha256 FROM versions v JOIN nodes n ON n.id = v.node_id
-             WHERE v.rowid > ? ORDER BY v.rowid LIMIT 2000`,
-    update: 'UPDATE versions SET mime = ? WHERE rowid = ?',
+    select: `SELECT v.id AS pos, n.name, v.mime, v.sha256 FROM versions v JOIN nodes n ON n.id = v.node_id
+             WHERE v.id > ? ORDER BY v.id LIMIT 2000`,
+    update: 'UPDATE versions SET mime = ? WHERE id = ?',
+    start: '' as number | string,
   },
 };
 
 function retype(table: keyof typeof RETYPE) {
   let changed = 0;
-  for (let last = 0; ;) {
-    const rows = all<{ pos: number; name: string; mime: string | null; sha256: string | null }>(RETYPE[table].select, last);
+  for (let last = RETYPE[table].start; ;) {
+    const rows = all<{ pos: number | string; name: string; mime: string | null; sha256: string | null }>(RETYPE[table].select, last);
     if (rows.length === 0) return changed;
     last = rows[rows.length - 1].pos;
     for (const row of rows) {

@@ -1,8 +1,6 @@
 import type { Dirent } from 'node:fs';
 import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileTypeFromFile } from 'file-type';
-import { parseFile } from 'music-metadata';
 import { config } from '../config.ts';
 import { run, tx } from '../lib/db.ts';
 import { t, type Lang } from '../lib/i18n.ts';
@@ -336,6 +334,7 @@ function textExtension(text: string, whole: boolean) {
 
 export async function identify(path: string, size: number) {
   if (size === 0) return '';
+  const { fileTypeFromFile } = await import('file-type');
   const found = await fileTypeFromFile(path).catch(() => undefined);
   if (found && found.ext !== 'tif' && found.ext !== 'cfb' && found.ext !== 'xml') return found.ext;
   if (found?.ext === 'cfb') return (await compound(path).catch(() => null)) ?? 'cfb';
@@ -427,6 +426,7 @@ async function plan(stray: Stray, lang: Lang): Promise<Plan> {
     date = (await imageMeta(stray.path, typeOfExt(ext)).catch(() => null))?.takenAt ?? null;
   }
   if (kind === 'audio') {
+    const { parseFile } = await import('music-metadata');
     const tags = await parseFile(stray.path, { skipCovers: true, duration: false }).catch(() => null);
     const artist = tidy(tags?.common.artist);
     const name = tidy(tags?.common.title);

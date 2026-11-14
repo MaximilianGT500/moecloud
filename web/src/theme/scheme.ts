@@ -1,5 +1,3 @@
-import { Blend, Hct, SchemeContent, TonalPalette, argbFromHex, hexFromArgb } from '@material/material-color-utilities';
-
 export const BRAND_SEED = '#8b5cf6';
 
 export const SEED_PRESETS = [
@@ -49,9 +47,9 @@ export const ROLES = [
   'shadow',
 ] as const;
 
-type Role = (typeof ROLES)[number];
+export type Role = (typeof ROLES)[number];
 
-const TRUE_BLACK = {
+export const TRUE_BLACK = {
   surface: '#000000',
   surfaceDim: '#000000',
   surfaceContainerLowest: '#000000',
@@ -68,38 +66,29 @@ export function normalizeHex(value: string | null | undefined): string | null {
   return match ? `#${match[1].toLowerCase()}` : null;
 }
 
-function group(hex: string, source: number, dark: boolean) {
-  const palette = TonalPalette.fromInt(Blend.harmonize(argbFromHex(hex), source));
-  const tone = (t: number) => hexFromArgb(palette.tone(t));
-  return dark
-    ? { color: tone(80), on: tone(20), container: tone(30), onContainer: tone(90) }
-    : { color: tone(40), on: tone(100), container: tone(90), onContainer: tone(10) };
+export const EXTRA_ROLES = [
+  'success',
+  'onSuccess',
+  'successContainer',
+  'onSuccessContainer',
+  'warning',
+  'onWarning',
+  'warningContainer',
+  'onWarningContainer',
+] as const;
+
+export type M3Tokens = Record<Role | (typeof EXTRA_ROLES)[number], string>;
+
+export interface Palette {
+  dark: M3Tokens;
+  light: M3Tokens;
 }
 
-export function buildScheme(seed: string, dark: boolean, contrast = 0, trueBlack = false) {
-  const source = argbFromHex(normalizeHex(seed) || BRAND_SEED);
-  const scheme = new SchemeContent(Hct.fromInt(source), dark, contrast);
-  const tokens = Object.fromEntries(ROLES.map((role) => [role, hexFromArgb(scheme[role])])) as Record<Role, string>;
-  if (dark && trueBlack) Object.assign(tokens, TRUE_BLACK);
-  const success = group('#2e9d58', source, dark);
-  const warning = group('#c98a00', source, dark);
-  return {
-    ...tokens,
-    success: success.color,
-    onSuccess: success.on,
-    successContainer: success.container,
-    onSuccessContainer: success.onContainer,
-    warning: warning.color,
-    onWarning: warning.on,
-    warningContainer: warning.container,
-    onWarningContainer: warning.onContainer,
-  };
-}
-
-export type M3Tokens = ReturnType<typeof buildScheme>;
-
-export function buildPalette(seed: string) {
-  return { dark: buildScheme(seed, true), light: buildScheme(seed, false) };
+export function isPalette(value: unknown): value is Palette {
+  const palette = value as Partial<Palette> | null | undefined;
+  return [palette?.dark, palette?.light].every(
+    (tokens) => tokens && [...ROLES, ...EXTRA_ROLES].every((role) => typeof tokens[role] === 'string' && HEX.test(tokens[role]))
+  );
 }
 
 export const FILE_TYPE_COLORS = {
@@ -110,21 +99,31 @@ export const FILE_TYPE_COLORS = {
 export const FOLDER_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'] as const;
 export type FolderColor = (typeof FOLDER_COLORS)[number];
 
-const FOLDER_BASE: Record<FolderColor, string> = {
-  red: '#e53935',
-  orange: '#fb8c00',
-  yellow: '#fbc02d',
-  green: '#43a047',
-  teal: '#00897b',
-  blue: '#1e88e5',
-  purple: '#8e24aa',
-  pink: '#d81b60',
-  brown: '#8d6e63',
-  gray: '#78909c',
+const FOLDER_TONES: Record<'dark' | 'light', Record<FolderColor, string>> = {
+  dark: {
+    red: '#ffaba3',
+    orange: '#ffb06b',
+    yellow: '#f2b824',
+    green: '#77d675',
+    teal: '#6ad2c2',
+    blue: '#97c4ff',
+    purple: '#f1a6ff',
+    pink: '#ffa9b9',
+    brown: '#deb9ac',
+    gray: '#acc5d2',
+  },
+  light: {
+    red: '#cd2727',
+    orange: '#a15800',
+    yellow: '#886500',
+    green: '#187b27',
+    teal: '#00786c',
+    blue: '#006dbd',
+    purple: '#a33bbe',
+    pink: '#d0115b',
+    brown: '#826459',
+    gray: '#566e79',
+  },
 };
 
-export function folderColors(dark: boolean) {
-  return Object.fromEntries(
-    FOLDER_COLORS.map((key) => [key, hexFromArgb(TonalPalette.fromInt(argbFromHex(FOLDER_BASE[key])).tone(dark ? 78 : 45))])
-  ) as Record<FolderColor, string>;
-}
+export const folderColors = (dark: boolean) => FOLDER_TONES[dark ? 'dark' : 'light'];

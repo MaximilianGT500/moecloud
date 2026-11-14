@@ -43,6 +43,12 @@ export function auditLabel(action: string) {
       return t('App-Passwort widerrufen');
     case 'sessions_revoked':
       return t('Andere Geräte abgemeldet');
+    case 'sso_unlinked':
+      return t('SSO-Verbindung getrennt');
+    case 'account_exported':
+      return t('Daten exportiert');
+    case 'users_imported':
+      return t('Personen importiert');
     case 'registered':
       return t('Konto erstellt');
     case 'user_created':
@@ -75,6 +81,8 @@ export function auditLabel(action: string) {
       return t('Einstellungen geändert');
     case 'mail_changed':
       return t('E-Mail-Versand geändert');
+    case 'sso_changed':
+      return t('Anmeldung über SSO geändert');
     case 'scan_changed':
       return t('Virenscan geändert');
     case 'webhook_changed':
@@ -122,6 +130,8 @@ function method(value: unknown) {
           return t('Wiederherstellungscode');
         case '2fa':
           return t('Zweiter Faktor');
+        case 'oidc':
+          return t('SSO');
         default:
           return part;
       }

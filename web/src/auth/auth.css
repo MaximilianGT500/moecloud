@@ -430,6 +430,11 @@ h2 {
   background: var(--mui-palette-m3-outlineVariant);
 }
 
+.auth__sso {
+  box-sizing: border-box;
+  margin-bottom: 16px;
+}
+
 .auth__passkey {
   display: flex;
   flex-direction: column;

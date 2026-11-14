@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -23,15 +23,17 @@ import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { c, radius } from '../../theme/tokens';
 import { confirm } from '../common/dialogs';
+import { lazyNamed } from '../common/lazy';
 import { toast } from '../common/toast';
 import { triggerDownload } from './actions';
 import { ActivityList, type ActivityEntry } from './activity';
 import { Comments } from './Comments';
 import { Fact, MetaFacts, ScanState } from './facts';
-import { FileIcon, kindColor, kindLabel, thumbUrl, type Item } from './kinds';
-import { useMeta } from './preview/media';
+import { canCompare, FileIcon, kindColor, kindLabel, thumbUrl, type Item } from './kinds';
+import { useMeta } from './preview/meta';
 import { TagChips } from './tags';
-import { canCompare, VersionDiff } from './VersionDiff';
+
+const VersionDiff = lazyNamed(() => import('./VersionDiff'), 'VersionDiff');
 
 export type DetailsTab = 'info' | 'activity' | 'comments';
 
@@ -144,7 +146,11 @@ function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => 
           </Box>
         ))
       )}
-      {comparing && <VersionDiff item={item} version={comparing} onClose={() => setComparing(null)} />}
+      {comparing && (
+        <Suspense fallback={null}>
+          <VersionDiff item={item} version={comparing} onClose={() => setComparing(null)} />
+        </Suspense>
+      )}
     </Box>
   );
 }

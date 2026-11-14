@@ -38,6 +38,8 @@ export function setPrefs(patch: Partial<Prefs>) {
   listeners.forEach((listener) => listener());
 }
 
+export const currentPrefs = () => current;
+
 export function usePrefs(): Prefs {
   return useSyncExternalStore(
     (listener) => {

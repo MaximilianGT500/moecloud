@@ -31,7 +31,19 @@ import {
 } from '../services/links.ts';
 import * as settings from '../services/settings.ts';
 import { getUser } from '../services/users.ts';
-import { archiveListing, nodeMeta, sendArchiveEntry, sendNode, sendPreview, sendThumb, sendZip } from './files.ts';
+import { stripLocation } from '../services/location.ts';
+import { emailSummary } from '../services/email.ts';
+import {
+  archiveListing,
+  nodeMeta,
+  sendArchiveEntry,
+  sendEmailAttachment,
+  sendEmailBody,
+  sendNode,
+  sendPreview,
+  sendThumb,
+  sendZip,
+} from './files.ts';
 import { sendVtt } from './tools.ts';
 import { uploadEndpoints } from './uploads.ts';
 import { value } from '../lib/db.ts';
@@ -241,7 +253,29 @@ export async function publicRoutes(app: FastifyInstance) {
       if (download && !link.allow_download) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
       const range = request.headers.range;
       if (download && (!range || range.startsWith('bytes=0-'))) countAccess(link, 'downloads');
-      return sendNode(request, reply, node, download);
+      return sendNode(request, reply, node, download, { strip: stripLocation() });
+    }
+  );
+
+  app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/email', async (request) => {
+    const { link } = linkFor(request);
+    if (link.upload_only) throw notFound();
+    return emailSummary(linkNode(link, request.params.id));
+  });
+
+  app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/email/body', async (request, reply) => {
+    const { link } = linkFor(request);
+    if (link.upload_only) throw notFound();
+    return sendEmailBody(reply, linkNode(link, request.params.id));
+  });
+
+  app.get<{ Params: { token: string; id: string; index: string } }>(
+    '/api/public/:token/nodes/:id/email/attachments/:index',
+    async (request, reply) => {
+      const { link } = linkFor(request);
+      if (link.upload_only) throw notFound();
+      if (!link.allow_download) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
+      return sendEmailAttachment(reply, linkNode(link, request.params.id), Number(request.params.index));
     }
   );
 
@@ -312,7 +346,7 @@ export async function publicRoutes(app: FastifyInstance) {
       .filter(Boolean);
     const roots = list.length ? parse(ids, list).map((nodeId) => linkNode(link, nodeId)) : [linkNode(link, link.node_id)];
     countAccess(link, 'downloads');
-    return sendZip(request, reply, roots);
+    return sendZip(request, reply, roots, undefined, { strip: stripLocation() });
   });
 
   uploadEndpoints(

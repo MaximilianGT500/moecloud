@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { all, one, run } from '../lib/db.ts';
 import { randomId, sha256 } from '../lib/crypto.ts';
 import { isSecure, truncateIp } from '../lib/http.ts';
+import { rememberDevice } from './devices.ts';
 import { getUser, type UserRow } from './users.ts';
 
 export const SESSION_COOKIE = 'moe_session';
@@ -63,6 +64,7 @@ export function createSession(request: FastifyRequest, reply: FastifyReply, user
     secure: isSecure(request),
     maxAge: LIFETIME / 1000,
   });
+  rememberDevice(request, reply, user, method);
   return session;
 }
 

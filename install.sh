@@ -10,6 +10,7 @@ LOG="${MOECLOUD_LOG:-/var/log/moecloud-install.log}"
 REF="${MOECLOUD_REF:-}"
 DOMAIN=""
 CLAMAV=""
+DATABASE=""
 PORT=""
 VERSION=""
 AUTO_UPDATE=""
@@ -83,6 +84,8 @@ Optionen:
   --port <port>       Port ohne Domain (Standard 3000)
   --clamav            ClamAV als Virenscan mitstarten (braucht etwa 3 GB Arbeitsspeicher)
   --no-clamav         ClamAV nicht einrichten
+  --postgres          PostgreSQL als Datenbank mitstarten statt SQLite
+  --sqlite            SQLite als Datenbank nehmen (Standard)
   --version <x.y.z>   Diese Version installieren und festhalten, latest hebt das wieder auf
   --auto-update       Updates jede Nacht automatisch einspielen
   --no-auto-update    Automatische Updates ausschalten
@@ -114,6 +117,8 @@ while [ $# -gt 0 ]; do
       ;;
     --clamav) CLAMAV="yes" ;;
     --no-clamav) CLAMAV="no" ;;
+    --postgres) DATABASE="postgres" ;;
+    --sqlite) DATABASE="sqlite" ;;
     --version)
       value_of "$1" $#
       VERSION="$2"
@@ -396,6 +401,7 @@ fetch_files() {
   if [ -d "$DIR/docker/Caddyfile" ]; then rmdir "$DIR/docker/Caddyfile" 2>/dev/null || true; fi
   download docker/Caddyfile "$DIR/docker/Caddyfile"
   download docker/clamav.yml "$DIR/docker/clamav.yml"
+  download docker/postgres.yml "$DIR/docker/postgres.yml"
   download install.sh "$DIR/install.sh"
   chmod 700 "$DIR/install.sh"
   download docker/moecloud-host "$BIN"
@@ -505,6 +511,15 @@ settings() {
   if [ "$CLAMAV" = "yes" ] && [ "$MEMORY" -lt 3000 ]; then
     warn "Mit $MEMORY MB wird es für ClamAV eng. Läuft der Server voll, schalte den Virenscan wieder ab."
   fi
+  if [ -z "$DATABASE" ]; then
+    if [ "$YES" -eq 1 ]; then
+      DATABASE="sqlite"
+    else
+      say "MoeCloud speichert Konten und Ordner in SQLite, das braucht keinen eigenen Dienst."
+      say "PostgreSQL lohnt sich bei vielen Konten oder wenn der Datenordner auf einem Netzlaufwerk liegt."
+      if confirm "PostgreSQL statt SQLite einrichten?" "n"; then DATABASE="postgres"; else DATABASE="sqlite"; fi
+    fi
+  fi
   if [ -z "$AUTO_UPDATE" ]; then
     if [ "$YES" -eq 0 ] && confirm "Updates jede Nacht automatisch einspielen?" "n"; then AUTO_UPDATE="yes"; else AUTO_UPDATE="no"; fi
   fi
@@ -559,11 +574,14 @@ install() {
     env_set COMPOSE_PROFILES caddy
     env_set MOECLOUD_BIND 127.0.0.1
   fi
-  if [ "$CLAMAV" = "yes" ]; then
-    env_set COMPOSE_FILE "docker-compose.yml:docker/clamav.yml"
-  else
-    env_unset COMPOSE_FILE
+  local files="docker-compose.yml"
+  [ "$CLAMAV" = "yes" ] && files="$files:docker/clamav.yml"
+  if [ "$DATABASE" = "postgres" ]; then
+    files="$files:docker/postgres.yml"
+    [ -n "$(env_get POSTGRES_PASSWORD)" ] || env_set POSTGRES_PASSWORD "$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+    mkdir -p "$DIR/postgres"
   fi
+  if [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
   chmod 600 "$DIR/.env"
   chown 1000:1000 "$DIR/data"
   ok "Einstellungen in $DIR/.env"
@@ -577,6 +595,9 @@ install() {
   step "Fertig"
   local link
   link="$(setup_link)"
+  if [ "$DATABASE" = "postgres" ]; then
+    say "PostgreSQL läuft als eigener Dienst, seine Daten liegen in $DIR/postgres."
+  fi
   if [ -n "$DOMAIN" ]; then
     say "Zeigt $DOMAIN auf diesen Server und sind die Ports 80 und 443 offen, holt Caddy das Zertifikat beim ersten Aufruf."
     say "Prüf bei deinem Anbieter, ob die Firewall die Ports freigibt."
