@@ -1,6 +1,6 @@
 import { all, one, run, tx, value } from '../lib/db.ts';
 import { hashPassword, randomId } from '../lib/crypto.ts';
-import { conflict, notFound } from '../lib/errors.ts';
+import { conflict, notFound, unauthorized } from '../lib/errors.ts';
 import { isLang, type Lang } from '../lib/i18n.ts';
 import * as settings from './settings.ts';
 
@@ -24,6 +24,24 @@ export interface UserRow {
   created_at: number;
   last_login_at: number | null;
   prefs: string | null;
+  expires_at: number | null;
+}
+
+export const expired = (user: Pick<UserRow, 'expires_at'>, now = Date.now()) => Boolean(user.expires_at && Number(user.expires_at) <= now);
+
+export const inactive = (user: Pick<UserRow, 'disabled' | 'expires_at'>) => Boolean(user.disabled) || expired(user);
+
+export function assertActive(user: Pick<UserRow, 'disabled' | 'expires_at'>) {
+  if (user.disabled) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+  if (expired(user)) throw unauthorized('Dein Konto ist abgelaufen, wende dich an die Verwaltung');
+}
+
+export const ACTIVE = '(disabled = 0 AND (expires_at IS NULL OR expires_at > ?))';
+
+export interface PushTarget {
+  kind: 'ntfy' | 'gotify';
+  url: string;
+  token: string | null;
 }
 
 export interface UserPrefs {
@@ -33,7 +51,17 @@ export interface UserPrefs {
   mailWatch: boolean;
   mailAdmin: boolean;
   mailLogins: boolean;
+  mailReminders: boolean;
+  mailPlugins: boolean;
   storageWarned: boolean;
+  storageAsked: number;
+  expiryWarned: number;
+  push: PushTarget | null;
+  templates: string | null;
+  quiet: { from: number; to: number } | null;
+  digest: 'off' | 'daily' | 'weekly';
+  zone: string;
+  theme: { id: string } | { own: settings.ThemeSpec; palette: settings.Palette } | null;
 }
 
 export const preferredLanguage = (user: Pick<UserRow, 'language'>): Lang =>
@@ -46,7 +74,17 @@ const PREF_DEFAULTS: UserPrefs = {
   mailWatch: true,
   mailAdmin: true,
   mailLogins: true,
+  mailReminders: true,
+  mailPlugins: true,
   storageWarned: false,
+  storageAsked: 0,
+  expiryWarned: 0,
+  push: null,
+  templates: null,
+  quiet: null,
+  digest: 'off',
+  zone: '',
+  theme: null,
 };
 
 export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
@@ -74,6 +112,7 @@ export interface NewUser {
   role?: 'admin' | 'user';
   quota?: number | null;
   language?: Lang | null;
+  expiresAt?: number | null;
 }
 
 export const keyOf = (value: string) => value.normalize('NFC').trim().toLowerCase();
@@ -105,8 +144,8 @@ export async function createUser(input: NewUser): Promise<UserRow> {
   const rootId = randomId();
   return tx(() => {
     const { lastId } = run(
-      `INSERT INTO users (username, username_key, email, email_key, name, password_hash, role, quota_bytes, language, root_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (username, username_key, email, email_key, name, password_hash, role, quota_bytes, language, root_id, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.username.trim(),
       usernameKey,
       input.email?.trim() || null,
@@ -117,7 +156,8 @@ export async function createUser(input: NewUser): Promise<UserRow> {
       input.quota ?? null,
       input.language ?? null,
       rootId,
-      now
+      now,
+      input.expiresAt ?? null
     );
     run(
       `INSERT INTO nodes (id, owner_id, parent_id, type, name, name_key, created_by, updated_by, created_at, updated_at, modified_at)
@@ -143,7 +183,7 @@ export const usageOf = (userId: number) =>
   value<number>("SELECT COALESCE(SUM(size), 0) FROM nodes WHERE owner_id = ? AND type = 'file'", userId) ?? 0;
 
 export function storageOf(user: UserRow) {
-  return { used: usageOf(user.id), quota: quotaOf(user) };
+  return { used: usageOf(user.id), quota: quotaOf(user), askedAt: prefsOf(user).storageAsked || null };
 }
 
 export function initials(name: string) {
@@ -177,12 +217,14 @@ export function adminUser(user: UserRow) {
     hasPassword: Boolean(user.password_hash),
     createdAt: user.created_at,
     lastLoginAt: user.last_login_at,
+    expiresAt: user.expires_at ?? null,
+    expired: expired(user),
   };
 }
 
 export const listUsers = () => all<UserRow>('SELECT * FROM users ORDER BY name COLLATE NOCASE');
 
-export const adminCount = () => value<number>("SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0") ?? 0;
+export const adminCount = () => value<number>(`SELECT COUNT(*) FROM users WHERE role = 'admin' AND ${ACTIVE}`, Date.now()) ?? 0;
 
 export function deleteUser(id: number) {
   tx(() => {
@@ -201,9 +243,10 @@ export function deleteUser(id: number) {
 export function searchUsers(query: string, exclude: number) {
   const q = `%${query.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
   return all<UserRow>(
-    `SELECT * FROM users WHERE id != ? AND disabled = 0 AND (name LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')
+    `SELECT * FROM users WHERE id != ? AND ${ACTIVE} AND (name LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')
      ORDER BY name COLLATE NOCASE LIMIT 8`,
     exclude,
+    Date.now(),
     q,
     q,
     q

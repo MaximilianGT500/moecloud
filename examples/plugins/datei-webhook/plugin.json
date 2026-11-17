@@ -1,0 +1,47 @@
+{
+  "id": "datei-webhook",
+  "name": { "de": "Datei-Webhook", "en": "File webhook" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Meldet Uploads, Freigaben und Gelöschtes als JSON an eine Adresse deiner Wahl.",
+    "en": "Reports uploads, shares and deletions as JSON to a URL of your choice."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "permissions": ["network", "users"],
+  "settings": [
+    {
+      "key": "url",
+      "label": { "de": "Adresse", "en": "URL" },
+      "hint": { "de": "Dorthin schickt das Plugin jede Meldung per POST", "en": "The plugin sends every report there with POST" },
+      "type": "secret",
+      "required": true
+    },
+    {
+      "key": "ereignisse",
+      "label": { "de": "Ereignisse", "en": "Events" },
+      "hint": {
+        "de": "Mit Komma getrennt. Möglich sind unter anderem upload, link_upload, share_link, share_user, trash, delete, rename, move",
+        "en": "Separated by commas. Among others: upload, link_upload, share_link, share_user, trash, delete, rename, move"
+      },
+      "type": "text",
+      "default": "upload, link_upload, share_link, share_user, delete"
+    },
+    {
+      "key": "geheimnis",
+      "label": { "de": "Geheimnis zum Signieren", "en": "Signing secret" },
+      "hint": {
+        "de": "Dann trägt jede Anfrage den Header X-Signature mit einer HMAC-SHA256-Signatur",
+        "en": "Every request then carries the header X-Signature with an HMAC-SHA256 signature"
+      },
+      "type": "secret"
+    },
+    {
+      "key": "intern",
+      "label": { "de": "Adressen im eigenen Netz erlauben", "en": "Allow addresses in the local network" },
+      "type": "boolean"
+    }
+  ]
+}

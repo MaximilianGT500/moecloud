@@ -53,7 +53,7 @@ const KIND_NAMES: Record<Kind, string> = {
   ntfy: 'ntfy',
   json: 'JSON',
 };
-const EVENTS = ['user_registered', 'virus', 'scan_error', 'backup_failed', 'disk_low', 'update', 'login_failed'];
+const EVENTS = ['user_registered', 'virus', 'scan_error', 'backup_failed', 'disk_low', 'update', 'login_failed', 'plugin_stopped'];
 
 function eventLabel(event: string) {
   switch (event) {
@@ -71,6 +71,8 @@ function eventLabel(event: string) {
       return t('Neue Version');
     case 'login_failed':
       return t('Viele fehlgeschlagene Anmeldungen');
+    case 'plugin_stopped':
+      return t('Plugin angehalten');
     default:
       return event;
   }

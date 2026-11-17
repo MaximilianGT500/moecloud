@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../lib/api';
-import { compareNames } from '../../lib/format';
+import { compareNames, formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
 import type { Album } from './album';
@@ -19,6 +19,7 @@ export type View =
   | { kind: 'tag'; id: string }
   | { kind: 'albums' }
   | { kind: 'album'; id: string }
+  | { kind: 'plugin'; plugin: string; page: string }
   | { kind: 'search'; q: string; filter: string; date: string; size: string; tag: string };
 
 export interface Crumb {
@@ -39,6 +40,8 @@ export interface SharedLink {
   allowUpload: boolean;
   uploadOnly: boolean;
   notify?: boolean;
+  notifyDownloads?: boolean;
+  slug?: string | null;
   views: number;
   downloads: number;
   maxDownloads?: number | null;
@@ -88,6 +91,8 @@ export function parseView(path: string, query: URLSearchParams, rootId: string):
   if (path === '/files/tags') return { kind: 'tags' };
   const tag = /^\/files\/tags\/([0-9A-Za-z]+)$/.exec(path);
   if (tag) return { kind: 'tag', id: tag[1] };
+  const plugin = /^\/files\/plugins\/([a-z0-9-]+)\/([a-z0-9-]+)$/.exec(path);
+  if (plugin) return { kind: 'plugin', plugin: plugin[1], page: plugin[2] };
   if (path === '/files/search') {
     return {
       kind: 'search',
@@ -106,7 +111,9 @@ export const viewKey = (view: View) =>
     ? `${view.kind}:${view.id}`
     : view.kind === 'search'
       ? `search:${view.q}:${view.filter}:${view.date}:${view.size}:${view.tag}`
-      : view.kind;
+      : view.kind === 'plugin'
+        ? `plugin:${view.plugin}/${view.page}`
+        : view.kind;
 
 export const folderHref = (id: string, rootId: string) => (id === rootId ? '/files' : `/files/folder/${id}`);
 
@@ -166,6 +173,7 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
     case 'storage':
     case 'tags':
     case 'albums':
+    case 'plugin':
       return { items: [], role: 'owner' };
     case 'album': {
       const data = await api.get<{ album: Album; items: Item[] }>(`/api/albums/${view.id}`, signal);
@@ -235,4 +243,11 @@ export function sortItems(items: Item[], sort: Prefs['sort'], order: Prefs['orde
   });
 }
 
-export const canEdit = (item: Item) => item.role === 'owner' || item.role === 'edit';
+export const lockedByOther = (item: Item) => Boolean(item.lock && !item.lock.mine);
+
+export const canEdit = (item: Item) => (item.role === 'owner' || item.role === 'edit') && !lockedByOther(item);
+
+export function lockText(lock: NonNullable<Item['lock']>) {
+  const who = lock.mine ? t('Von dir gesperrt') : t('Gesperrt von {name}', { name: lock.name });
+  return lock.expiresAt ? `${who} · ${t('bis {date}', { date: formatDateTime(lock.expiresAt) })}` : who;
+}

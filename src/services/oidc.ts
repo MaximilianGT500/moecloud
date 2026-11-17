@@ -5,7 +5,7 @@ import { one, run } from '../lib/db.ts';
 import { badRequest, forbidden, unauthorized } from '../lib/errors.ts';
 import { log } from '../lib/log.ts';
 import * as settings from './settings.ts';
-import { createUser, getUser, keyOf, type UserRow } from './users.ts';
+import { assertActive, createUser, getUser, keyOf, type UserRow } from './users.ts';
 
 export interface Claims {
   sub: string;
@@ -198,7 +198,7 @@ export async function userFor(subject: string, claims: Claims): Promise<{ user: 
     run('UPDATE users SET oidc_sub = ? WHERE id = ?', subject, user.id);
     result = { user: getUser(user.id)!, created: true, linked: false };
   }
-  if (result.user.disabled) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+  assertActive(result.user);
   if (!result.created && result.user.role !== 'admin' && inGroup(claims)) {
     run("UPDATE users SET role = 'admin' WHERE id = ?", result.user.id);
     result.user = getUser(result.user.id)!;

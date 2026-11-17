@@ -10,6 +10,7 @@ import { ingest, ingestBuffer } from './ingest.ts';
 import { notify } from './notify.ts';
 import {
   assertSpace,
+  assertUnlocked,
   changed,
   ensurePath,
   findChild,
@@ -20,7 +21,7 @@ import {
   taken,
   type NodeRow,
 } from './nodes.ts';
-import { linkFolder, type LinkRow } from './links.ts';
+import { linkFolder, logLinkEvent, type LinkRow } from './links.ts';
 import * as settings from './settings.ts';
 import { getUser, prefsOf, quotaOf, updatePrefs, usageOf, type UserRow } from './users.ts';
 import { writeContent } from './versions.ts';
@@ -30,6 +31,7 @@ export const CHUNK_SIZE = 16 * 1024 * 1024;
 export interface Actor {
   user: UserRow | null;
   link: LinkRow | null;
+  agent?: string | null;
 }
 
 export interface UploadRow {
@@ -172,7 +174,10 @@ export function placeFile(actor: Actor, target: Target, content: Received | { sh
     changed([folderId, parent.id]);
     return created;
   });
-  if (actor.link) noticeLinkUpload(actor.link, parent);
+  if (actor.link) {
+    logLinkEvent(actor.link, 'upload', node.name, actor.agent);
+    noticeLinkUpload(actor.link, parent);
+  }
   checkQuota(parent.owner_id);
   return node;
 }
@@ -192,6 +197,7 @@ export async function initUpload(actor: Actor, input: InitInput) {
   const segments = cleanRelativePath(input.relativePath);
   const conflictMode = actor.link ? 'rename' : (input.conflict ?? 'rename');
   const replacing = conflictMode === 'replace' && segments.length === 0 ? findChild(parent.id, name) : undefined;
+  if (replacing?.type === 'file') assertUnlocked(replacing, actor.user?.id ?? null);
   checkLimits(parent.owner_id, actor.user?.id ?? null, input.size, replacing?.type === 'file' ? replacing : undefined);
   const id = randomId(24);
   const now = Date.now();

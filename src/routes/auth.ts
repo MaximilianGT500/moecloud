@@ -20,6 +20,7 @@ import {
 } from '../services/auth.ts';
 import { mailReady } from '../services/mail.ts';
 import { notifyAdmins } from '../services/notify.ts';
+import { checkPassword } from '../services/passwords.ts';
 import { beginLogin, finishLogin, oidcEnabled, oidcLabel, userFor } from '../services/oidc.ts';
 import { completeReset, findReset, requestReset } from '../services/resets.ts';
 import { findInvite, useInvite } from '../services/invites.ts';
@@ -265,6 +266,7 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       checkFormCsrf(request, form._csrf);
       const input = parse(registerSchema, form);
+      await checkPassword(input.password);
       const user = await createUser({
         username: input.username,
         name: input.name,

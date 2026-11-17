@@ -3,7 +3,7 @@ import { badRequest, forbidden } from '../lib/errors.ts';
 import { log } from '../lib/log.ts';
 import { requireAccess, trash, TREE } from './nodes.ts';
 import { notify } from './notify.ts';
-import { getUser, type UserRow } from './users.ts';
+import { getUser, inactive, type UserRow } from './users.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const EVERY = 60 * 60 * 1000;
@@ -46,9 +46,11 @@ export function expiredIn(nodeId: string, days: number, now = Date.now(), limit 
   return all<{ id: string }>(
     `${TREE("WHERE n.type = 'folder' AND n.trashed_at IS NULL")}
      SELECT n.id FROM nodes n WHERE n.parent_id IN (SELECT id FROM tree) AND n.type = 'file' AND n.trashed_at IS NULL AND n.updated_at < ?
+       AND NOT EXISTS (SELECT 1 FROM locks l WHERE l.node_id = n.id AND (l.expires_at IS NULL OR l.expires_at > ?))
      ORDER BY n.updated_at LIMIT ?`,
     nodeId,
     now - days * DAY,
+    now,
     limit
   ).map((row) => row.id);
 }
@@ -63,7 +65,7 @@ export function applyRules(now = Date.now()) {
   for (const rule of due) {
     run('UPDATE rules SET run_at = ? WHERE node_id = ?', now, rule.node_id);
     const user = getUser(rule.user_id);
-    if (!user || user.disabled) continue;
+    if (!user || inactive(user)) continue;
     let count = 0;
     for (const id of expiredIn(rule.node_id, Number(rule.days), now)) {
       try {

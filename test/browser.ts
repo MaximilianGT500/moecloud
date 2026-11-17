@@ -76,7 +76,11 @@ const failures: string[] = [];
 let photosUrl = '';
 let current = '';
 
+const only = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
+const ALWAYS = /^(Einrichtung im Browser|Beispieldaten anlegen|Anmelden mit Passwort)$/;
+
 async function step(name: string, run: () => Promise<void>) {
+  if (only && !ALWAYS.test(name) && !only.test(name)) return;
   const started = Date.now();
   current = name;
   try {
@@ -123,7 +127,9 @@ async function open(owner: BrowserContext, label: string) {
   const page = await owner.newPage();
   page.setDefaultTimeout(15_000);
   page.on('console', (message) => {
-    if (message.type() === 'error' || message.type() === 'warning') problems.push(`${label}: ${message.type()} ${message.text()}`);
+    if (message.type() !== 'error' && message.type() !== 'warning') return;
+    const where = message.location();
+    problems.push(`${label} bei „${current}“: ${message.type()} ${message.text()} (${where.url.replace(base, '')}:${where.lineNumber})`);
   });
   page.on('pageerror', (error) => problems.push(`${label}: ${error.message}`));
   page.on('response', (response) => {
@@ -384,9 +390,16 @@ try {
     await page.waitForURL('**/files/folder/**');
     await page.getByRole('tab', { name: 'Kommentare' }).waitFor();
     await visible(page, 'Denk an den Adapter, in Japan gibt es Typ A.');
-    await page.getByLabel('Kommentar schreiben').fill('Danke, ist eingepackt.');
+    const field = page.getByLabel('Kommentar schreiben');
+    await field.fill('@mi');
+    await page
+      .getByRole('listbox', { name: 'Personen zum Erwähnen' })
+      .getByRole('option', { name: /Mia Weber/ })
+      .click();
+    if ((await field.inputValue()) !== '@mia ') throw new Error(`Die Erwähnung fehlt im Feld: „${await field.inputValue()}“`);
+    await field.pressSequentially('danke, ist eingepackt.');
     await page.getByRole('button', { name: 'Senden', exact: true }).click();
-    await visible(page, 'Danke, ist eingepackt.');
+    await page.getByText('danke, ist eingepackt.').first().waitFor();
     await shot(page, 'comments');
   });
 
@@ -889,6 +902,523 @@ try {
     await page.getByRole('button', { name: 'Aufräumregel' }).waitFor({ state: 'detached' });
   });
 
+  await step('Datei sperren und entsperren', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Notizen.txt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Sperren', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'Dauer' }).click();
+    await page.getByRole('option', { name: 'Für einen Tag' }).click();
+    await shot(page, 'lock');
+    await dialog.getByRole('button', { name: 'Sperren' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    const badge = page.getByRole('grid').getByRole('img', { name: /^Von dir gesperrt · bis / });
+    await badge.first().waitFor();
+    await item(page, 'Notizen.txt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Entsperren', exact: true }).click();
+    await badge.first().waitFor({ state: 'detached' });
+  });
+
+  await step('Push und Ablaufdatum', async () => {
+    await page.goto(`${base}/account`);
+    await visible(page, 'Push');
+    await visible(page, 'In diesem Browser');
+    await visible(page, 'Über ntfy oder Gotify');
+    await visible(page, 'Ruhezeiten');
+    await page.getByLabel(/^Ruhezeiten/).click();
+    await page.getByLabel('Von', { exact: true }).waitFor();
+    await page.getByLabel('Adresse mit Thema').fill('https://ntfy.sh/emi-moecloud');
+    await page.getByText('Ruhezeiten', { exact: true }).first().scrollIntoViewIfNeeded();
+    await shot(page, 'push');
+    await page.getByLabel(/^Ruhezeiten/).click();
+    await page.getByLabel('Von', { exact: true }).waitFor({ state: 'detached' });
+    await dark.grantPermissions(['notifications'], { origin: base });
+    const worker = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      return { scope: new URL(registration.scope).pathname, permission: Notification.permission };
+    });
+    if (worker.scope !== '/') throw new Error(`Der Service Worker hat den falschen Bereich: ${worker.scope}`);
+    if (worker.permission !== 'granted') throw new Error(`Benachrichtigungen sind im Testbrowser nicht erlaubt: ${worker.permission}`);
+    const cdp = await dark.newCDPSession(page);
+    const registrationId = await new Promise<string>((done, fail) => {
+      const timer = setTimeout(() => fail(new Error('Der Service Worker taucht nicht auf')), 10_000);
+      cdp.on('ServiceWorker.workerRegistrationUpdated', (event) => {
+        const found = event.registrations.find((entry) => entry.scopeURL === `${base}/` && !entry.isDeleted);
+        if (!found) return;
+        clearTimeout(timer);
+        done(found.registrationId);
+      });
+      void cdp.send('ServiceWorker.enable');
+    });
+    await cdp.send('ServiceWorker.deliverPushMessage', {
+      origin: base,
+      registrationId,
+      data: JSON.stringify({ title: 'Mia Weber hat „Packliste.md“ kommentiert', text: 'Denk an den Adapter', url: '/files?bell=1' }),
+    });
+    const shown = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const list = await registration.getNotifications();
+        if (list.length) {
+          const first = list[0];
+          const result = { title: first.title, body: first.body, url: (first.data as { url?: string } | null)?.url ?? null };
+          for (const entry of list) entry.close();
+          return result;
+        }
+        await new Promise((wait) => setTimeout(wait, 100));
+      }
+      return null;
+    });
+    await cdp.detach();
+    if (!shown) throw new Error('Die Push-Nachricht hat keine Benachrichtigung ausgelöst');
+    if (
+      shown.title !== 'Mia Weber hat „Packliste.md“ kommentiert' ||
+      shown.body !== 'Denk an den Adapter' ||
+      shown.url !== '/files?bell=1'
+    ) {
+      throw new Error(`Unerwartete Benachrichtigung: ${JSON.stringify(shown)}`);
+    }
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      await registration?.unregister();
+    });
+    await page.goto(`${base}/admin/people`);
+    await page.getByRole('button', { name: /Lea Hoffmann/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Konto gültig bis').fill('2099-12-31');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await visible(page, 'Bis 31. Dezember 2099');
+    await page.getByRole('button', { name: /Lea Hoffmann/ }).click();
+    await dialog.getByLabel('Konto gültig bis').fill('');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.getByText('Bis 31. Dezember 2099', { exact: true }).waitFor({ state: 'detached' });
+  });
+
+  await step('Erinnern, Beschreibung und Vorlage', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Als Vorlagenordner verwenden', exact: true }).click();
+    await visible(page, '„Dokumente“ ist jetzt dein Vorlagenordner. Du findest die Vorlagen unter Neu.');
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Notizen.txt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Erinnern', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'Wann' }).click();
+    await page.getByRole('option', { name: 'Morgen um 8 Uhr' }).click();
+    await dialog.getByLabel('Notiz (freiwillig)').fill('Mit Mia durchgehen');
+    await dialog.getByRole('button', { name: 'Erinnern', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page
+      .getByRole('grid')
+      .getByRole('img', { name: /^Erinnerung am / })
+      .first()
+      .waitFor();
+    await item(page, 'Notizen.txt').click();
+    await page.getByRole('button', { name: 'Beschreibung hinzufügen', exact: true }).click();
+    await dialog.getByLabel('Beschreibung').fill('Gedanken zur Reise, noch unsortiert');
+    await dialog.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await visible(page, 'Gedanken zur Reise, noch unsortiert');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Neu aus Vorlage' }).click();
+    await dialog.getByRole('listbox', { name: 'Vorlagen' }).getByRole('option', { name: 'Notizen.txt', exact: true }).click();
+    await dialog.getByLabel('Name der neuen Datei').fill('Protokoll für Mia');
+    await dialog.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await visible(page, '„Protokoll für Mia.txt“ ist angelegt');
+    await dialog.getByText('Ideen für das Wochenende:').waitFor();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Protokoll für Mia.txt').waitFor();
+  });
+
+  await step('E-Book lesen und Office-Vorschau', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const chapter = (title: string, text: string) =>
+      `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title><link rel="stylesheet" href="buch.css"/></head><body><h1>${title}</h1>${text
+        .split('|')
+        .map((line) => `<p>${line}</p>`)
+        .join('')}</body></html>`;
+    const book = new yazl.ZipFile();
+    const add = (name: string, content: string) => book.addBuffer(Buffer.from(content), name);
+    book.addBuffer(Buffer.from('application/epub+zip'), 'mimetype', { compress: false });
+    add(
+      'META-INF/container.xml',
+      '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="buch/inhalt.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
+    );
+    add(
+      'buch/inhalt.opf',
+      '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Reise nach Japan</dc:title><dc:creator>Emi Sato</dc:creator></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="a" href="aufbruch.xhtml" media-type="application/xhtml+xml"/><item id="b" href="tokio.xhtml" media-type="application/xhtml+xml"/><item id="c" href="kyoto.xhtml" media-type="application/xhtml+xml"/><item id="css" href="buch.css" media-type="text/css"/><item id="titel" href="titel.png" media-type="image/png" properties="cover-image"/></manifest><spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/></spine></package>'
+    );
+    add(
+      'buch/nav.xhtml',
+      '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="aufbruch.xhtml">Aufbruch</a></li><li><a href="tokio.xhtml">Tokio</a></li><li><a href="kyoto.xhtml">Kyoto</a></li></ol></nav></body></html>'
+    );
+    add(
+      'buch/buch.css',
+      'body { font-family: Georgia, serif; max-width: 34em; margin: 2.5em auto; padding: 0 1.5em; line-height: 1.6; color: #1d1b20; } h1 { font-weight: 500; margin-bottom: 1.2em; }'
+    );
+    add(
+      'buch/aufbruch.xhtml',
+      chapter(
+        'Aufbruch',
+        'Der Koffer stand seit Tagen im Flur, und trotzdem fehlte am Morgen der Adapter.|Mia hatte die Packliste geschrieben, Lea die Zugverbindungen herausgesucht. Für mich blieb, die Fotos von unterwegs gleich in die Cloud zu laden.|Um kurz nach sechs fuhr der Zug zum Flughafen, und mit ihm begann die Reise.'
+      )
+    );
+    add(
+      'buch/tokio.xhtml',
+      chapter('Tokio', 'Vom Hotelzimmer aus sah die Stadt nachts aus wie ein Schaltplan.|Am ersten Tag liefen wir zwanzig Kilometer.')
+    );
+    add('buch/kyoto.xhtml', chapter('Kyoto', 'In Kyoto war es ruhiger, und der Regen passte zu den Gärten.'));
+    book.addBuffer(
+      await sharp({ create: { width: 600, height: 900, channels: 3, background: '#2f5d50' } })
+        .png()
+        .toBuffer(),
+      'buch/titel.png'
+    );
+    book.end();
+    const chunks: Buffer[] = [];
+    for await (const chunk of book.outputStream) chunks.push(chunk as Buffer);
+    const upload = async (name: string, mimeType: string, buffer: Buffer) => {
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: 'Neu', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+      await (await chooser).setFiles({ name, mimeType, buffer });
+      await item(page, name).waitFor();
+    };
+    await upload('Reise nach Japan.epub', 'application/epub+zip', Buffer.concat(chunks));
+    await item(page, 'Reise nach Japan.epub').dblclick();
+    const preview = page.getByRole('dialog');
+    await preview.frameLocator('iframe[title="Reise nach Japan · Aufbruch"]').getByRole('heading', { name: 'Aufbruch' }).waitFor();
+    await visible(page, 'Emi Sato · Abschnitt 1 von 3');
+    await shot(page, 'epub');
+    await preview.getByRole('button', { name: 'Nächster Abschnitt' }).click();
+    await preview.frameLocator('iframe[title="Reise nach Japan · Tokio"]').getByRole('heading', { name: 'Tokio' }).waitFor();
+    await page.keyboard.press('Escape');
+    await preview.waitFor({ state: 'detached' });
+    if (spawnSync(process.env.SOFFICE_PATH || 'soffice', ['--version'], { stdio: 'ignore' }).status === 0) {
+      await upload(
+        'Brief an Lea.rtf',
+        'application/rtf',
+        Buffer.from(
+          '{\\rtf1\\ansi\\deff0 {\\fonttbl{\\f0 Arial;}}\\f0\\fs28 Hallo Lea, die Fotos liegen jetzt alle in der Cloud.\\par Bis bald, Emi\\par}'
+        )
+      );
+      await item(page, 'Brief an Lea.rtf').dblclick();
+      await preview.locator('iframe[title="Brief an Lea.rtf"]').waitFor({ timeout: 90_000 });
+      await page.keyboard.press('Escape');
+      await preview.waitFor({ state: 'detached' });
+    }
+  });
+
+  const anonymous = await context('dark');
+
+  await step('Wunschadresse, Meldung und Verlauf eines Links', async () => {
+    const shared = await api<{ links: { id: string; label: string | null }[] }>(page, 'GET', '/api/shared');
+    const link = shared.links.find((entry) => entry.label === 'Fotos für die Familie');
+    if (!link) throw new Error('Der Link aus den Beispieldaten fehlt');
+    const changed = await api<{ link: { url: string; slug: string | null } }>(page, 'PATCH', `/api/links/${link.id}`, {
+      slug: 'fotos-familie',
+    });
+    if (changed.link.url !== `${base}/s/fotos-familie`) throw new Error(`Unerwartete Adresse: ${changed.link.url}`);
+    const guest = await open(anonymous, 'meldung');
+    await guest.goto(changed.link.url);
+    await visible(guest, 'Fotos für die Familie');
+    await guest.getByRole('button', { name: 'Inhalt melden' }).click();
+    const report = guest.getByRole('dialog');
+    await report.getByRole('combobox', { name: 'Grund' }).click();
+    await guest.getByRole('option', { name: 'Urheberrecht' }).click();
+    await report.getByLabel('Was ist das Problem? (freiwillig)').fill('Das dritte Foto stammt von meiner Seite.');
+    await report.getByRole('button', { name: 'Melden', exact: true }).click();
+    await visible(guest, 'Danke, die Meldung ist bei der Verwaltung');
+    await guest.close();
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen', exact: true }).click();
+    await visible(page, 'Fotos für die Familie');
+    await page.getByRole('button', { name: 'Verlauf', exact: true }).first().click();
+    await page.getByRole('list', { name: 'Verlauf des Links' }).getByText('Link geöffnet').first().waitFor();
+    await shot(page, 'link-history');
+    await page.keyboard.press('Escape');
+    await page.goto(`${base}/admin/links`);
+    await visible(page, 'Meldungen');
+    await page.getByText('Das dritte Foto stammt von meiner Seite.').first().waitFor();
+    await page.getByRole('button', { name: 'Erledigt', exact: true }).click();
+    await visible(page, 'Meldung erledigt');
+  });
+
+  await step('Themes für alle und pro Person', async () => {
+    const variable = (name: string) =>
+      page.evaluate((key) => getComputedStyle(document.documentElement).getPropertyValue(key).trim(), name);
+    const waitFor = (name: string, part: string) =>
+      page.waitForFunction(([key, text]) => getComputedStyle(document.documentElement).getPropertyValue(key).includes(text), [
+        name,
+        part,
+      ] as const);
+    await page.goto(`${base}/admin/settings`);
+    const gallery = page.getByRole('radiogroup', { name: 'Theme für alle' });
+    await gallery.getByRole('radio', { name: 'Wald' }).click();
+    await visible(page, '„Wald“ gilt jetzt für alle');
+    await waitFor('--mui-palette-m3-primary', '#92d5ab');
+    await page.getByRole('button', { name: 'Neues Theme' }).click();
+    const editor = page.getByRole('dialog');
+    await editor.getByLabel('Name', { exact: true }).fill('Abendrot');
+    await editor.getByRole('textbox', { name: 'Grundfarbe', exact: true }).fill('#c2410c');
+    await editor.getByRole('combobox', { name: 'Stil' }).click();
+    await page.getByRole('option', { name: /Farbtreu/ }).click();
+    await editor.getByRole('textbox', { name: 'Dritte Farbe', exact: true }).fill('#7c3aed');
+    await editor.getByRole('button', { name: 'Serifen' }).click();
+    await waitFor('--moe-font', 'Iowan');
+    await editor.getByLabel('Eigenes CSS (freiwillig)').fill('.MuiDialogTitle-root { letter-spacing: 0.02em; }');
+    await page.waitForFunction(() => document.getElementById('moe-theme-css')?.textContent?.includes('letter-spacing'));
+    await shot(page, 'theme-editor');
+    await editor.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await visible(page, 'Theme gespeichert');
+    await editor.waitFor({ state: 'detached' });
+    await waitFor('--moe-font', 'M PLUS');
+    await page.waitForFunction(() => document.getElementById('moe-theme-css')?.textContent === '');
+    await gallery.getByRole('radio', { name: 'Abendrot' }).waitFor();
+    await gallery.getByRole('radio', { name: 'Abendrot' }).click();
+    await visible(page, '„Abendrot“ gilt jetzt für alle');
+    await waitFor('--moe-font', 'Iowan');
+    await page.waitForFunction(() => document.getElementById('moe-theme-css')?.textContent?.includes('letter-spacing'));
+    await shot(page, 'themes');
+    const guest = await open(await context('dark'), 'theme-gast');
+    await guest.goto(`${base}/login`);
+    const font = await guest.evaluate(() => getComputedStyle(document.documentElement).fontFamily);
+    if (!font.includes('Iowan')) throw new Error(`Die Anmeldeseite nutzt die Schrift des Themes nicht: ${font}`);
+    await guest.close();
+
+    await page.goto(`${base}/account`);
+    const mine = page.getByRole('radiogroup', { name: 'Theme', exact: true });
+    await mine.getByRole('radio', { name: 'Ozean' }).click();
+    await waitFor('--mui-palette-m3-primary', '#99ccfa');
+    await waitFor('--moe-font', 'M PLUS');
+    await page.reload();
+    await mine.getByRole('radio', { name: 'Ozean', checked: true }).waitFor();
+    if ((await variable('--mui-palette-m3-primary')) !== '#99ccfa') throw new Error('Das gewählte Theme hält nach dem Neuladen nicht');
+    await mine.getByRole('radio', { name: 'Eigene Farbe' }).click();
+    const own = page.getByRole('dialog');
+    await own.getByRole('textbox', { name: 'Grundfarbe', exact: true }).fill('#0f766e');
+    await own.getByRole('button', { name: 'Kantig' }).click();
+    await own.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await own.waitFor({ state: 'detached' });
+    await mine.getByRole('radio', { name: 'Eigene Farbe', checked: true }).waitFor();
+    await waitFor('--moe-corners', '0.1');
+    await mine.getByRole('radio', { name: 'Wie alle' }).click();
+    await waitFor('--moe-font', 'Iowan');
+    await mine.getByRole('radio', { name: 'Wie alle', checked: true }).waitFor();
+
+    await page.goto(`${base}/admin/settings`);
+    await gallery.getByRole('radio', { name: 'Moe', exact: true }).click();
+    await visible(page, '„Moe“ gilt jetzt für alle');
+    await waitFor('--mui-palette-m3-primary', '#d0bcff');
+    await waitFor('--moe-font', 'M PLUS');
+  });
+
+  await step('Plugins freigeben, nutzen und abschalten', async () => {
+    await page.goto(`${base}/admin/plugins`);
+    await visible(page, 'Mitgelieferte Beispiele');
+    const card = (name: string) => page.getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) });
+    const rail = page.getByRole('navigation', { name: 'Hauptnavigation' }).first();
+    const quiet = async () => {
+      const close = page.locator('.MuiSnackbar-root').getByRole('button', { name: 'Schließen' });
+      if (await close.isVisible()) await close.click();
+      await page.locator('.MuiSnackbar-root').waitFor({ state: 'detached' });
+    };
+    for (const name of ['Statistik', 'Inhaltsliste', 'Farbpaket']) {
+      await page.getByRole('button', { name: `„${name}“ hinzufügen` }).click();
+      await card(name).getByText('Aus', { exact: true }).waitFor();
+    }
+    await card('Statistik').getByRole('button', { name: 'Einschalten' }).click();
+    const trust = page.getByRole('dialog');
+    await trust.getByText(/^Ein Plugin läuft mit allen Rechten von MoeCloud/).waitFor();
+    await trust.getByText('eine Seite').waitFor();
+    await quiet();
+    await shot(page, 'plugin-trust');
+    await trust.getByRole('button', { name: 'Einschalten' }).click();
+    await trust.waitFor({ state: 'detached' });
+    await card('Statistik').getByText('Läuft', { exact: true }).waitFor();
+    await rail.getByRole('link', { name: 'Statistik' }).waitFor();
+    for (const name of ['Inhaltsliste', 'Farbpaket']) {
+      await card(name).getByRole('button', { name: 'Einschalten' }).click();
+      await trust.getByRole('button', { name: 'Einschalten' }).click();
+      await trust.waitFor({ state: 'detached' });
+      await card(name).getByText('Läuft', { exact: true }).waitFor();
+    }
+    await card('Inhaltsliste').getByRole('button', { name: 'Einstellungen von „Inhaltsliste“' }).click();
+    const settings = page.getByRole('dialog');
+    await settings.getByLabel('Name der Datei').fill('Übersicht.md');
+    await settings.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await settings.waitFor({ state: 'detached' });
+    await quiet();
+    await shot(page, 'plugins');
+
+    await page.goto(`${base}/admin/settings`);
+    await page.getByRole('button', { name: 'Lavendel aus Farbpaket' }).click();
+    const editor = page.getByRole('dialog');
+    await editor.getByRole('textbox', { name: 'Grundfarbe', exact: true }).waitFor();
+    if ((await editor.getByRole('textbox', { name: 'Grundfarbe', exact: true }).inputValue()).toLowerCase() !== '#9d8df1')
+      throw new Error('Das Theme aus dem Plugin kommt nicht im Editor an');
+    await editor.getByRole('button', { name: 'Abbrechen' }).click();
+    await editor.waitFor({ state: 'detached' });
+    await page.waitForFunction(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--mui-palette-m3-primary').includes('#d0bcff')
+    );
+
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Inhaltsliste schreiben', exact: true }).click();
+    await visible(page, '„Übersicht.md“ liegt im Ordner');
+    await item(page, 'Urlaub 2026').dblclick();
+    await item(page, 'Übersicht.md').waitFor();
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+
+    await rail.getByRole('link', { name: 'Statistik' }).click();
+    await page.waitForURL('**/files/plugins/statistik/uebersicht');
+    await page.getByRole('heading', { name: 'Statistik', level: 1 }).waitFor();
+    const frame = page.frameLocator('iframe[title="Statistik"]');
+    await frame.getByRole('heading', { name: 'Deine Aktionen pro Tag' }).waitFor();
+    await frame.locator('.saeule:not([hidden])').first().waitFor();
+    const inside = () =>
+      page
+        .frames()
+        .find((entry) => entry.url().includes('/plugin-pages/statistik/'))!
+        .evaluate(() => ({
+          mode: document.documentElement.dataset.mode,
+          primary: getComputedStyle(document.documentElement).getPropertyValue('--moe-primary').trim(),
+          origin: window.origin,
+          cookie: (() => {
+            try {
+              return document.cookie;
+            } catch {
+              return 'gesperrt';
+            }
+          })(),
+        }));
+    const outside = () =>
+      page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--mui-palette-m3-primary').trim());
+    const first = await inside();
+    if (first.primary !== (await outside()) || first.mode !== 'dark')
+      throw new Error(`Die Seite des Plugins trägt das Theme nicht: ${JSON.stringify(first)}`);
+    if (first.origin !== 'null' || first.cookie !== 'gesperrt')
+      throw new Error(`Die Seite des Plugins läuft nicht abgeschottet: ${JSON.stringify(first)}`);
+    const uploads = Number(await frame.locator('.moe-stat').first().textContent());
+    if (!(uploads > 0)) throw new Error('Die Statistik hat keine Uploads gezählt');
+    await frame.getByLabel('Zeitraum').selectOption('30');
+    await page.waitForFunction(
+      () => (document.querySelector<HTMLIFrameElement>('iframe[title="Statistik"]')?.getBoundingClientRect().height ?? 0) > 400
+    );
+    await frame.locator('.spalte').last().hover();
+    await frame
+      .locator('.tipp')
+      .getByText(/Aktion/)
+      .waitFor();
+    await shot(page, 'plugin-page');
+    await page.getByRole('button', { name: 'Helles Design' }).click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-mui-color-scheme') === 'light');
+    const lightPrimary = await outside();
+    for (let round = 0; round < 40; round += 1) {
+      if ((await inside()).primary === lightPrimary) break;
+      await page.waitForTimeout(100);
+    }
+    const second = await inside();
+    if (second.primary !== lightPrimary || second.mode !== 'light')
+      throw new Error(`Die Seite des Plugins folgt dem hellen Design nicht: ${JSON.stringify(second)}`);
+    await page.getByRole('button', { name: 'Dunkles Design' }).click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-mui-color-scheme') === 'dark');
+
+    const phone = await open(await context('dark', true), 'plugin-handy');
+    await login(phone, 'emi');
+    await phone.getByRole('button', { name: 'Statistik', exact: true }).click();
+    await phone.waitForURL('**/files/plugins/statistik/uebersicht');
+    await phone.frameLocator('iframe[title="Statistik"]').getByRole('heading', { name: 'Deine Aktionen pro Tag' }).waitFor();
+    const box = await phone.locator('iframe[title="Statistik"]').boundingBox();
+    if (!box || box.width < 380 || box.height < 400)
+      throw new Error(`Die Seite des Plugins ist auf dem Handy zu klein: ${JSON.stringify(box)}`);
+    await phone.getByRole('button', { name: 'Konto von Emi' }).click();
+    await phone.getByRole('menuitem', { name: 'Statistik' }).waitFor();
+    await phone.close();
+
+    await page.goto(`${base}/admin/plugins`);
+    for (const name of ['Statistik', 'Inhaltsliste', 'Farbpaket']) {
+      await card(name).getByRole('button', { name: 'Ausschalten' }).click();
+      await card(name).getByText('Aus', { exact: true }).waitFor();
+    }
+    await rail.getByRole('link', { name: 'Statistik' }).waitFor({ state: 'detached' });
+    await page.goto(`${base}/files/plugins/statistik/uebersicht`);
+    await visible(page, 'Diese Seite gibt es nicht mehr');
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Details', exact: true }).waitFor();
+    if (await page.getByRole('menuitem', { name: 'Inhaltsliste schreiben' }).count())
+      throw new Error('Die Aktion eines abgeschalteten Plugins steht noch im Menü');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('Schnellzugriff mit Strg+K', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+    const box = page.getByRole('combobox', { name: 'Schnellzugriff' });
+    const options = page.getByRole('listbox', { name: 'Schnellzugriff' }).getByRole('option');
+    await page.keyboard.press('Control+k');
+    await box.waitFor();
+    await options.filter({ hasText: 'Papierkorb' }).waitFor();
+    await shot(page, 'palette');
+    await box.fill('pap');
+    await page.getByRole('option', { name: 'Papierkorb', selected: true }).waitFor();
+    await page.keyboard.press('Enter');
+    await page.waitForURL('**/files/trash');
+    await box.waitFor({ state: 'detached' });
+
+    await page.keyboard.press('Control+k');
+    await box.fill('Strand');
+    await options.filter({ hasText: 'Strand.jpg' }).first().waitFor();
+    if ((await options.first().textContent())?.includes('Strand') !== true) throw new Error('Gefundene Dateien stehen nicht oben');
+    await page.keyboard.press('Enter');
+    await page.waitForURL(/\/files\/folder\/\w+\?select=\w+/);
+    await item(page, 'Strand.jpg').waitFor();
+
+    await page.keyboard.press('Control+k');
+    await box.fill('theme oz');
+    await page.getByRole('option', { name: 'Theme: Ozean', selected: true }).waitFor();
+    await page.keyboard.press('Enter');
+    await visible(page, 'Dein Theme ist jetzt „Ozean“');
+    await page.waitForFunction(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--mui-palette-m3-primary').includes('#99ccfa')
+    );
+    await page.keyboard.press('Control+k');
+    await box.fill('wie alle');
+    await page.getByRole('option', { name: 'Theme: Wie alle', selected: true }).waitFor();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--mui-palette-m3-primary').includes('#d0bcff')
+    );
+
+    await page.keyboard.press('Control+k');
+    await box.fill('gibtesnicht');
+    await visible(page, 'Dazu gibt es nichts.');
+    await box.fill('protok');
+    await page.getByRole('option', { name: 'Protokoll', selected: true }).waitFor();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
+    await Promise.all([page.waitForURL('**/admin/audit'), page.keyboard.press('Enter')]);
+    await visible(page, 'Protokoll');
+    await page.getByRole('button', { name: 'Konto von Emi' }).first().click();
+    await page.getByRole('menuitem', { name: 'Schnellzugriff' }).click();
+    await box.waitFor();
+    await page.keyboard.press('Escape');
+    await box.waitFor({ state: 'detached' });
+  });
+
   await step('Verwaltung', async () => {
     seedHistory(await api(page, 'GET', '/api/admin/overview'));
     await page.goto(`${base}/admin`);
@@ -1003,8 +1533,6 @@ try {
     }
     await page.getByRole('heading', { name: 'Meine Dateien' }).waitFor({ state: 'attached' });
   });
-
-  const anonymous = await context('dark');
 
   await step('Öffentlicher Link', async () => {
     const shared = await api<{ links: { label: string | null; url: string }[] }>(page, 'GET', '/api/shared');

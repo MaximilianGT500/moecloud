@@ -2,6 +2,62 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.5.0] · 2026-11-17
+
+Diese Version bringt Plugins und Themes: MoeCloud lässt sich um eigene Aktionen, Seiten und Regeln erweitern und bekommt zwölf fertige Themes samt Editor für eigene. Dazu kommen der Umzug von Nextcloud und anderen Speichern per WebDAV, Push direkt im Browser, Erinnerungen, Erwähnungen, Vorlagen und ein Schnellzugriff mit Strg+K. Beim Teilen kommen Wunschadressen, ein Verlauf für jeden Link und ein Knopf zum Melden dazu. Die Vorschau zeigt jetzt E-Books und über LibreOffice auch PowerPoint- und OpenDocument-Dateien. Für die Verwaltung gibt es eine Passwort-Richtlinie, einen Wochenbericht, Sperren für Dateien und Ablaufdaten für Konten.
+
+### Neu
+
+- **Plugins** unter **Admin › Plugins**: Ein Plugin ist ein Ordner mit einer `plugin.json` und etwas JavaScript. Es hängt Aktionen ins Dateimenü, setzt eigene Seiten in die Navigation, prüft Uploads, reagiert auf Ereignisse, beantwortet eigene Adressen, erledigt regelmäßige Aufgaben, schickt Benachrichtigungen und bringt Themes mit. Wie das geht, steht in der [Anleitung für Plugins](docs/plugins.md)
+- **Freigabe mit Prüfsumme**: Ein Plugin startet erst, nachdem ein Admin es freigegeben hat. MoeCloud merkt sich dabei eine Prüfsumme über alle seine Dateien, hält das Plugin an, sobald sich eine ändert, und sagt allen Admins Bescheid, auf Wunsch auch über einen Webhook. Seiten von Plugins laufen im Browser abgeschottet und erreichen nur die Routen ihres eigenen Plugins
+- **Sechs Beispiele**, die sich in der Verwaltung mit einem Klick hinzufügen lassen: **Statistik** mit eigener Seite, **Upload-Regeln**, **Inhaltsliste**, **Datei-Webhook**, **Briefkasten** und **Farbpaket**
+- **Plugins von der Kommandozeile**: `moecloud plugins` zeigt, was im Ordner liegt, gibt frei, schaltet ab, spielt ZIP-Archive ein und entfernt. Im Browser lassen sich Plugins nur hochladen, wenn der Server mit `PLUGIN_UPLOAD=on` läuft
+- **Themes**: Zwölf fertige Themes von Moe über Ozean, Wald und Kirschblüte bis Graphit und Terminal. Ein Theme legt Grundfarbe, Stil, auf Wunsch eine zweite und dritte Farbe, Schrift und Ecken fest und gilt auch auf der Anmeldeseite und in geteilten Links
+- **Eigene Themes** unter **Admin › Einstellungen › Aussehen**: Der Editor zeigt jede Änderung sofort in der ganzen Oberfläche, mit sieben Stilen, vier Schriften und eigenem CSS für Feinheiten. Themes lädst du als Datei herunter und auf einem anderen Server wieder hoch
+- **Theme pro Person**: Erlaubt es die Verwaltung, wählt jede Person unter **Konto › Darstellung** ein Theme aus der Liste oder stellt sich eine eigene Farbe zusammen. Das gilt für ihr Konto auf allen Geräten
+- **Schnellzugriff** mit Strg+K oder ⌘K: springt in jeden Bereich, findet Dateien und Ordner, wechselt das Theme und zwischen hell und dunkel
+- **Per WebDAV importieren** unter **Neu**: Du gibst die WebDAV-Adresse von Nextcloud, ownCloud oder einem anderen Speicher an, dazu Benutzername und Passwort oder App-Passwort. MoeCloud legt einen Ordner an und holt alles hinein, mit allen Unterordnern und dem Änderungsdatum jeder Datei. Der Import läuft im Hintergrund weiter, zeigt den Fortschritt, lässt sich abbrechen und meldet sich am Ende mit dem, was nicht geklappt hat. Jede Datei geht durch Virenscan und Speichergrenzen, die Zugangsdaten speichert MoeCloud nicht
+- **Push im Browser**: Unter **Konto › Push** schaltest du Benachrichtigungen für den Browser ein, in dem du gerade bist. Sie erscheinen auch, wenn MoeCloud nicht offen ist, in Chrome, Edge, Firefox und Safari, auf iPhone und iPad, sobald MoeCloud auf dem Home-Bildschirm liegt. Einen fremden Dienst oder ein Konto braucht es dafür nicht, die Schlüssel erzeugt MoeCloud selbst. Die Seite muss über HTTPS laufen
+- **Push aufs Handy** über ntfy oder Gotify: Unter **Konto › Push** trägst du Adresse und Token ein und schickst eine Testnachricht. Push bekommt dieselben Benachrichtigungen wie E-Mail, mit denselben Schaltern. Adressen im lokalen Netz bleiben gesperrt, bis ein Admin sie unter **Admin › Einstellungen** erlaubt, und der Token taucht weder in der Oberfläche noch im Export auf
+- **Ruhezeiten**: Unter **Konto** legst du fest, von wann bis wann weder E-Mails noch Push kommen. Danach bekommst du eine Zusammenfassung. Neue Anmeldungen, Schadsoftware und Störungen meldet MoeCloud trotzdem sofort
+- **E-Mails gesammelt**: Statt jeder Benachrichtigung einzeln kommt auf Wunsch eine E-Mail am Morgen oder eine am Montag, mit allem, was du noch nicht gelesen hast
+- **Erinnerungen**: **Erinnern** im Menü einer Datei oder eines Ordners meldet sich in einer Stunde, heute Abend, morgen früh, nächsten Montag oder zu einer eigenen Zeit, auf Wunsch mit Notiz. Ein Symbol in der Liste zeigt die Erinnerung, die Glocke sammelt alle anstehenden. Sehen kannst nur du sie
+- **Erwähnungen**: Mit `@benutzername` sprichst du in einem Kommentar jemanden an, der dort Zugriff hat. Beim Tippen schlägt MoeCloud passende Personen vor, und wer erwähnt wird, bekommt eine eigene Benachrichtigung
+- **Beschreibungen** für Dateien und Ordner in den Details, bis 2000 Zeichen. Alle mit Zugriff sehen sie, und die Suche findet den Text
+- **Vorlagen**: **Als Vorlagenordner verwenden** im Menü eines Ordners macht seine Dateien zu Vorlagen. **Neu › Neu aus Vorlage** legt daraus eine Kopie im offenen Ordner an, etwa einen Briefkopf oder ein Protokoll
+- **Bilder als PDF speichern**: Aus einer Auswahl von Bildern wird eine PDF, jedes Bild eine Seite, in A4 oder so groß wie das Bild. Das passt für fotografierte Belege und Scans
+- **Wunschadresse für Links**: Statt der zufälligen Adresse bekommt ein Link auf Wunsch eine eigene wie `/s/urlaub-2026`. Admins schalten das unter **Admin › Einstellungen › Teilen** ab
+- **Verlauf für Links**: Im Teilen-Fenster zeigt **Verlauf**, wann ein Link geöffnet wurde, was heruntergeladen oder hochgeladen wurde und ob jemand ein falsches Passwort eingegeben hat, jeweils mit Browser und System. IP-Adressen speichert MoeCloud dafür nicht
+- **Erinnerung vor dem Ablauf**: Zwei Tage bevor ein Link abläuft, bekommst du eine Benachrichtigung und kannst das Datum verlängern
+- **Inhalt melden**: Auf jeder geteilten Seite können Besucher einen Link melden, mit Grund und freiwilliger Nachricht. Die Meldung geht an alle Admins und steht unter **Admin › Links**, wo du sie erledigst oder den Link gleich pausierst. Abschalten lässt es sich unter **Admin › Einstellungen › Teilen**
+- **Downloads über Links melden**: Auf Wunsch sagt MoeCloud Bescheid, wenn jemand über einen Link herunterlädt, höchstens einmal pro Stunde
+- **E-Books** im EPUB-Format liest du in der Vorschau, mit Inhaltsverzeichnis und Blättern von Abschnitt zu Abschnitt. MoeCloud merkt sich pro Buch, wo du warst. Der Inhalt läuft abgeschottet ohne Skripte und lädt nichts aus dem Internet
+- **Vorschau für PowerPoint, OpenDocument und ältere Office-Dateien** (`.pptx`, `.ppt`, `.odt`, `.ods`, `.odp`, `.doc`, `.xls`, `.rtf`): LibreOffice wandelt sie in eine PDF um, die MoeCloud aufbewahrt, bis sich die Datei ändert. Mit dem Installationsskript schaltet `sudo moecloud office on` das ein, mit Docker die Ergänzung `docker/office.yml`. Beides startet LibreOffice in einem eigenen Container ohne Zugang zum Internet. Mit Node.js genügt ein installiertes LibreOffice
+- **Dateien sperren**: Im Menü einer Datei sperrst du sie für eine Stunde, acht Stunden, einen Tag, eine Woche oder bis du sie wieder entsperrst. Andere können sie dann ansehen und herunterladen, aber nicht ändern, umbenennen, verschieben oder löschen, auch nicht über WebDAV oder als Teil eines Ordners. Ein Schloss in der Liste zeigt, wer gesperrt hat. Wem die Datei gehört und Admins können die Sperre lösen, wer gesperrt hat, bekommt dann Bescheid. Aufräumregeln lassen gesperrte Dateien liegen
+- **Passwort-Richtlinie** unter **Admin › Einstellungen › Anmeldung**: Die Mindestlänge für neue Passwörter stellst du zwischen 10 und 64 Zeichen ein. Auf Wunsch lehnt MoeCloud Passwörter ab, die schon in einem Datenleck standen. Dafür fragt es bei Have I Been Pwned nach und überträgt nur die ersten fünf Zeichen eines Hashwerts, nie das Passwort
+- **Wochenbericht**: Jeden Montagmorgen bekommen alle Admins auf Wunsch eine E-Mail mit Speicher und Zuwachs, Konten, Anmeldungen, neuen Links, offenen Meldungen, Funden des Virenscans, der letzten Sicherung und neuen Versionen
+- **Ablaufdatum für Konten**: Unter **Admin › Personen** bekommt ein Konto ein Datum, ab dem die Anmeldung nicht mehr klappt, etwa für Gäste oder Projekte. Eine Woche vorher kommt eine Erinnerung. Danach sind Sitzungen, App-Passwörter und WebDAV gesperrt, bis jemand das Datum verschiebt. Der CSV-Import kennt dafür die Spalte `expires`
+- **Eigenes Konto löschen**: Schaltest du das unter **Admin › Einstellungen › Anmeldung** ein, kann jede Person ihr Konto unter **Konto** selbst löschen, bestätigt mit Benutzername und Passwort. Admins bekommen eine Nachricht, den letzten Admin schützt MoeCloud
+- **Mehr Speicher anfragen** unter **Speicher** schickt der Verwaltung eine Anfrage samt belegtem Speicher und freiwilliger Nachricht, höchstens einmal am Tag
+- Die Details eines Ordners zeigen Größe und Zahl der Dateien und Unterordner samt allem, was darin liegt
+
+### Behoben
+
+- Mit PostgreSQL schlug die Sicherung vor einem Update der Datenbank fehl, und MoeCloud startete danach nicht. Jetzt entsteht sie auf dem Stand vor dem Update, wie mit SQLite
+- Änderungen von der Kommandozeile kamen bei einem laufenden MoeCloud erst nach einem Neustart an, etwa der Wartungsmodus oder ein neuer Einrichtungscode. Jetzt gelten sie nach wenigen Sekunden
+- Beim Wechsel zwischen hellem und dunklem Design meldete der Browser in der Konsole einen Verstoß gegen die Content-Security-Policy
+- Mehrere Hinweise kurz nacheinander stauten sich am unteren Rand. Jetzt ersetzt der neueste die älteren
+- Das Installationsskript bricht bei einer festgehaltenen älteren Version nicht mehr ab, wenn es eine Ergänzung für Docker dort noch nicht gibt
+
+### Kleinigkeiten
+
+- Wer bisher eine eigene Grundfarbe eingestellt hatte, behält sie. Die Ecken, die du unter **Konto** gewählt hast, bleiben ebenfalls
+- Neue Umgebungsvariablen: `OFFICE_URL` für einen eigenen Dienst zur Umwandlung, `SOFFICE_PATH` für den Pfad zu LibreOffice, `BREACH_CHECK_URL` für eine eigene Quelle der Datenlecks oder `off`, dazu `PLUGINS`, `PLUGINS_DIR`, `PLUGIN_UPLOAD` und `PLUGINS_DEV` für Plugins
+- Webhooks kennen das neue Ereignis **Plugin angehalten**
+- Abhängigkeiten aktualisiert, darunter Motion 14.14, nodemailer 10.6, music-metadata 12.5 und Playwright 1.65.1
+- Hinweise zu Passwörtern nennen überall die eingestellte Mindestlänge
+- 515 neue Texte mit englischer Übersetzung
+
 ## [1.4.0] · 2026-11-14
 
 Diese Version bringt PostgreSQL als zweite Datenbank, Anmeldung über Single Sign-on und viele neue Funktionen, von Warnungen bei fremden Anmeldungen über Aufräumregeln bis zur Vorschau für E-Mails, Termine und Kontakte. Dazu lädt die Oberfläche spürbar schneller, der Server startet schneller und braucht weniger Speicher.
@@ -426,6 +482,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.5.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.0
 [1.4.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.4.0
 [1.3.4]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.4
 [1.3.3]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.3

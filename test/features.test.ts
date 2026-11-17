@@ -432,6 +432,37 @@ describe('Vorschauen, Fotos und Suche', () => {
     assert.ok(report.largest.length > 0);
   });
 
+  it('zählt Größe, Dateien und Ordner eines Ordners', async () => {
+    const outer = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Messung' })).json().node.id;
+    const inner = (await emi.json('POST', `/api/nodes/${outer}/folders`, { name: 'Innen' })).json().node.id;
+    const file = (await emi.upload(outer, 'Groß.bin', Buffer.alloc(1000, 1), 4096)).json().node.id;
+    await emi.upload(inner, 'Klein.bin', Buffer.alloc(500, 2), 4096);
+    const gone = (await emi.upload(inner, 'Weg.bin', Buffer.alloc(300, 3), 4096)).json().node.id;
+    await emi.json('POST', '/api/nodes/trash', { ids: [gone] });
+    const size = await emi.get(`/api/nodes/${outer}/size`);
+    assert.equal(size.statusCode, 200, size.body);
+    assert.deepEqual(size.json(), { size: 1500, files: 2, folders: 1 });
+    assert.equal((await emi.get(`/api/nodes/${file}/size`)).statusCode, 400);
+    assert.equal((await mia.get(`/api/nodes/${outer}/size`)).statusCode, 404);
+  });
+
+  it('fragt die Verwaltung nach mehr Speicher', async () => {
+    assert.equal((await mia.json('POST', '/api/storage/request', {})).statusCode, 400);
+    await emi.json('PATCH', `/api/admin/users/${miaId}`, { quota: 1024 ** 3 });
+    await emi.json('POST', '/api/notifications/read', {});
+    const asked = await mia.json('POST', '/api/storage/request', { message: 'Für die Urlaubsfotos von Lea' });
+    assert.equal(asked.statusCode, 200, asked.body);
+    const note = (await emi.get('/api/notifications')).json().items.find((item: { kind: string }) => item.kind === 'admin_storage');
+    assert.equal(note.title, 'Mia fragt nach mehr Speicher');
+    assert.match(note.text, /^\d+ B von 1 GB belegt\. Nachricht: Für die Urlaubsfotos von Lea$/);
+    assert.equal(note.url, '/admin/people?q=mia');
+    const again = await mia.json('POST', '/api/storage/request', {});
+    assert.equal(again.statusCode, 409);
+    assert.equal(again.json().error.message, 'Du hast heute schon nach mehr Speicher gefragt');
+    assert.equal((await mia.get('/api/storage')).json().askedAt, asked.json().askedAt);
+    await emi.json('PATCH', `/api/admin/users/${miaId}`, { quota: null });
+  });
+
   it('räumt doppelte Dateien auf und behält eine Kopie', async () => {
     const folder = (await emi.json('POST', `/api/nodes/${root}/folders`, { name: 'Doppelt' })).json().node.id;
     const content = Buffer.alloc(3000, 9);

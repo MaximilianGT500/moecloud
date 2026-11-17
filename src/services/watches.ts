@@ -3,7 +3,7 @@ import { badRequest } from '../lib/errors.ts';
 import type { ActivityInput } from './activity.ts';
 import { requireAccess, resolveAccess } from './nodes.ts';
 import { notify } from './notify.ts';
-import { getUser, type UserRow } from './users.ts';
+import { getUser, inactive, type UserRow } from './users.ts';
 
 const ADDED = new Set(['upload', 'link_upload', 'folder', 'text', 'copy', 'extract', 'restore', 'move']);
 const CHANGED = new Set(['edit', 'rename', 'version_restore', 'rotate']);
@@ -40,7 +40,7 @@ function flush(key: string) {
   pending.delete(key);
   if (entry.timer) clearTimeout(entry.timer);
   const user = getUser(entry.user);
-  if (!user || user.disabled) return;
+  if (!user || inactive(user)) return;
   const access = resolveAccess(user, entry.folder);
   if (!access || access.node.trashed_at) return;
   notify(

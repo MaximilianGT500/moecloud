@@ -11,6 +11,42 @@ export const SEED_PRESETS = [
   { name: 'Pink', value: '#ec4899' },
 ] as const;
 
+export const THEME_STYLES = ['content', 'tonal', 'vibrant', 'expressive', 'fidelity', 'neutral', 'mono'] as const;
+export type ThemeStyle = (typeof THEME_STYLES)[number];
+
+export const THEME_FONTS = ['rounded', 'system', 'serif', 'mono'] as const;
+export type ThemeFont = (typeof THEME_FONTS)[number];
+
+export const THEME_CORNERS = [1, 0.5, 0.1] as const;
+export type ThemeCorners = (typeof THEME_CORNERS)[number];
+
+export interface ThemeColors {
+  seed: string;
+  style: ThemeStyle;
+  secondary: string | null;
+  tertiary: string | null;
+}
+
+export interface ThemeSpec extends ThemeColors {
+  font: ThemeFont;
+  corners: ThemeCorners;
+}
+
+export const DEFAULT_SPEC: ThemeSpec = { seed: BRAND_SEED, style: 'content', secondary: null, tertiary: null, font: 'rounded', corners: 1 };
+
+export const sameColors = (a: ThemeColors, b: ThemeColors) =>
+  a.seed.toLowerCase() === b.seed.toLowerCase() &&
+  a.style === b.style &&
+  (a.secondary ?? '').toLowerCase() === (b.secondary ?? '').toLowerCase() &&
+  (a.tertiary ?? '').toLowerCase() === (b.tertiary ?? '').toLowerCase();
+
+export const FONT_STACKS: Record<ThemeFont, string> = {
+  rounded: '"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  system: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif',
+  mono: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+};
+
 export const ROLES = [
   'primary',
   'onPrimary',

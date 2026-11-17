@@ -11,6 +11,7 @@ import { PG_BASE, PG_BASE_VERSION, PG_IDENTITY, PG_STEPS, RECOUNT_REFS, TABLES }
 type Row = unknown[];
 
 interface Reader {
+  version: number;
   columns(table: string): Promise<string[]>;
   rows(table: string, columns: string[], size: number): AsyncGenerator<Row[]>;
   close(): Promise<void>;
@@ -70,17 +71,20 @@ async function postgresVersion(client: pg.Client) {
   return Number(found.rows[0]?.version ?? 0);
 }
 
-async function postgresReader(url: string): Promise<Reader> {
+async function postgresReader(url: string, older: boolean): Promise<Reader> {
   const client = await postgres(url);
   const version = await postgresVersion(client);
-  if (version === 0) throw new Error('In dieser PostgreSQL-Datenbank liegt noch keine MoeCloud');
-  if (version !== schemaVersion()) {
+  if (version === 0 || version > schemaVersion() || (version < schemaVersion() && !older)) {
+    await client.end();
+    if (version === 0) throw new Error('In dieser PostgreSQL-Datenbank liegt noch keine MoeCloud');
+    if (version > schemaVersion()) throw new Error(`Die Quelle stammt von einer neueren MoeCloud mit Stand ${version}`);
     throw new Error(
       `Die Quelle hat Stand ${version}, diese MoeCloud Stand ${schemaVersion()}. Starte MoeCloud einmal mit der Quelle, dann passt es`
     );
   }
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   return {
+    version,
     columns: (table) => postgresColumns(client, table),
     async *rows(table, columns, size) {
       await client.query(`DECLARE moecloud_copy NO SCROLL CURSOR FOR SELECT ${list(columns)} FROM ${quote(table)}`);
@@ -119,6 +123,7 @@ function sqliteReader(file: string): Reader {
   const db = new DatabaseSync(path);
   db.exec('BEGIN');
   return {
+    version: schemaVersion(),
     columns: async (table) => (db.prepare(`PRAGMA table_info(${quote(table)})`).all() as { name: string }[]).map((column) => column.name),
     async *rows(table, columns, size) {
       let batch: Row[] = [];
@@ -201,7 +206,7 @@ async function postgresWriter(url: string): Promise<Writer> {
   };
 }
 
-function sqliteWriter(file: string): Writer {
+function sqliteWriter(file: string, version: number): Writer {
   if (existsSync(file)) throw new Error(`${file} gibt es schon`);
   const partial = `${file}.partial`;
   rmSync(partial, { force: true });
@@ -209,7 +214,7 @@ function sqliteWriter(file: string): Writer {
   const statements = new Map<string, ReturnType<DatabaseSync['prepare']>>();
   db.exec('PRAGMA journal_mode = MEMORY');
   db.exec('PRAGMA synchronous = OFF');
-  migrate(db);
+  migrate(db, version);
   db.exec('BEGIN');
   db.exec('PRAGMA defer_foreign_keys = ON');
   return {
@@ -253,10 +258,10 @@ function send(message: Record<string, unknown>) {
 
 async function copy() {
   const started = Date.now();
-  const reader = isPostgresUrl(from) ? await postgresReader(from) : sqliteReader(from);
+  const reader = isPostgresUrl(from) ? await postgresReader(from, !isPostgresUrl(to)) : sqliteReader(from);
   let writer: Writer;
   try {
-    writer = isPostgresUrl(to) ? await postgresWriter(to) : sqliteWriter(to);
+    writer = isPostgresUrl(to) ? await postgresWriter(to) : sqliteWriter(to, reader.version);
   } catch (error) {
     await reader.close();
     throw error;
@@ -267,6 +272,7 @@ async function copy() {
       const target = await writer.columns(table);
       const source = new Set(await reader.columns(table));
       const columns = target.filter((column) => source.has(column));
+      if (!columns.length && reader.version < schemaVersion()) continue;
       const size = table === 'blob_text' ? 50 : 1000;
       let count = 0;
       for await (const rows of reader.rows(table, columns, size)) {

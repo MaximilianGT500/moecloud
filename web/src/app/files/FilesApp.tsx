@@ -48,9 +48,14 @@ import RestoreFromTrashRounded from '@mui/icons-material/RestoreFromTrashRounded
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import SellRounded from '@mui/icons-material/SellRounded';
+import LockRounded from '@mui/icons-material/LockRounded';
+import AlarmRounded from '@mui/icons-material/AlarmRounded';
+import PostAddRounded from '@mui/icons-material/PostAddRounded';
+import LockOpenRounded from '@mui/icons-material/LockOpenRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
 import AutoStoriesRounded from '@mui/icons-material/AutoStoriesRounded';
 import MergeRounded from '@mui/icons-material/MergeRounded';
+import PictureAsPdfRounded from '@mui/icons-material/PictureAsPdfRounded';
 import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
@@ -71,8 +76,9 @@ import { Uploader, entriesFromDrop, entriesFromInput, entriesFromPaste, hasFiles
 import { c, folderColor, radius } from '../../theme/tokens';
 import { AppShell, type Destination } from '../shell/AppShell';
 import { EmptyState } from '../common/bits';
-import { choose, pickColor } from '../common/dialogs';
+import { choose, confirm, pickColor } from '../common/dialogs';
 import { lazyNamed, whenIdle } from '../common/lazy';
+import { pluginActionsFor, pluginIcon, pluginPageHref, pluginPageKey, pluginPages, runPluginAction } from '../common/plugins';
 import { toast } from '../common/toast';
 import { ActionMenu, type Action, type Anchor } from './ActionMenu';
 import {
@@ -96,7 +102,7 @@ import { Details, type DetailsTab } from './Details';
 import { enqueue, forget, playItems, usePlayer } from './player';
 import { FolderReadme, readmeOf } from './Readme';
 import { DRAG_TYPE, Items } from './Items';
-import { canEditImage, canMergePdfs, canOrganizePdf, FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
+import { canEditImage, canMakePdf, canMergePdfs, canOrganizePdf, FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
 import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
 import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewMenu } from './Panels';
@@ -109,12 +115,17 @@ const AlbumList = lazyNamed(() => import('./Albums'), 'AlbumList');
 const AlbumMenu = lazyNamed(() => import('./Albums'), 'AlbumMenu');
 const AlbumPicker = lazyNamed(() => import('./Albums'), 'AlbumPicker');
 const CleanupDialog = lazyNamed(() => import('./Bulk'), 'CleanupDialog');
+const LockDialog = lazyNamed(() => import('./Bulk'), 'LockDialog');
+const DavImportDialog = lazyNamed(() => import('./DavImport'), 'DavImportDialog');
+const ReminderDialog = lazyNamed(() => import('./Bulk'), 'ReminderDialog');
+const TemplateDialog = lazyNamed(() => import('./Templates'), 'TemplateDialog');
 const ImageEditor = lazyNamed(() => import('./ImageEditor'), 'ImageEditor');
 const MiniPlayer = lazyNamed(() => import('./MiniPlayer'), 'MiniPlayer');
 const PackDialog = lazyNamed(() => import('./Bulk'), 'PackDialog');
 const PdfMergeDialog = lazyNamed(() => import('./PdfTools'), 'PdfMergeDialog');
 const PdfPagesDialog = lazyNamed(() => import('./PdfTools'), 'PdfPagesDialog');
 const Photos = lazyNamed(() => import('./Photos'), 'Photos');
+const PluginPageView = lazyNamed(() => import('./PluginPage'), 'PluginPageView');
 const RenameManyDialog = lazyNamed(() => import('./Bulk'), 'RenameManyDialog');
 const SearchFilters = lazyNamed(() => import('./SearchFilters'), 'SearchFilters');
 const ShareDialog = lazyNamed(() => import('./ShareDialog'), 'ShareDialog');
@@ -145,13 +156,14 @@ interface FilesBoot extends Boot {
 
 function destinationOf(view: View): Destination {
   if (view.kind === 'folder' || view.kind === 'search') return 'files';
+  if (view.kind === 'plugin') return pluginPageKey({ plugin: view.plugin, id: view.page });
   if (view.kind === 'activity') return 'recent';
   if (view.kind === 'tag') return 'tags';
   if (view.kind === 'albums' || view.kind === 'album') return 'photos';
   return view.kind;
 }
 
-const SPECIAL = new Set<View['kind']>(['photos', 'activity', 'storage', 'tags', 'albums']);
+const SPECIAL = new Set<View['kind']>(['photos', 'activity', 'storage', 'tags', 'albums', 'plugin']);
 
 function titleOf(view: View) {
   switch (view.kind) {
@@ -176,6 +188,8 @@ function titleOf(view: View) {
       return t('Schlagwörter');
     case 'search':
       return view.q ? t('Suche nach „{query}“', { query: view.q }) : t('Suche');
+    case 'plugin':
+      return pluginPages().find((page) => page.plugin === view.plugin && page.id === view.page)?.label ?? t('Plugin');
     default:
       return t('Meine Dateien');
   }
@@ -215,9 +229,14 @@ export function FilesApp() {
   const [imageEdit, setImageEdit] = useState<Item | null>(null);
   const [pdfPages, setPdfPages] = useState<Item | null>(null);
   const [pdfMerge, setPdfMerge] = useState<Item[] | null>(null);
+  const [pdfImages, setPdfImages] = useState<Item[] | null>(null);
   const [renaming, setRenaming] = useState<Item[] | null>(null);
   const [packing, setPacking] = useState<Item[] | null>(null);
   const [cleanupFor, setCleanupFor] = useState<Item | null>(null);
+  const [locking, setLocking] = useState<Item | null>(null);
+  const [davImport, setDavImport] = useState<string | null>(null);
+  const [reminding, setReminding] = useState<Item | null>(null);
+  const [templateFor, setTemplateFor] = useState<string | null>(null);
   const [move, setMove] = useState<MoveRequest | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [detailsTab, setDetailsTab] = useState<DetailsTab>('info');
@@ -492,6 +511,9 @@ export function FilesApp() {
     if (single && canOrganizePdf(single)) {
       list.push({ key: 'pdf-pages', label: t('Seiten bearbeiten'), icon: <AutoStoriesRounded />, onClick: () => setPdfPages(single) });
     }
+    if (canMakePdf(targets)) {
+      list.push({ key: 'pdf-images', label: t('Als PDF speichern'), icon: <PictureAsPdfRounded />, onClick: () => setPdfImages(targets) });
+    }
     if (canMergePdfs(targets)) {
       list.push({ key: 'pdf-merge', label: t('PDFs zusammenfügen'), icon: <MergeRounded />, onClick: () => setPdfMerge(targets) });
     }
@@ -542,6 +564,53 @@ export function FilesApp() {
     if (targets.every((item) => item.parentId)) {
       list.push({ key: 'tags', label: t('Schlagwörter'), icon: <SellRounded />, onClick: () => setTagging(targets) });
     }
+    if (single && single.parentId) {
+      list.push({
+        key: 'remind',
+        label: single.reminder ? t('Erinnerung ändern') : t('Erinnern'),
+        icon: <AlarmRounded />,
+        onClick: () => setReminding(single),
+      });
+    }
+    if (single && single.type === 'folder' && single.parentId && single.role === 'owner') {
+      list.push({
+        key: 'templates',
+        label: t('Als Vorlagenordner verwenden'),
+        icon: <PostAddRounded />,
+        onClick: async () => {
+          const done = await attempt(() => api.put('/api/templates', { folderId: single.id }));
+          if (done) toast(t('„{name}“ ist jetzt dein Vorlagenordner. Du findest die Vorlagen unter Neu.', { name: single.name }));
+        },
+      });
+    }
+    if (single && single.type === 'file' && !single.lock && canEdit(single)) {
+      list.push({ key: 'lock', label: t('Sperren'), icon: <LockRounded />, onClick: () => setLocking(single) });
+    }
+    if (single?.lock && (single.lock.mine || single.role === 'owner' || data.user?.role === 'admin')) {
+      const lock = single.lock;
+      list.push({
+        key: 'unlock',
+        label: t('Entsperren'),
+        icon: <LockOpenRounded />,
+        onClick: async () => {
+          if (
+            !lock.mine &&
+            !(await confirm({
+              title: t('Sperre von {name} lösen?', { name: lock.name }),
+              text: t('{name} bekommt eine Nachricht. Danach können alle mit Bearbeitungsrechten die Datei wieder ändern.', {
+                name: lock.name,
+              }),
+              confirm: t('Entsperren'),
+            }))
+          )
+            return;
+          const done = await attempt(() => api.delete(`/api/nodes/${single.id}/lock`));
+          if (done === undefined) return;
+          toast(t('„{name}“ ist entsperrt', { name: single.name }));
+          refresh();
+        },
+      });
+    }
     if (single && single.type === 'folder' && single.parentId) {
       list.push({
         key: 'watch',
@@ -587,6 +656,15 @@ export function FilesApp() {
         if (wide) setPrefs({ details: true });
         else setDrawer(true);
       },
+    });
+    pluginActionsFor(targets).forEach((action, index) => {
+      list.push({
+        key: `plugin:${action.plugin}:${action.id}`,
+        label: action.label,
+        icon: pluginIcon(action.icon),
+        onClick: () => void runPluginAction(action, targets).then((changed) => changed && refresh()),
+        divider: index === 0,
+      });
     });
     if (single?.grantId) {
       list.push({
@@ -672,7 +750,9 @@ export function FilesApp() {
       refresh();
       setTimeout(() => setViewer({ id: created.id, editing: true }), 350);
     },
+    onTemplate: () => setTemplateFor(uploadTarget),
     onImport: data.import ? () => void importFromUrl(uploadTarget) : undefined,
+    onDavImport: data.import ? () => setDavImport(uploadTarget) : undefined,
   });
 
   const dropHandlers = {
@@ -1057,6 +1137,7 @@ export function FilesApp() {
     if (view.kind === 'tags') return <TagsView />;
     if (view.kind === 'albums') return <AlbumList />;
     if (view.kind === 'storage') return <StorageView onReveal={(item) => reveal(item)} />;
+    if (view.kind === 'plugin') return <PluginPageView plugin={view.plugin} page={view.page} />;
     if (listing.error) {
       return (
         <EmptyState
@@ -1123,6 +1204,7 @@ export function FilesApp() {
               { href: '/files/activity', label: t('Aktivität'), icon: <HistoryRounded /> },
               { href: '/files/storage', label: t('Speicher'), icon: <DataUsageRounded /> },
               { href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlineRounded /> },
+              ...pluginPages().map((page) => ({ href: pluginPageHref(page), label: page.label, icon: pluginIcon(page.icon) })),
             ].map((chip) => (
               <Chip
                 key={chip.href}
@@ -1231,7 +1313,7 @@ export function FilesApp() {
             {header()}
           </Box>
           <Box
-            sx={{ flex: 1 }}
+            sx={{ flex: 1, ...(view.kind === 'plugin' ? { display: 'flex', flexDirection: 'column', minHeight: 0 } : {}) }}
             onClick={(event) => {
               if (event.target === event.currentTarget && selected.size) setSelected(new Set());
             }}
@@ -1322,6 +1404,11 @@ export function FilesApp() {
           <PdfMergeDialog items={pdfMerge} onClose={() => setPdfMerge(null)} onDone={() => refresh()} />
         </Later>
       )}
+      {pdfImages && (
+        <Later>
+          <PdfMergeDialog images items={pdfImages} onClose={() => setPdfImages(null)} onDone={() => refresh()} />
+        </Later>
+      )}
       {renaming && (
         <Later>
           <RenameManyDialog
@@ -1344,6 +1431,39 @@ export function FilesApp() {
       {cleanupFor && (
         <Later>
           <CleanupDialog item={cleanupFor} trashDays={data.trashDays} onClose={() => setCleanupFor(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {locking && (
+        <Later>
+          <LockDialog item={locking} onClose={() => setLocking(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {reminding && (
+        <Later>
+          <ReminderDialog item={reminding} onClose={() => setReminding(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {templateFor && (
+        <Later>
+          <TemplateDialog
+            parentId={templateFor}
+            onClose={() => setTemplateFor(null)}
+            onDone={(node) => {
+              if (templateFor !== folder?.id) navigate(folderHref(templateFor, rootId));
+              refresh();
+              if (previewType(node) === 'text') setTimeout(() => setViewer({ id: node.id, editing: true }), 350);
+            }}
+          />
+        </Later>
+      )}
+      {davImport && (
+        <Later>
+          <DavImportDialog
+            parentId={davImport}
+            onClose={() => setDavImport(null)}
+            onOpenFolder={(id) => navigate(folderHref(id, rootId))}
+            onChanged={() => refresh()}
+          />
         </Later>
       )}
       {imageEdit && (

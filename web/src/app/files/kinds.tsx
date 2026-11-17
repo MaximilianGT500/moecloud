@@ -55,6 +55,10 @@ export interface Item {
   shareEnds?: number | null;
   watching?: boolean;
   cleanup?: number | null;
+  lock?: { userId: number; name: string; mine: boolean; expiresAt: number | null } | null;
+  description?: string | null;
+  reminder?: { dueAt: number; note: string | null } | null;
+  office?: boolean;
 }
 
 export type PreviewType =
@@ -74,6 +78,8 @@ export type PreviewType =
   | 'calendar'
   | 'contacts'
   | 'font'
+  | 'epub'
+  | 'office'
   | 'cover'
   | 'none';
 
@@ -95,7 +101,7 @@ const extension = (name: string) => {
   return index > 0 ? name.slice(index + 1).toLowerCase() : name.toLowerCase() === 'dockerfile' ? 'dockerfile' : '';
 };
 
-export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' | 'infected' | 'rendition'>): PreviewType {
+export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' | 'infected' | 'rendition' | 'office'>): PreviewType {
   if (item.type === 'folder' || item.infected) return 'none';
   const ext = extension(item.name);
   if (item.kind === 'image') return item.rendition || BROWSER_IMAGES.has(item.mime ?? '') ? 'image' : 'none';
@@ -108,6 +114,8 @@ export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' |
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx') return 'xlsx';
   if (ext === 'zip') return 'zip';
+  if (ext === 'epub') return 'epub';
+  if (item.office) return 'office';
   if (ext === 'eml' || item.mime === 'message/rfc822') return 'email';
   if (ext === 'ics' || ext === 'ical' || item.mime === 'text/calendar') return 'calendar';
   if (ext === 'vcf' || ext === 'vcard' || item.mime === 'text/vcard' || item.mime === 'text/x-vcard') return 'contacts';
@@ -185,6 +193,7 @@ export const canEditImage = (item: Item) => item.type === 'file' && item.kind ==
 const isPdf = (item: Item) => item.type === 'file' && item.mime === 'application/pdf' && !item.infected;
 export const canMergePdfs = (items: Item[]) => items.length >= 2 && items.length <= 50 && items.every(isPdf);
 export const canOrganizePdf = (item: Item) => isPdf(item);
+export const canMakePdf = (items: Item[]) => items.length >= 1 && items.length <= 200 && items.every(canEditImage);
 
 export interface DiffVersion {
   id: string;

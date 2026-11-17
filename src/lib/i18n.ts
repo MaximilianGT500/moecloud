@@ -15,6 +15,19 @@ export const messagesFor = (lang: Lang) => (lang === 'en' ? english : null);
 export const longDate = (lang: Lang, time: number) =>
   new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'long' }).format(new Date(time));
 
+const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+export function sizeIn(lang: Lang, bytes: number) {
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < UNITS.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const digits = value >= 10 || unit === 0 ? 0 : 1;
+  return `${new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'de-DE', { maximumFractionDigits: digits }).format(value)} ${UNITS[unit]}`;
+}
+
 export const isLang = (value: unknown): value is Lang => value === 'de' || value === 'en';
 
 export function fromAcceptLanguage(header: string | undefined): Lang | null {

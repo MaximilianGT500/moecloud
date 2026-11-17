@@ -12,6 +12,8 @@ import { resetTotp } from './src/services/auth.ts';
 import { runMaintenance } from './src/services/jobs.ts';
 import { deliver, mailReady } from './src/services/mail.ts';
 import { detectTools } from './src/services/media.ts';
+import { addExample, installPlugin, listExamples, removePlugin } from './src/services/plugin-install.ts';
+import { disablePlugin, enablePlugin, listPlugins, scanPlugins } from './src/services/plugins.ts';
 import { pendingCount, processNow, refreshPreviews, reindexText } from './src/services/processing.ts';
 import { folderOf, recoverFiles, surveyStrays, type Tally, type Unreadable } from './src/services/recover.ts';
 import { job, rescan, testScanner } from './src/services/scan.ts';
@@ -20,7 +22,7 @@ import * as settings from './src/services/settings.ts';
 import { isSetUp, renewSetupCode, setupCode } from './src/services/setup.ts';
 import { checkForUpdates } from './src/services/updates.ts';
 import { createUser, findByUsername, listUsers, preferredLanguage, usageOf } from './src/services/users.ts';
-import type { Lang } from './src/lib/i18n.ts';
+import { t, type Lang } from './src/lib/i18n.ts';
 import type { Kind } from './src/lib/mime.ts';
 
 const command = process.env.MOECLOUD_COMMAND || 'node cli.ts';
@@ -97,6 +99,12 @@ function help() {
     ['db', 'Art, Version und Größe der Datenbank zeigen'],
     ['db copy [--from quelle] [ziel]', 'Alle Daten in eine neue, leere Datenbank kopieren, SQLite-Datei oder postgres://'],
     ['reindex', 'Suchindex für Inhalte neu aufbauen'],
+    ['plugins', 'Plugins im Ordner für Plugins anzeigen'],
+    ['plugins enable <id>', 'Plugin freigeben, so wie es gerade auf der Platte liegt'],
+    ['plugins disable <id>', 'Plugin abschalten'],
+    ['plugins install <zip>', 'Plugin aus einem ZIP-Archiv einspielen'],
+    ['plugins example [name]', 'Mitgelieferte Beispiele zeigen oder eines in den Ordner legen'],
+    ['plugins remove <id>', 'Plugin samt Einstellungen und gespeicherten Daten entfernen'],
     ['version', 'Installierte und neueste Version anzeigen'],
   ];
   out('MoeCloud Kommandozeile');
@@ -393,6 +401,70 @@ async function main() {
         out('Damit MoeCloud die neue Datenbank nutzt, nimm DATABASE_URL aus der Konfiguration und starte MoeCloud neu.');
       } else {
         out(`Damit MoeCloud die neue Datenbank nutzt, trag DATABASE_URL=sqlite:${destination} ein und starte MoeCloud neu.`);
+      }
+      break;
+    }
+    case 'plugins': {
+      const [action, target] = positional();
+      if (!config.plugins.enabled) fail('Plugins sind mit PLUGINS=off abgeschaltet.');
+      const later = 'Ein laufendes MoeCloud übernimmt das innerhalb einer Minute.';
+      try {
+        if (action === 'install') {
+          if (!target) fail('Gib den Pfad zum ZIP-Archiv an.');
+          const installed = await installPlugin(resolve(target));
+          out(`${installed.id} ${installed.version} liegt jetzt in ${config.paths.plugins}.`);
+          out(`Freigeben mit: ${command} plugins enable ${installed.id}`);
+        } else if (action === 'example') {
+          const examples = await listExamples('de');
+          if (!target) {
+            out('Mitgelieferte Beispiele:');
+            for (const example of examples) {
+              out(`${example.id.padEnd(24)} ${example.installed ? 'liegt schon im Ordner' : example.description}`);
+            }
+            out(`Hinzufügen mit: ${command} plugins example <name>`);
+          } else {
+            const added = await addExample(target);
+            out(`${added.id} ${added.version} liegt jetzt in ${config.paths.plugins}.`);
+            out(`Freigeben mit: ${command} plugins enable ${added.id}`);
+          }
+        } else if (action === 'remove') {
+          if (!target) fail('Gib die Kennung des Plugins an.');
+          await removePlugin(target);
+          out(`${target} ist entfernt. ${later}`);
+        } else if (action === 'enable' || action === 'disable') {
+          if (!target) fail('Gib die Kennung des Plugins an.');
+          const entry = (await scanPlugins()).find((plugin) => plugin.id === target);
+          const hash = entry?.hash ?? fail(`Im Ordner ${config.paths.plugins} gibt es kein Plugin ${target}.`);
+          if (action === 'enable') {
+            await enablePlugin(target, hash, 'de');
+            audit('plugin_enabled', { details: { name: target, id: target, via: 'cli' } });
+            out(`${target} ist freigegeben. ${later}`);
+          } else {
+            await disablePlugin(target, 'de');
+            audit('plugin_disabled', { details: { name: target, id: target, via: 'cli' } });
+            out(`${target} ist abgeschaltet. ${later}`);
+          }
+        } else {
+          await scanPlugins();
+          const list = listPlugins('de');
+          out(`Plugins liegen in ${list.dir}`);
+          if (list.items.length === 0) out('Dort liegt noch kein Plugin.');
+          const label: Record<string, string> = {
+            active: 'freigegeben',
+            stopped: 'freigegeben',
+            off: 'aus',
+            changed: 'geändert, neu freigeben',
+            failed: 'Start misslungen',
+            invalid: 'ungültig',
+          };
+          for (const plugin of list.items) {
+            out(
+              `${plugin.id.padEnd(24)} ${plugin.version.padEnd(10)} ${label[plugin.status] ?? plugin.status}${plugin.error ? `: ${plugin.error}` : ''}`
+            );
+          }
+        }
+      } catch (error) {
+        fail(t('de', (error as Error).message, (error as { params?: Record<string, string | number> }).params));
       }
       break;
     }

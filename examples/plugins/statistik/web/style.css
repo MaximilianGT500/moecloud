@@ -1,0 +1,112 @@
+main {
+  max-width: 960px;
+  margin: 0 auto;
+}
+#kacheln {
+  margin-bottom: 16px;
+}
+#kacheln .moe-card {
+  margin: 0;
+}
+.kopf {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.kopf h2 {
+  margin: 0;
+}
+.flaeche {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+}
+.werte {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 200px;
+  font-size: 0.75rem;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--moe-on-surface-variant);
+}
+.saeulen {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  gap: 2px;
+  height: 200px;
+  border-bottom: 1px solid var(--moe-outline-variant);
+  background: linear-gradient(var(--moe-outline-variant), var(--moe-outline-variant)) 0 50% / 100% 1px no-repeat;
+}
+.spalte {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  border-radius: 6px 6px 0 0;
+}
+.spalte:hover,
+.spalte:focus-visible {
+  background: color-mix(in srgb, var(--moe-on-surface) 8%, transparent);
+  outline: none;
+}
+.spalte:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--moe-primary);
+}
+.saeule {
+  width: min(24px, 70%);
+  min-width: 3px;
+  border-radius: 4px 4px 0 0;
+  background: var(--moe-primary);
+}
+.tage {
+  grid-column: 2;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--moe-on-surface-variant);
+}
+.tage span {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tipp {
+  position: absolute;
+  top: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 6px));
+  background: var(--moe-inverse-surface);
+  color: var(--moe-inverse-on-surface);
+}
+.tipp[hidden] {
+  display: none;
+}
+details {
+  margin-top: 20px;
+}
+summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--moe-primary);
+}
+table {
+  margin-top: 8px;
+}
+th:last-child,
+td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

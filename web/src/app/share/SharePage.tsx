@@ -4,7 +4,13 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
+import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded';
@@ -44,10 +50,85 @@ interface ShareBoot extends Boot {
     allowDownload: boolean;
     allowUpload: boolean;
     uploadOnly: boolean;
+    reports?: boolean;
     expiresAt: number | null;
     downloadsLeft: number | null;
     node: Item;
   };
+}
+
+function ReportDialog({ base, onClose }: { base: string; onClose: () => void }) {
+  const [reason, setReason] = useState('illegal');
+  const [text, setText] = useState('');
+  const [contact, setContact] = useState('');
+  const [busy, setBusy] = useState(false);
+  const reasons = [
+    { key: 'illegal', label: t('Verbotene Inhalte') },
+    { key: 'malware', label: t('Schadsoftware oder Betrug') },
+    { key: 'copyright', label: t('Urheberrecht') },
+    { key: 'privacy', label: t('Persönliche Daten') },
+    { key: 'other', label: t('Sonstiges') },
+  ];
+  const send = async () => {
+    setBusy(true);
+    try {
+      await api.post(`${base}/report`, { reason, text: text.trim() || null, contact: contact.trim() || null });
+      toast(t('Danke, die Meldung ist bei der Verwaltung'));
+      onClose();
+    } catch (error) {
+      toast(errorText(error));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <DialogTitle>{t('Inhalt melden')}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+            {t('Ist hier etwas, das nicht geteilt werden sollte? Die Verwaltung dieses Servers bekommt deine Meldung und prüft den Link.')}
+          </Typography>
+          <TextField select label={t('Grund')} value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy}>
+            {reasons.map((entry) => (
+              <MenuItem key={entry.key} value={entry.key}>
+                {entry.label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            label={t('Was ist das Problem? (freiwillig)')}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            multiline
+            minRows={3}
+            disabled={busy}
+            slotProps={{ htmlInput: { maxLength: 2000 } }}
+          />
+          <TextField
+            label={t('E-Mail für Rückfragen (freiwillig)')}
+            type="email"
+            value={contact}
+            onChange={(event) => setContact(event.target.value)}
+            disabled={busy}
+            slotProps={{ htmlInput: { maxLength: 200 } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose} disabled={busy}>
+            {t('Abbrechen')}
+          </Button>
+          <Button type="submit" variant="contained" disabled={busy}>
+            {t('Melden')}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
 }
 
 function UploadBox({ uploader, folderId, onPick }: { uploader: Uploader; folderId: string; onPick: () => void }) {
@@ -108,6 +189,7 @@ export function SharePage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewer, setViewer] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [revision, setRevision] = useState(0);
   const [uploader] = useState(() => new Uploader(base));
@@ -415,8 +497,11 @@ export function SharePage() {
             <DropOverlay active={dragging} label={t('Loslassen, um hochzuladen')} />
           </Box>
         </m.div>
-        {data.site.legal.length > 0 && (
-          <Box component="footer" sx={{ display: 'flex', gap: 2.5, justifyContent: 'center', mt: 3, flexWrap: 'wrap' }}>
+        {(data.site.legal.length > 0 || share.reports) && (
+          <Box
+            component="footer"
+            sx={{ display: 'flex', gap: 2.5, justifyContent: 'center', alignItems: 'center', mt: 3, flexWrap: 'wrap' }}
+          >
             {data.site.legal.map((link) => (
               <Typography
                 key={link.href}
@@ -428,8 +513,29 @@ export function SharePage() {
                 {link.label}
               </Typography>
             ))}
+            {share.reports && (
+              <Typography
+                component="button"
+                type="button"
+                variant="body2"
+                onClick={() => setReporting(true)}
+                sx={{
+                  color: c.onSurfaceVariant,
+                  background: 'none',
+                  border: 0,
+                  p: 0,
+                  font: 'inherit',
+                  fontSize: 'inherit',
+                  cursor: 'pointer',
+                  '&:hover': { textDecoration: 'underline' },
+                }}
+              >
+                {t('Inhalt melden')}
+              </Typography>
+            )}
           </Box>
         )}
+        {reporting && <ReportDialog base={base} onClose={() => setReporting(false)} />}
       </Box>
 
       <input

@@ -8,11 +8,14 @@ import { startJobs } from './services/jobs.ts';
 import { detectTools } from './services/media.ts';
 import { refreshPreviews, startProcessing } from './services/processing.ts';
 import * as settings from './services/settings.ts';
+import { startPlugins, stopPlugins } from './services/plugins.ts';
+import { refreshSiteTheme } from './services/themes.ts';
 import { isSetUp, setupCode } from './services/setup.ts';
 
 await ensureDirs();
 openDatabase(config.database, config.paths.backups);
 settings.secret();
+refreshSiteTheme();
 
 const app = await buildApp();
 if (updateBackup) app.log.info(`Vor dem Update der Datenbank wurde eine Sicherung angelegt: ${updateBackup}`);
@@ -48,6 +51,9 @@ process.on('unhandledRejection', (reason) => app.log.error(reason, 'Unbehandelte
 
 const stopJobs = startJobs(app.log);
 const stopProcessing = startProcessing();
+const plugins = await startPlugins();
+if (!config.plugins.enabled) app.log.info('Plugins sind mit PLUGINS=off abgeschaltet');
+else if (plugins.found) app.log.info(`${plugins.active} von ${plugins.found} Plugins laufen`);
 
 try {
   await app.listen({ port: config.port, host: config.host });
@@ -76,6 +82,7 @@ async function shutdown(signal: string) {
   stopJobs();
   stopProcessing();
   try {
+    await stopPlugins();
     await app.close();
   } finally {
     closeDatabase();

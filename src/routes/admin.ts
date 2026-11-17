@@ -15,9 +15,13 @@ import { listBackups } from '../services/backups.ts';
 import { createInvite, deleteInvite, listInvites, presentInvite } from '../services/invites.ts';
 import { serverGroups } from '../services/library.ts';
 import { adminDeleteLink, allLinks, baseUrl, presentLink } from '../services/links.ts';
+import { checkPassword, passwordMin } from '../services/passwords.ts';
+import { sendReportTo } from '../services/report.ts';
+import { listReports, resolveReport } from '../services/reports.ts';
 import { deliver, mailReady } from '../services/mail.ts';
 import { tools } from '../services/media.ts';
 import { getNode } from '../services/nodes.ts';
+import { officeReady } from '../services/office.ts';
 import { pendingCount } from '../services/processing.ts';
 import { sendResetByAdmin } from '../services/resets.ts';
 import { scanEnabled, scanStats } from '../services/scan.ts';
@@ -38,8 +42,11 @@ import {
   listUsers,
   preferredLanguage,
   usageOf,
+  updatePrefs,
 } from '../services/users.ts';
 import { runMaintenance } from '../services/jobs.ts';
+
+const expiry = z.number().int().positive().max(253402300799000).nullable().optional();
 
 const createSchema = z.object({
   username,
@@ -49,6 +56,7 @@ const createSchema = z.object({
   role: z.enum(['admin', 'user']).default('user'),
   quota: quota.nullable().optional(),
   sendLink: z.boolean().optional(),
+  expiresAt: expiry,
 });
 
 const updateSchema = z.object({
@@ -58,6 +66,7 @@ const updateSchema = z.object({
   disabled: z.boolean().optional(),
   quota: quota.nullable().optional(),
   password: password.optional(),
+  expiresAt: expiry,
 });
 
 const settingsSchema = z
@@ -70,12 +79,20 @@ const settingsSchema = z
       .refine((value) => value === '' || /^https?:\/\/[^/\s]+/.test(value), 'Die Adresse muss mit http:// oder https:// beginnen'),
     'site.seed': hexColor,
     'site.palette': palette,
+    'themes.personal': z.boolean(),
     'site.language': z.enum(['de', 'en']),
     'site.imprint': z.string().max(20_000),
     'site.privacy': z.string().max(50_000),
     'auth.registration': z.enum(['closed', 'open', 'invite']),
     'auth.passkeys': z.boolean(),
     'auth.require2fa': z.enum(['off', 'admins', 'all']),
+    'auth.passwordMin': z
+      .number()
+      .int()
+      .min(10, 'Mindestens 10 Zeichen müssen es sein')
+      .max(64, 'Mehr als 64 Zeichen kann niemand verlangen'),
+    'auth.passwordBreach': z.boolean(),
+    'report.weekly': z.boolean(),
     'storage.defaultQuota': quota,
     'storage.maxUpload': quota,
     'storage.trashDays': z.number().int().min(0).max(3650),
@@ -86,7 +103,10 @@ const settingsSchema = z
     'share.requirePassword': z.boolean(),
     'share.maxDays': z.number().int().min(0).max(3650),
     'share.stripLocation': z.boolean(),
+    'share.slugs': z.boolean(),
+    'share.reports': z.boolean(),
     'users.directory': z.boolean(),
+    'users.selfDelete': z.boolean(),
     'notice.text': z.string().max(500),
     'notice.level': z.enum(['info', 'warning']),
     'notice.until': z.number().int().min(0),
@@ -101,6 +121,8 @@ const settingsSchema = z
     'search.content': z.boolean(),
     'import.enabled': z.boolean(),
     'import.private': z.boolean(),
+    'push.enabled': z.boolean(),
+    'push.private': z.boolean(),
   })
   .partial();
 
@@ -149,7 +171,7 @@ export async function adminRoutes(app: FastifyInstance) {
         scan: scanEnabled() ? scanStats() : null,
         backup: settings.get('backup.enabled') ? (lastBackup ? lastBackup.createdAt : 0) : null,
         processing: pendingCount(),
-        tools: { ...tools },
+        tools: { ...tools, soffice: officeReady() },
         maintenance: settings.get('maintenance.enabled'),
         notice: settings.activeNotice(),
         failedLogins:
@@ -162,13 +184,16 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get('/api/admin/users', async (request) => {
     admin(request);
-    return { items: listUsers().map(userView), mail: mailReady() };
+    return { items: listUsers().map(userView), mail: mailReady(), passwordMin: passwordMin() };
   });
 
   app.post('/api/admin/users', async (request) => {
     const actor = admin(request);
     const input = parse(createSchema, request.body);
     if (!input.password && !(input.sendLink && input.email)) throw badRequest('Gib ein Passwort ein oder schick einen Link per E-Mail');
+    if (input.password) await checkPassword(input.password);
+    if (input.expiresAt && input.expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
+    if (input.expiresAt && input.role === 'admin') throw badRequest('Admins bekommen kein Ablaufdatum');
     const user = await createUser({
       username: input.username,
       name: input.name,
@@ -176,6 +201,7 @@ export async function adminRoutes(app: FastifyInstance) {
       password: input.password ?? null,
       role: input.role,
       quota: input.quota ?? null,
+      expiresAt: input.expiresAt ?? null,
     });
     audit('user_created', { actor: actor.id, subject: user.id, request, details: { role: user.role } });
     let sent = false;
@@ -209,6 +235,9 @@ export async function adminRoutes(app: FastifyInstance) {
     if (losesAdmin && adminCount() <= 1) throw badRequest('Es muss immer mindestens einen Admin geben');
     if (user.id === actor.id && (input.disabled || input.role === 'user'))
       throw badRequest('Dich selbst kannst du nicht sperren oder herabstufen');
+    const nextExpiry = input.expiresAt !== undefined ? input.expiresAt : (user.expires_at ?? null);
+    if (nextExpiry && (input.role ?? user.role) === 'admin') throw badRequest('Admins bekommen kein Ablaufdatum');
+    if (input.expiresAt && input.expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
     const fields: string[] = [];
     if (input.email !== undefined && input.email !== (user.email ?? '')) {
       const key = input.email ? keyOf(input.email) : null;
@@ -229,12 +258,18 @@ export async function adminRoutes(app: FastifyInstance) {
       run('UPDATE users SET quota_bytes = ? WHERE id = ?', input.quota, user.id);
       fields.push('quota');
     }
+    if (input.expiresAt !== undefined && input.expiresAt !== (user.expires_at ?? null)) {
+      run('UPDATE users SET expires_at = ? WHERE id = ?', input.expiresAt, user.id);
+      updatePrefs(user.id, { expiryWarned: 0 });
+      fields.push('expiresAt');
+    }
     if (input.disabled !== undefined && input.disabled !== Boolean(user.disabled)) {
       run('UPDATE users SET disabled = ? WHERE id = ?', input.disabled, user.id);
       if (input.disabled) destroyUserSessions(user.id);
       audit(input.disabled ? 'user_disabled' : 'user_enabled', { actor: actor.id, subject: user.id, request });
     }
     if (input.password) {
+      await checkPassword(input.password);
       run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(input.password), user.id);
       destroyUserSessions(user.id);
       audit('admin_password_set', { actor: actor.id, subject: user.id, request });
@@ -339,6 +374,7 @@ export async function adminRoutes(app: FastifyInstance) {
       throw badRequest('Ohne Passkeys fehlt dir der zweite Faktor. Richte zuerst die Authenticator-App ein.');
     }
     settings.setMany(input as Partial<settings.Settings>);
+    if (changed.includes('site.seed')) settings.set('theme.site', null);
     if (maintenance !== undefined && changed.includes('maintenance.enabled')) {
       audit('maintenance', { actor: actor.id, request, details: { enabled: maintenance } });
     }
@@ -408,6 +444,32 @@ export async function adminRoutes(app: FastifyInstance) {
         };
       }),
     };
+  });
+
+  app.post('/api/admin/report/send', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (request) => {
+    const actor = admin(request);
+    if (!mailReady()) throw badRequest('Der E-Mail-Versand ist auf diesem Server nicht eingerichtet');
+    if (!actor.email) throw badRequest('Hinterleg unter Konto eine E-Mail-Adresse, dann kommt der Bericht an');
+    await sendReportTo(actor);
+    return { ok: true };
+  });
+
+  app.get('/api/admin/reports', async (request) => {
+    admin(request);
+    return { items: listReports() };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/admin/reports/:id/resolve', async (request) => {
+    const actor = admin(request);
+    const input = parse(z.object({ pause: z.boolean().default(false) }), request.body ?? {});
+    const report = resolveReport(request.params.id, input.pause);
+    audit('report_resolved', {
+      actor: actor.id,
+      subject: report.owner_id ?? undefined,
+      request,
+      details: { label: report.label, reason: report.reason, paused: input.pause },
+    });
+    return { ok: true };
   });
 
   app.delete<{ Params: { id: string } }>('/api/admin/links/:id', async (request) => {

@@ -44,6 +44,10 @@ export function accountData(user: UserRow) {
     rows.map((row) => ({ ...row, path: path(row.node_id) })).filter((row) => row.path);
   const prefs: Record<string, unknown> = { ...prefsOf(user) };
   delete prefs.storageWarned;
+  delete prefs.storageAsked;
+  delete prefs.expiryWarned;
+  const push = prefsOf(user).push;
+  prefs.push = push ? { kind: push.kind, url: push.url } : null;
   const tags = all<{ id: string; name: string; color: string | null }>(
     'SELECT id, name, color FROM tags WHERE owner_id = ? ORDER BY name_key',
     user.id

@@ -26,7 +26,7 @@ interface SystemInfo {
   database: number;
   databaseKind: 'sqlite' | 'postgres';
   databaseVersion: string;
-  tools: { ffmpeg: boolean; ffprobe: boolean; pdftoppm: boolean; pdftotext: boolean };
+  tools: { ffmpeg: boolean; ffprobe: boolean; pdftoppm: boolean; pdftotext: boolean; soffice: boolean };
   processing: { pending: number; processed: number; failed: number };
   metrics: boolean;
   metricsEnv: boolean;
@@ -46,6 +46,8 @@ function toolHint(tool: string) {
       return t('Länge, Auflösung und Aufnahmedatum von Videos');
     case 'pdftoppm':
       return t('Vorschaubilder für PDFs');
+    case 'soffice':
+      return t('Vorschau für PowerPoint, OpenDocument und ältere Office-Dateien');
     default:
       return t('Suche im Text von PDFs');
   }

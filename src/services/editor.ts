@@ -75,7 +75,7 @@ async function heifTags(path: string) {
   return tags ?? undefined;
 }
 
-async function load(node: NodeRow, type: string): Promise<Source> {
+export async function loadImage(node: NodeRow, type: string): Promise<Source> {
   const path = blobPath(node.sha256!);
   const options = { failOn: 'error', limitInputPixels: MAX_PIXELS, animated: false } as const;
   const sharp = await loadSharp();
@@ -143,7 +143,7 @@ export async function editImage(user: UserRow, nodeId: string, input: EditInput,
     requireMutable(user, node.id);
   }
   const target = input.save === 'copy' ? writableFolder(user, node.parent_id) : null;
-  const source = await load(node, type);
+  const source = await loadImage(node, type);
   let output: Buffer;
   try {
     const swap = input.rotate === 90 || input.rotate === 270;

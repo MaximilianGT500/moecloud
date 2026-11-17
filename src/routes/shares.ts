@@ -6,7 +6,7 @@ import { Limiter } from '../lib/limiter.ts';
 import { me } from '../lib/request.ts';
 import { email, parse } from '../lib/validate.ts';
 import { getNode, present, requireAccess } from '../services/nodes.ts';
-import { activeLink, createLink, deleteLink, linksBy, linksForNode, presentLink, updateLink } from '../services/links.ts';
+import { activeLink, createLink, deleteLink, linkEvents, linksBy, linksForNode, presentLink, updateLink } from '../services/links.ts';
 import { deliver, mailReady } from '../services/mail.ts';
 import {
   getGrant,
@@ -41,6 +41,8 @@ const linkSchema = z.object({
   allowUpload: z.boolean().optional(),
   uploadOnly: z.boolean().optional(),
   notify: z.boolean().optional(),
+  notifyDownloads: z.boolean().optional(),
+  slug: z.string().max(64).nullable().optional(),
   maxDownloads: z.number().int().min(1).max(1_000_000).nullable().optional(),
   paused: z.boolean().optional(),
 });
@@ -85,6 +87,10 @@ export async function shareRoutes(app: FastifyInstance) {
     deleteLink(me(request), request.params.id);
     return { ok: true };
   });
+
+  app.get<{ Params: { id: string } }>('/api/links/:id/events', async (request) => ({
+    items: linkEvents(me(request), request.params.id, request.lang),
+  }));
 
   app.post<{ Params: { id: string } }>('/api/links/:id/send', async (request) => {
     const user = me(request);

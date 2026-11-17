@@ -1,7 +1,7 @@
 import { all, IN_LIST, value } from '../lib/db.ts';
 import { notFound } from '../lib/errors.ts';
 import { getNode, trash, type NodeRow } from './nodes.ts';
-import { quotaOf, usageOf, type UserRow } from './users.ts';
+import { prefsOf, quotaOf, usageOf, type UserRow } from './users.ts';
 
 export interface PhotoCursor {
   at: number;
@@ -146,6 +146,7 @@ export function storageReport(user: UserRow) {
   return {
     used: usageOf(user.id),
     quota: quotaOf(user),
+    askedAt: prefsOf(user).storageAsked || null,
     trash,
     versions,
     groups: byGroup(active),

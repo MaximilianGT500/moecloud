@@ -4,18 +4,19 @@ import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
+import AddCircleOutlineRounded from '@mui/icons-material/AddCircleOutlineRounded';
 import DeleteSweepRounded from '@mui/icons-material/DeleteSweepRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import FileCopyRounded from '@mui/icons-material/FileCopyRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import { api, errorText } from '../../lib/api';
-import { formatBytes } from '../../lib/format';
+import { formatBytes, formatDateTime } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { navigate } from '../../lib/router';
 import { c, fileTypeColor, radius } from '../../theme/tokens';
 import { EmptyState } from '../common/bits';
-import { confirm } from '../common/dialogs';
+import { confirm, prompt } from '../common/dialogs';
 import { toast } from '../common/toast';
 import { attempt } from './actions';
 import { FileIcon, type Item } from './kinds';
@@ -25,6 +26,7 @@ type Group = 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other';
 interface Report {
   used: number;
   quota: number | null;
+  askedAt: number | null;
   trash: number;
   versions: number;
   groups: Record<Group, { size: number; count: number }>;
@@ -144,6 +146,23 @@ export function StorageView({ onReveal }: { onReveal: (item: Item) => void }) {
   ].filter((segment) => segment.size > 0);
   const other = Math.max(0, report.used - files - report.trash);
   const wasted = report.duplicates.reduce((sum, group) => sum + group.wasted, 0);
+  const ask = async () => {
+    const message = await prompt({
+      title: t('Mehr Speicher anfragen'),
+      text: t('Die Verwaltung bekommt eine Nachricht, wie viel du gerade belegst.'),
+      label: t('Nachricht an die Verwaltung (freiwillig)'),
+      value: '',
+      confirm: t('Anfrage schicken'),
+      optional: true,
+      multiline: true,
+    });
+    if (message === null) return;
+    const result = await attempt(() => api.post<{ askedAt: number }>('/api/storage/request', { message: message || undefined }));
+    if (!result) return;
+    toast(t('Deine Anfrage ist bei der Verwaltung'));
+    setRevision((value) => value + 1);
+  };
+
   const tidy = async (groups: Report['duplicates']) => {
     const copies = groups.reduce((sum, group) => sum + group.count - 1, 0);
     const first = groups[0].items[0];
@@ -180,7 +199,23 @@ export function StorageView({ onReveal }: { onReveal: (item: Item) => void }) {
       }}
     >
       <Box sx={{ gridColumn: { lg: '1 / -1' } }}>
-        <Card title={t('Belegter Speicher')}>
+        <Card
+          title={t('Belegter Speicher')}
+          action={
+            report.quota ? (
+              <Button
+                size="small"
+                startIcon={<AddCircleOutlineRounded />}
+                disabled={Boolean(report.askedAt && Date.now() - report.askedAt < 86_400_000)}
+                onClick={() => void ask()}
+              >
+                {report.askedAt && Date.now() - report.askedAt < 86_400_000
+                  ? t('Angefragt {when}', { when: formatDateTime(report.askedAt) })
+                  : t('Mehr Speicher anfragen')}
+              </Button>
+            ) : undefined
+          }
+        >
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexWrap: 'wrap' }}>
             <Typography variant="h3" component="p" sx={{ fontWeight: 800 }}>
               {formatBytes(report.used)}

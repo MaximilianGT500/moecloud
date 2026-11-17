@@ -5,7 +5,7 @@ import { PDFDocument } from '@pdfme/pdf-lib';
 import exifr from 'exifr';
 import sharp from 'sharp';
 import { Client, createApp, login, setUp } from './helpers.ts';
-import { pixel, proRaw } from './images.ts';
+import { pixel, plain, proRaw } from './images.ts';
 import { detectTools, tools } from '../src/services/media.ts';
 
 const app = await createApp();
@@ -223,6 +223,42 @@ describe('PDF-Werkzeuge', () => {
       'Wähle mindestens zwei PDFs aus'
     );
     assert.equal((await emi.json('POST', '/api/pdf/merge', { ids: [one.id, two.id], name: 'a/b' })).statusCode, 400);
+  });
+
+  it('macht aus Bildern eine PDF', async () => {
+    const wide = await upload(root, 'Beleg quer.jpg', await plain(400, 200, '#cc3344'));
+    const tall = await upload(
+      root,
+      'Beleg hoch.png',
+      await sharp({ create: { width: 100, height: 300, channels: 4, background: '#00000000' } })
+        .png()
+        .toBuffer()
+    );
+    const note = await upload(root, 'Zettel für Mia.txt', Buffer.from('kein Bild'));
+    const made = await emi.json('POST', '/api/pdf/images', { ids: [wide.id, tall.id], name: 'Belege für Lea' });
+    assert.equal(made.statusCode, 200, made.body);
+    assert.equal(made.json().node.name, 'Belege für Lea.pdf');
+    assert.equal(made.json().node.mime, 'application/pdf');
+    const round = (value: number) => Math.round(value);
+    const pages = (await PDFDocument.load(await content(made.json().node.id)))
+      .getPages()
+      .map((page) => [round(page.getWidth()), round(page.getHeight())]);
+    assert.deepEqual(pages, [
+      [842, 595],
+      [595, 842],
+    ]);
+    const fitted = await emi.json('POST', '/api/pdf/images', { ids: [tall.id, wide.id], name: 'Passend.pdf', layout: 'fit' });
+    const exact = (await PDFDocument.load(await content(fitted.json().node.id)))
+      .getPages()
+      .map((page) => [round(page.getWidth()), round(page.getHeight())]);
+    assert.deepEqual(exact, [
+      [281, 842],
+      [842, 421],
+    ]);
+    const wrong = await emi.json('POST', '/api/pdf/images', { ids: [wide.id, note.id], name: 'x' });
+    assert.equal(wrong.statusCode, 400);
+    assert.equal(wrong.json().error.message, '„Zettel für Mia.txt“ ist kein Bild, das in eine PDF passt');
+    assert.equal((await mia.json('POST', '/api/pdf/images', { ids: [wide.id], name: 'x' })).statusCode, 404);
   });
 
   it('zeigt Seiten als Bild, wenn Poppler da ist', async (context) => {

@@ -31,6 +31,10 @@ interface PromptRequest {
   confirm: string;
   helper?: string;
   select?: [number, number];
+  optional?: boolean;
+  multiline?: boolean;
+  maxLength?: number;
+  text?: string;
   resolve: (value: string | null) => void;
 }
 
@@ -104,7 +108,7 @@ function PromptBody({ request }: { request: PromptRequest }) {
     return () => clearTimeout(timer);
   }, [request]);
   const submit = () => {
-    if (!value.trim()) return;
+    if (!value.trim() && !request.optional) return;
     request.resolve(value.trim());
     close();
   };
@@ -117,6 +121,7 @@ function PromptBody({ request }: { request: PromptRequest }) {
     >
       <DialogTitle>{request.title}</DialogTitle>
       <DialogContent>
+        {request.text && <DialogContentText sx={{ mb: 1 }}>{request.text}</DialogContentText>}
         <TextField
           inputRef={input}
           label={request.label}
@@ -125,7 +130,13 @@ function PromptBody({ request }: { request: PromptRequest }) {
           fullWidth
           margin="dense"
           helperText={request.helper}
-          slotProps={{ htmlInput: { maxLength: 255, spellCheck: false, autoCapitalize: 'none' } }}
+          multiline={request.multiline}
+          minRows={request.multiline ? 3 : undefined}
+          slotProps={{
+            htmlInput: request.multiline
+              ? { maxLength: request.maxLength ?? 500 }
+              : { maxLength: request.maxLength ?? 255, spellCheck: false, autoCapitalize: 'none' },
+          }}
         />
       </DialogContent>
       <DialogActions>
@@ -137,7 +148,7 @@ function PromptBody({ request }: { request: PromptRequest }) {
         >
           {t('Abbrechen')}
         </Button>
-        <Button type="submit" variant="contained" disabled={!value.trim()}>
+        <Button type="submit" variant="contained" disabled={!value.trim() && !request.optional}>
           {request.confirm}
         </Button>
       </DialogActions>

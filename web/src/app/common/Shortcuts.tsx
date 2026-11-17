@@ -43,6 +43,7 @@ function groups(): { title: string; rows: [string[], string][] }[] {
       title: t('Überall'),
       rows: [
         [['/'], t('Suchen')],
+        [[ctrl, 'K'], t('Schnellzugriff')],
         [['?'], t('Diese Übersicht')],
       ],
     },

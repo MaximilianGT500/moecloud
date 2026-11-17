@@ -1,11 +1,14 @@
 import type { FastifyRequest } from 'fastify';
 import { all, one, run } from '../lib/db.ts';
 import { hashPassword, hmac, randomId, safeEqual } from '../lib/crypto.ts';
-import { badRequest, forbidden, notFound } from '../lib/errors.ts';
+import { deviceOf } from '../lib/agent.ts';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.ts';
+import type { Lang } from '../lib/i18n.ts';
 import { record } from './activity.ts';
-import { chain, getNode, requireAccess, type NodeRow } from './nodes.ts';
+import { chain, getNode, requireAccess, resolveAccess, type NodeRow } from './nodes.ts';
+import { notify } from './notify.ts';
 import * as settings from './settings.ts';
-import type { UserRow } from './users.ts';
+import { getUser, type UserRow } from './users.ts';
 
 export interface LinkRow {
   id: string;
@@ -26,7 +29,20 @@ export interface LinkRow {
   notify: number;
   max_downloads: number | null;
   paused: number;
+  notify_downloads: number;
+  notified_at: number | null;
+  slug: string | null;
+  warned_at: number | null;
 }
+
+const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+const WARN_BEFORE = 48 * 60 * 60 * 1000;
+const WARN_MIN_LIFE = 4 * 24 * 60 * 60 * 1000;
+const EVENTS_PER_LINK = 1000;
+
+export type LinkEventKind = 'view' | 'download' | 'upload' | 'denied';
+
+const DOWNLOAD_NOTICE_GAP = 60 * 60 * 1000;
 
 export interface LinkInput {
   label?: string | null;
@@ -36,8 +52,10 @@ export interface LinkInput {
   allowUpload?: boolean;
   uploadOnly?: boolean;
   notify?: boolean;
+  notifyDownloads?: boolean;
   maxDownloads?: number | null;
   paused?: boolean;
+  slug?: string | null;
 }
 
 export const getLink = (id: string) => one<LinkRow>('SELECT * FROM links WHERE id = ?', id);
@@ -51,8 +69,85 @@ export function linkState(link: LinkRow): 'active' | 'expired' | 'paused' | 'exh
   return 'active';
 }
 
-export const linkByToken = (token: string) =>
-  /^[0-9A-Za-z]{10,40}$/.test(token) ? one<LinkRow>('SELECT * FROM links WHERE token = ?', token) : undefined;
+export function linkByToken(token: string) {
+  const exact = /^[0-9A-Za-z]{10,40}$/.test(token) ? one<LinkRow>('SELECT * FROM links WHERE token = ?', token) : undefined;
+  if (exact) return exact;
+  const slug = token.toLowerCase();
+  return SLUG.test(slug) ? one<LinkRow>('SELECT * FROM links WHERE slug = ?', slug) : undefined;
+}
+
+function slugFor(input: string | null | undefined, current: LinkRow | null) {
+  if (input === undefined) return current?.slug ?? null;
+  const slug = (input ?? '').trim().toLowerCase();
+  if (!slug) return null;
+  if (slug === current?.slug) return slug;
+  if (!settings.get('share.slugs')) throw forbidden('Eigene Adressen für Links sind auf diesem Server ausgeschaltet');
+  if (!SLUG.test(slug)) {
+    throw badRequest('Die Adresse braucht 3 bis 64 Zeichen aus Kleinbuchstaben, Ziffern und Bindestrichen, ohne Bindestrich am Rand');
+  }
+  if (one('SELECT 1 AS found FROM links WHERE (slug = ? OR LOWER(token) = ?) AND id != ?', slug, slug, current?.id ?? '')) {
+    throw conflict('Diese Adresse ist schon vergeben');
+  }
+  return slug;
+}
+
+export function logLinkEvent(link: LinkRow, kind: LinkEventKind, name?: string | null, agent?: string | null) {
+  run(
+    'INSERT INTO link_events (id, link_id, kind, name, agent, at) VALUES (?, ?, ?, ?, ?, ?)',
+    randomId(),
+    link.id,
+    kind,
+    name?.slice(0, 255) ?? null,
+    agent?.slice(0, 300) ?? null,
+    Date.now()
+  );
+}
+
+export function linkEvents(user: UserRow, id: string, lang: Lang) {
+  const link = ownLink(user, id);
+  return all<{ kind: LinkEventKind; name: string | null; agent: string | null; at: number }>(
+    'SELECT kind, name, agent, at FROM link_events WHERE link_id = ? ORDER BY at DESC, id DESC LIMIT 200',
+    link.id
+  ).map((row) => ({ kind: row.kind, name: row.name, device: row.agent ? deviceOf(lang, row.agent) : null, at: Number(row.at) }));
+}
+
+export function purgeLinkEvents(days: number, now = Date.now()) {
+  let removed = days > 0 ? run('DELETE FROM link_events WHERE at < ?', now - days * 86_400_000).changes : 0;
+  removed += run(
+    `DELETE FROM link_events WHERE id IN (
+       SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY link_id ORDER BY at DESC, id DESC) AS position FROM link_events) ranked
+       WHERE position > ?
+     )`,
+    EVENTS_PER_LINK
+  ).changes;
+  return removed;
+}
+
+export function warnExpiringLinks(now = Date.now()) {
+  const soon = all<LinkRow>(
+    `SELECT * FROM links WHERE expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ? AND warned_at IS NULL AND paused = 0
+       AND expires_at - created_at >= ?`,
+    now,
+    now + WARN_BEFORE,
+    WARN_MIN_LIFE
+  );
+  let warned = 0;
+  for (const link of soon) {
+    run('UPDATE links SET warned_at = ? WHERE id = ?', now, link.id);
+    const node = getNode(link.node_id);
+    const creator = getUser(link.created_by);
+    if (!node || node.trashed_at || !creator || exhausted(link)) continue;
+    const url =
+      node.type === 'folder'
+        ? `/files/folder/${node.id}`
+        : node.parent_id && resolveAccess(creator, node.parent_id)
+          ? `/files/folder/${node.parent_id}?select=${node.id}`
+          : '/files/shared';
+    notify(creator.id, 'link_expiring', { name: link.label || node.name, date: Number(link.expires_at) }, url);
+    warned += 1;
+  }
+  return warned;
+}
 
 export function resolveToken(token: string) {
   const link = linkByToken(token);
@@ -126,9 +221,10 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
   const folder = node.type === 'folder';
   const id = randomId(16);
   const uploads = folder && Boolean(input.allowUpload || input.uploadOnly);
+  const slug = slugFor(input.slug, null);
   run(
-    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, max_downloads, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, max_downloads, notify_downloads, slug, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     randomId(22),
     node.id,
@@ -142,6 +238,8 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
     folder && Boolean(input.uploadOnly),
     uploads && (input.notify ?? true),
     input.maxDownloads ?? null,
+    (input.allowDownload ?? true) && !(folder && input.uploadOnly) && Boolean(input.notifyDownloads),
+    slug,
     Date.now()
   );
   record({ owner: node.owner_id, actor: user.id, node: node.id, parent: node.parent_id, action: 'share_link', name: node.name });
@@ -158,17 +256,22 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
   if (settings.get('share.requirePassword') && !passwordHash) throw badRequest('Links brauchen auf diesem Server ein Passwort');
   const uploadOnly = folder && (input.uploadOnly ?? Boolean(link.upload_only));
   const uploads = folder && (uploadOnly || (input.allowUpload ?? Boolean(link.allow_upload)));
+  const downloads = (input.allowDownload ?? Boolean(link.allow_download)) && !uploadOnly;
+  const expiresAt = input.expiresAt === undefined ? link.expires_at : expiry(input.expiresAt);
   run(
-    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ?, max_downloads = ?, paused = ? WHERE id = ?`,
+    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ?, max_downloads = ?, paused = ?, notify_downloads = ?, slug = ?, warned_at = ? WHERE id = ?`,
     input.label === undefined ? link.label : input.label?.trim() || null,
     passwordHash,
-    input.expiresAt === undefined ? link.expires_at : expiry(input.expiresAt),
+    expiresAt,
     input.allowDownload ?? Boolean(link.allow_download),
     uploads,
     uploadOnly,
     uploads && (input.notify ?? Boolean(link.notify)),
     input.maxDownloads === undefined ? link.max_downloads : input.maxDownloads,
     input.paused === undefined ? link.paused : input.paused,
+    downloads && (input.notifyDownloads ?? Boolean(link.notify_downloads)),
+    slugFor(input.slug, link),
+    expiresAt === link.expires_at ? link.warned_at : null,
     id
   );
   return getLink(id)!;
@@ -185,9 +288,10 @@ export const linksForNode = (nodeId: string) => all<LinkRow>('SELECT * FROM link
 export const linksBy = (user: UserRow) =>
   all<LinkRow>('SELECT * FROM links WHERE created_by = ? OR owner_id = ? ORDER BY created_at DESC', user.id, user.id);
 
-export function countAccess(link: LinkRow, kind: 'views' | 'downloads') {
+export function countAccess(link: LinkRow, kind: 'views' | 'downloads', name?: string, agent?: string | null) {
   if (kind === 'views') {
     run('UPDATE links SET views = views + 1, last_access_at = ? WHERE id = ?', Date.now(), link.id);
+    logLinkEvent(link, 'view', null, agent);
     return;
   }
   const { changes } = run(
@@ -196,6 +300,28 @@ export function countAccess(link: LinkRow, kind: 'views' | 'downloads') {
     link.id
   );
   if (changes === 0) throw notFound('Dieser Link wurde schon so oft genutzt wie erlaubt');
+  logLinkEvent(link, 'download', name ?? null, agent);
+  if (link.notify_downloads) noticeDownload(link, name);
+}
+
+function noticeDownload(link: LinkRow, name?: string) {
+  const now = Date.now();
+  const claimed = run(
+    'UPDATE links SET notified_at = ? WHERE id = ? AND (notified_at IS NULL OR notified_at <= ?)',
+    now,
+    link.id,
+    now - DOWNLOAD_NOTICE_GAP
+  ).changes;
+  const node = claimed ? getNode(link.node_id) : undefined;
+  const creator = node ? getUser(link.created_by) : undefined;
+  if (!node || !creator) return;
+  const url =
+    node.type === 'folder'
+      ? `/files/folder/${node.id}`
+      : node.parent_id && resolveAccess(creator, node.parent_id)
+        ? `/files/folder/${node.parent_id}?select=${node.id}`
+        : '/files/shared';
+  notify(creator.id, 'link_download', { name: name ?? node.name, count: Number(link.downloads) + 1 }, url);
 }
 
 export const downloadsLeft = (link: LinkRow) => (link.max_downloads ? Math.max(0, link.max_downloads - link.downloads) : null);
@@ -209,7 +335,8 @@ export function presentLink(link: LinkRow, request: FastifyRequest) {
   return {
     id: link.id,
     token: link.token,
-    url: `${baseUrl(request)}/s/${link.token}`,
+    slug: link.slug,
+    url: `${baseUrl(request)}/s/${link.slug ?? link.token}`,
     nodeId: link.node_id,
     label: link.label,
     hasPassword: Boolean(link.password_hash),
@@ -219,6 +346,7 @@ export function presentLink(link: LinkRow, request: FastifyRequest) {
     allowUpload: Boolean(link.allow_upload),
     uploadOnly: Boolean(link.upload_only),
     notify: Boolean(link.notify),
+    notifyDownloads: Boolean(link.notify_downloads),
     views: link.views,
     downloads: link.downloads,
     maxDownloads: link.max_downloads,

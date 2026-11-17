@@ -1,128 +1,23 @@
-import { useState } from 'react';
 import Box from '@mui/material/Box';
-import ButtonBase from '@mui/material/ButtonBase';
+import Button from '@mui/material/Button';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
-import CheckRounded from '@mui/icons-material/CheckRounded';
+import { api, errorText } from '../../lib/api';
 import { dayValue, endOfDay } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { buildPalette } from '../../theme/generate';
-import { normalizeHex, SEED_PRESETS } from '../../theme/scheme';
-import { c, radius } from '../../theme/tokens';
 import { Section } from '../common/bits';
 import { QuotaField } from '../common/QuotaField';
-import { useSeed } from '../mount';
+import { toast } from '../common/toast';
 import { Loading, SaveBar, Toggle, loadSettings, saveSettings, useDraft, type Settings } from './shared';
-
-function SeedPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [custom, setCustom] = useState(value);
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Box
-        role="radiogroup"
-        aria-label={t('Grundfarbe')}
-        sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 1.5 }}
-      >
-        {SEED_PRESETS.map((preset) => {
-          const selected = preset.value === value;
-          return (
-            <ButtonBase
-              key={preset.value}
-              role="radio"
-              aria-checked={selected}
-              onClick={() => {
-                onChange(preset.value);
-                setCustom(preset.value);
-              }}
-              sx={{
-                flexDirection: 'column',
-                gap: 1,
-                p: 1.5,
-                borderRadius: `${radius.md}px`,
-                bgcolor: selected ? c.secondaryContainer : c.surfaceContainer,
-                color: selected ? c.onSecondaryContainer : c.onSurface,
-                boxShadow: selected ? `inset 0 0 0 2px ${c.primary}` : 'none',
-              }}
-            >
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  bgcolor: preset.value,
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: '#fff',
-                }}
-              >
-                {selected && <CheckRounded fontSize="small" />}
-              </Box>
-              <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                {t(preset.name)}
-              </Typography>
-            </ButtonBase>
-          );
-        })}
-      </Box>
-      <TextField
-        label={t('Eigene Farbe')}
-        value={custom}
-        onChange={(event) => {
-          setCustom(event.target.value);
-          const hex = normalizeHex(event.target.value);
-          if (hex) onChange(hex);
-        }}
-        error={!normalizeHex(custom)}
-        helperText={
-          normalizeHex(custom)
-            ? t('Alle Farben der Oberfläche entstehen aus diesem Wert.')
-            : t('Die Farbe muss als Hex-Wert wie #8b5cf6 angegeben werden.')
-        }
-        slotProps={{
-          input: {
-            startAdornment: (
-              <Box
-                component="input"
-                type="color"
-                aria-label={t('Farbe wählen')}
-                value={normalizeHex(custom) ?? '#8b5cf6'}
-                onChange={(event) => {
-                  const next = (event.target as HTMLInputElement).value;
-                  setCustom(next);
-                  onChange(next);
-                }}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  p: 0,
-                  border: 0,
-                  borderRadius: '50%',
-                  bgcolor: 'transparent',
-                  mr: 1,
-                  cursor: 'pointer',
-                  '&::-webkit-color-swatch': { borderRadius: '50%', border: 'none' },
-                  '&::-webkit-color-swatch-wrapper': { p: 0 },
-                }}
-              />
-            ),
-          },
-        }}
-        sx={{ maxWidth: 320 }}
-      />
-    </Box>
-  );
-}
+import { AppearanceSection } from './Appearance';
 
 export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings) => void }) {
-  const setSeed = useSeed();
   const form = useDraft<Settings>(loadSettings, async (changes) => {
-    const body: Record<string, unknown> = { ...changes };
-    if (body['site.seed']) body['site.palette'] = buildPalette(String(body['site.seed']));
-    const next = await saveSettings(body as Partial<Settings>);
+    const next = await saveSettings(changes);
     onChanged?.(next);
     return next;
   });
@@ -208,15 +103,7 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
         />
       </Section>
 
-      <Section title={t('Aussehen')} description={t('Wähle die Grundfarbe für alle. Die Vorschau siehst du sofort.')}>
-        <SeedPicker
-          value={String(draft['site.seed'])}
-          onChange={(value) => {
-            set('site.seed', value);
-            setSeed(value);
-          }}
-        />
-      </Section>
+      <AppearanceSection personal={Boolean(draft['themes.personal'])} onPersonal={(value) => set('themes.personal', value)} />
 
       <Section title={t('Anmeldung')}>
         <RadioGroup
@@ -233,6 +120,32 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           onChange={(value) => set('auth.passkeys', value)}
           label={t('Passkeys erlauben')}
           hint={t('Anmelden mit Fingerabdruck, Gesicht oder Sicherheitsschlüssel.')}
+        />
+        <TextField
+          label={t('Mindestlänge für Passwörter')}
+          type="number"
+          value={draft['auth.passwordMin']}
+          onChange={(event) => set('auth.passwordMin', Math.min(64, Math.max(0, Math.round(Number(event.target.value)))))}
+          slotProps={{
+            htmlInput: { min: 10, max: 64 },
+            input: { endAdornment: <InputAdornment position="end">{t('Zeichen')}</InputAdornment> },
+          }}
+          helperText={t('Gilt für neue und geänderte Passwörter, zwischen 10 und 64.')}
+          sx={{ maxWidth: 320 }}
+        />
+        <Toggle
+          checked={Boolean(draft['auth.passwordBreach'])}
+          onChange={(value) => set('auth.passwordBreach', value)}
+          label={t('Passwörter aus Datenlecks ablehnen')}
+          hint={t(
+            'MoeCloud fragt bei Have I Been Pwned nach, ob ein neues Passwort schon in einem Datenleck stand. Übertragen werden nur fünf Zeichen eines Hashwerts, nie das Passwort.'
+          )}
+        />
+        <Toggle
+          checked={Boolean(draft['users.selfDelete'])}
+          onChange={(value) => set('users.selfDelete', value)}
+          label={t('Eigenes Konto löschen erlauben')}
+          hint={t('Jede Person kann ihr Konto samt aller Dateien unter Konto selbst löschen. Den letzten Admin schützt MoeCloud.')}
         />
         <TextField
           select
@@ -309,6 +222,48 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
         />
       </Section>
 
+      <Section title={t('Wochenbericht')}>
+        <Toggle
+          checked={Boolean(draft['report.weekly'])}
+          onChange={(value) => set('report.weekly', value)}
+          label={t('Wochenbericht per E-Mail')}
+          hint={t(
+            'Jeden Montag um 8 Uhr bekommen alle Admins mit E-Mail-Adresse eine Übersicht: Speicher, Konten, Anmeldungen, Links, Sicherung und Updates.'
+          )}
+        />
+        <Box>
+          <Button
+            variant="tonal"
+            onClick={() =>
+              void api
+                .post('/api/admin/report/send')
+                .then(() => toast(t('Der Bericht ist unterwegs an deine Adresse')))
+                .catch((error: unknown) => toast(errorText(error)))
+            }
+          >
+            {t('Jetzt an mich schicken')}
+          </Button>
+        </Box>
+      </Section>
+
+      <Section title={t('Push-Benachrichtigungen')}>
+        <Toggle
+          checked={Boolean(draft['push.enabled'])}
+          onChange={(value) => set('push.enabled', value)}
+          label={t('Push im Browser und über ntfy oder Gotify')}
+          hint={t('Jede Person schaltet Push unter Konto für ihre Browser ein oder trägt einen eigenen Push-Dienst ein.')}
+        />
+        <Toggle
+          checked={Boolean(draft['push.private'])}
+          disabled={!draft['push.enabled']}
+          onChange={(value) => set('push.private', value)}
+          label={t('Push-Dienste im lokalen Netz erlauben')}
+          hint={t(
+            'Nötig, wenn ntfy oder Gotify bei dir zu Hause oder im selben Docker-Netz laufen. Dann kann jede Person Adressen in deinem Netz eintragen.'
+          )}
+        />
+      </Section>
+
       <Section title={t('Teilen')}>
         <Toggle
           checked={Boolean(draft['share.links'])}
@@ -326,6 +281,18 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           onChange={(value) => set('share.stripLocation', value)}
           label={t('Standort aus Fotos in Links entfernen')}
           hint={t('Wer Fotos über einen Link öffnet oder herunterlädt, sieht keine GPS-Daten. Die Originale bleiben unverändert.')}
+        />
+        <Toggle
+          checked={Boolean(draft['share.slugs'])}
+          onChange={(value) => set('share.slugs', value)}
+          label={t('Eigene Adressen für Links erlauben')}
+          hint={t('Statt einer zufälligen Adresse geht dann auch /s/urlaub-2026. Solche Adressen lassen sich leichter erraten.')}
+        />
+        <Toggle
+          checked={Boolean(draft['share.reports'])}
+          onChange={(value) => set('share.reports', value)}
+          label={t('Besucher können Links melden')}
+          hint={t('Auf jeder geteilten Seite steht „Inhalt melden“. Meldungen landen unter Admin › Links und bei allen Admins.')}
         />
         <TextField
           label={t('Links laufen spätestens ab nach')}
@@ -398,15 +365,7 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
         />
       </Section>
 
-      <SaveBar
-        count={form.changed.length}
-        busy={form.busy}
-        onSave={() => void form.save()}
-        onReset={() => {
-          form.reset();
-          setSeed(String(saved['site.seed']));
-        }}
-      />
+      <SaveBar count={form.changed.length} busy={form.busy} onSave={() => void form.save()} onReset={() => form.reset()} />
     </Box>
   );
 }

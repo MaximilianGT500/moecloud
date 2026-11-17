@@ -1,0 +1,25 @@
+{
+  "id": "statistik",
+  "name": { "de": "Statistik", "en": "Statistics" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Zählt mit, was du in deiner Cloud tust, und zeigt es auf einer eigenen Seite.",
+    "en": "Counts what you do in your cloud and shows it on a page of its own."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "settings": [
+    {
+      "key": "tage",
+      "label": { "de": "Tage aufbewahren", "en": "Days to keep" },
+      "hint": { "de": "Ältere Zahlen räumt das Plugin jede Nacht weg", "en": "The plugin clears older numbers every night" },
+      "type": "number",
+      "min": 7,
+      "max": 730,
+      "default": 90
+    }
+  ],
+  "pages": [{ "id": "uebersicht", "label": { "de": "Statistik", "en": "Statistics" }, "icon": "chart", "path": "web/index.html" }]
+}

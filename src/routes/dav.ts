@@ -12,6 +12,7 @@ import { blobPath, receive, store } from '../services/blobs.ts';
 import { ingest } from '../services/ingest.ts';
 import { assertNotInfected } from '../services/scan.ts';
 import {
+  assertUnlocked,
   children,
   copyTo,
   createFolder,
@@ -231,6 +232,7 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
       if (!target.parent) throw new HttpError(409, 'Der Ordner dafür fehlt', 'conflict');
       if (target.node?.type === 'folder') return reply.code(405).header('Allow', ALLOW).send();
       requireAccess(user, target.parent.id, 'edit');
+      if (target.node) assertUnlocked(target.node, user.id);
       const name = cleanName(target.name);
       const max = settings.get('storage.maxUpload');
       const limit = Math.min(max > 0 ? max : Number.MAX_SAFE_INTEGER, remaining(target.parent.owner_id) + (target.node?.size ?? 0));
@@ -311,6 +313,7 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
 
     case 'LOCK': {
       await readText(request);
+      if (target.node) assertUnlocked(target.node, user.id);
       const timeout = 3600;
       const now = Date.now();
       for (const [key, lock] of locks) if (lock.expires < now) locks.delete(key);

@@ -11,6 +11,7 @@ import { CHUNK_SIZE } from '../services/uploads.ts';
 import { tools } from '../services/media.ts';
 import { scanEnabled } from '../services/scan.ts';
 import { secondFactorPending } from '../services/auth.ts';
+import { pluginBoot } from '../services/plugins.ts';
 import { publicUser, storageOf } from '../services/users.ts';
 
 function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
@@ -27,11 +28,13 @@ function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
 
 export function userBoot(request: FastifyRequest) {
   const user = request.auth!.user;
+  const pending = secondFactorPending(user, request.auth?.session?.method);
   return {
     user: publicUser(user),
     storage: storageOf(user),
     webdav: `${baseUrl(request)}/dav/`,
-    setup2fa: secondFactorPending(user, request.auth?.session?.method),
+    setup2fa: pending,
+    plugins: pluginBoot(pending ? null : user, request.lang),
   };
 }
 
@@ -63,6 +66,7 @@ export async function pageRoutes(app: FastifyInstance) {
           users: settings.get('share.users'),
           requirePassword: settings.get('share.requirePassword'),
           maxDays: settings.get('share.maxDays'),
+          slugs: settings.get('share.slugs'),
         },
         upload: { chunkSize: CHUNK_SIZE, maxUpload: settings.get('storage.maxUpload') },
         trashDays: settings.get('storage.trashDays'),

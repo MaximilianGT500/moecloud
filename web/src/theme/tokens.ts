@@ -1,4 +1,4 @@
-import type { M3Tokens } from './scheme';
+import { FONT_STACKS, type M3Tokens } from './scheme';
 
 export const c = new Proxy({} as Record<keyof M3Tokens, string>, {
   get: (_target, key: string) => `var(--mui-palette-m3-${key})`,
@@ -15,7 +15,7 @@ export const fileTypeColor = {
 export const folderColor = (key: string) => `var(--mui-palette-folders-${key})`;
 
 export const fonts = {
-  sans: '"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  sans: `var(--moe-font, ${FONT_STACKS.rounded})`,
   mono: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
 };
 

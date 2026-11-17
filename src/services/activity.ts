@@ -1,4 +1,5 @@
 import { all, one, run } from '../lib/db.ts';
+import { emitHook } from '../lib/hooks.ts';
 import type { Role } from './nodes.ts';
 import { initials, getUser } from './users.ts';
 import { noteActivity } from './watches.ts';
@@ -57,6 +58,17 @@ const WINDOW = 3 * 60 * 1000;
 
 export function record(input: ActivityInput) {
   noteActivity(input);
+  emitHook(`file.${input.action}`, () => ({
+    action: input.action,
+    ownerId: input.owner,
+    actorId: input.actor,
+    viaLink: Boolean(input.link),
+    nodeId: input.node ?? null,
+    parentId: input.parent ?? null,
+    name: input.name,
+    details: input.details ?? null,
+    at: Date.now(),
+  }));
   const now = Date.now();
   if (GROUPED.has(input.action)) {
     const last = one<ActivityRow>(

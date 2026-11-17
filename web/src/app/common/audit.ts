@@ -47,6 +47,8 @@ export function auditLabel(action: string) {
       return t('SSO-Verbindung getrennt');
     case 'account_exported':
       return t('Daten exportiert');
+    case 'account_deleted':
+      return t('Konto selbst gelöscht');
     case 'users_imported':
       return t('Personen importiert');
     case 'registered':
@@ -89,6 +91,26 @@ export function auditLabel(action: string) {
       return t('Webhook geändert');
     case 'link_removed':
       return t('Link entfernt');
+    case 'theme_saved':
+      return t('Theme gespeichert');
+    case 'theme_deleted':
+      return t('Theme gelöscht');
+    case 'plugin_enabled':
+      return t('Plugin eingeschaltet');
+    case 'plugin_disabled':
+      return t('Plugin ausgeschaltet');
+    case 'plugin_settings':
+      return t('Plugin eingestellt');
+    case 'plugin_installed':
+      return t('Plugin installiert');
+    case 'plugin_removed':
+      return t('Plugin entfernt');
+    case 'plugin_stopped':
+      return t('Plugin angehalten');
+    case 'link_reported':
+      return t('Link gemeldet');
+    case 'report_resolved':
+      return t('Meldung erledigt');
     case 'virus_found':
       return t('Schadsoftware gefunden');
     case 'virus_released':
@@ -164,6 +186,8 @@ export function auditDetail(entry: AuditEntry) {
       return [text('username') && `@${text('username')}`, text('transfer') && t('Dateien an @{name}', { name: text('transfer') })]
         .filter(Boolean)
         .join(' · ');
+    case 'account_deleted':
+      return text('username') ? `@${text('username')}` : '';
     case 'role_changed':
     case 'user_created':
       return d.role === 'admin' ? t('Admin') : d.role === 'user' ? t('Mitglied') : '';
@@ -192,7 +216,30 @@ export function auditDetail(entry: AuditEntry) {
         .filter(Boolean)
         .join(' · ');
     case 'link_removed':
+    case 'link_reported':
+    case 'report_resolved':
       return text('label');
+    case 'theme_saved':
+    case 'theme_deleted':
+    case 'plugin_enabled':
+    case 'plugin_disabled':
+    case 'plugin_settings':
+    case 'plugin_installed':
+    case 'plugin_removed':
+      return text('name');
+    case 'plugin_stopped':
+      return [
+        text('name'),
+        d.reason === 'changed'
+          ? t('Dateien geändert')
+          : d.reason === 'failed'
+            ? t('Start misslungen')
+            : d.reason === 'missing'
+              ? t('Ordner fehlt')
+              : t('Ordner nicht lesbar'),
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'invite_created':
       return d.email ? t('per E-Mail') : '';
     case 'admin_2fa_reset':

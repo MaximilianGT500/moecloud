@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
@@ -32,11 +32,14 @@ import AccountCircleRounded from '@mui/icons-material/AccountCircleRounded';
 import ManageAccountsRounded from '@mui/icons-material/ManageAccountsRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import KeyboardRounded from '@mui/icons-material/KeyboardRounded';
+import ManageSearchRounded from '@mui/icons-material/ManageSearchRounded';
 import { BrandMark, SkipLink, StorageMeter, UserAvatar } from '../common/bits';
+import { lazyNamed } from '../common/lazy';
+import { pluginIcon, pluginPageHref, pluginPageKey, usePlugins } from '../common/plugins';
 import { ShortcutsDialog } from '../common/Shortcuts';
 import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { api, logout } from '../../lib/api';
-import { boot, type SessionUser, type Storage } from '../../lib/boot';
+import { boot, type PluginPage, type SessionUser, type Storage } from '../../lib/boot';
 import { language, t } from '../../lib/i18n';
 import { c, curve, mix, radius } from '../../theme/tokens';
 import { NotificationBell } from './Notifications';
@@ -44,7 +47,10 @@ import { SiteNotice } from './SiteNotice';
 
 export const RAIL = 88;
 
-export type Destination = 'files' | 'photos' | 'recent' | 'starred' | 'tags' | 'shared' | 'trash' | 'storage' | 'admin' | 'account';
+const CommandPalette = lazyNamed(() => import('./CommandPalette'), 'CommandPalette');
+
+export type Destination =
+  'files' | 'photos' | 'recent' | 'starred' | 'tags' | 'shared' | 'trash' | 'storage' | 'admin' | 'account' | `plugin:${string}`;
 
 interface NavItem {
   key: Destination;
@@ -54,7 +60,7 @@ interface NavItem {
   activeIcon: ReactNode;
 }
 
-function railItems(user: SessionUser): NavItem[] {
+function railItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
   if (boot().setup2fa) return [];
   return [
     { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
@@ -64,6 +70,13 @@ function railItems(user: SessionUser): NavItem[] {
     { key: 'tags', href: '/files/tags', label: t('Schlagwörter'), icon: <SellOutlined />, activeIcon: <SellRounded /> },
     { key: 'shared', href: '/files/shared', label: t('Geteilt'), icon: <PeopleOutlined />, activeIcon: <PeopleRounded /> },
     { key: 'trash', href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlined />, activeIcon: <DeleteRounded /> },
+    ...pages.map((page) => ({
+      key: pluginPageKey(page),
+      href: pluginPageHref(page),
+      label: page.label,
+      icon: pluginIcon(page.icon, true),
+      activeIcon: pluginIcon(page.icon),
+    })),
     ...(user.role === 'admin'
       ? [
           {
@@ -199,6 +212,7 @@ function AccountMenu({
   anchor: HTMLElement | null;
   onClose: () => void;
 }) {
+  const { pages } = usePlugins();
   return (
     <Menu
       anchorEl={anchor}
@@ -232,6 +246,12 @@ function AccountMenu({
           {t('Speicher ansehen')}
         </MenuItem>
       )}
+      {pages.map((page) => (
+        <MenuItem key={pluginPageKey(page)} component="a" href={pluginPageHref(page)}>
+          <ListItemIcon>{pluginIcon(page.icon)}</ListItemIcon>
+          {page.label}
+        </MenuItem>
+      ))}
       <Divider sx={{ my: 0.5 }} />
       <Box sx={{ px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
@@ -250,6 +270,19 @@ function AccountMenu({
         </ListItemIcon>
         {t('Konto und Sicherheit')}
       </MenuItem>
+      {!boot().setup2fa && (
+        <MenuItem
+          onClick={() => {
+            onClose();
+            window.dispatchEvent(new Event('moe:palette'));
+          }}
+        >
+          <ListItemIcon>
+            <ManageSearchRounded />
+          </ListItemIcon>
+          {t('Schnellzugriff')}
+        </MenuItem>
+      )}
       <MenuItem
         onClick={() => {
           onClose();
@@ -303,6 +336,33 @@ interface ShellProps {
   children: ReactNode;
 }
 
+function usePalette() {
+  const [open, setOpen] = useState(false);
+  const [used, setUsed] = useState(false);
+  useEffect(() => {
+    if (boot().setup2fa) return;
+    const show = () => {
+      setUsed(true);
+      setOpen(true);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
+      const palette = document.getElementById('moe-palette-list');
+      if (!palette && document.querySelector('.MuiDialog-root, .MuiMenu-root')) return;
+      event.preventDefault();
+      setUsed(true);
+      setOpen((current) => !current);
+    };
+    window.addEventListener('moe:palette', show);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('moe:palette', show);
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+  return { open, used, close: () => setOpen(false) };
+}
+
 function useShortcuts() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -329,10 +389,17 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
   const user = boot().user!;
   const site = boot().site;
   const [shortcuts, setShortcuts] = useShortcuts();
+  const palette = usePalette();
+  const { pages } = usePlugins();
   return (
     <Box sx={{ minHeight: '100dvh' }}>
       <SkipLink />
       <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+      {palette.used && (
+        <Suspense fallback={null}>
+          <CommandPalette open={palette.open} onClose={palette.close} onNavigate={onNavigate} />
+        </Suspense>
+      )}
       <Box
         component="nav"
         aria-label={t('Hauptnavigation')}
@@ -366,7 +433,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
         </ButtonBase>
         {railAction && <Box sx={{ my: 1 }}>{railAction}</Box>}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, mt: 1 }}>
-          {railItems(user).map((item) => (
+          {railItems(user, pages).map((item) => (
             <NavButton key={item.key} item={item} active={item.key === active} onNavigate={onNavigate} />
           ))}
         </Box>

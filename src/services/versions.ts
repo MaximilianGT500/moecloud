@@ -3,7 +3,7 @@ import { randomId } from '../lib/crypto.ts';
 import { notFound } from '../lib/errors.ts';
 import { mimeOf } from '../lib/mime.ts';
 import { record } from './activity.ts';
-import { changed, getNode, requireAccess, type NodeRow } from './nodes.ts';
+import { assertUnlocked, changed, getNode, requireAccess, type NodeRow } from './nodes.ts';
 import * as settings from './settings.ts';
 import { getUser, type UserRow } from './users.ts';
 
@@ -35,6 +35,7 @@ export function purgeVersions(days: number) {
 }
 
 export function writeContent(node: NodeRow, content: Content, actorId: number | null): NodeRow {
+  assertUnlocked(node, actorId);
   const now = Date.now();
   const modified = content.modifiedAt && content.modifiedAt > 0 ? Math.min(content.modifiedAt, now + 60_000) : now;
   tx(() => {

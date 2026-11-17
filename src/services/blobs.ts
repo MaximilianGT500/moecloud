@@ -176,6 +176,7 @@ export async function collectGarbage(graceMs = 60 * 60 * 1000) {
       await rm(blobPath(row.sha256), { force: true });
       await rm(thumbPath(row.sha256), { force: true });
       await rm(previewPath(row.sha256), { force: true });
+      await rm(join(config.paths.previews, row.sha256.slice(0, 2), `${row.sha256}.pdf`), { force: true });
       removed++;
     });
   }

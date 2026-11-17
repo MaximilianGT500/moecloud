@@ -11,12 +11,15 @@ import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
+import LockRounded from '@mui/icons-material/LockRounded';
+import AlarmRounded from '@mui/icons-material/AlarmRounded';
 import { m } from 'motion/react';
-import { formatBytes, formatDate, formatDay } from '../../lib/format';
+import { formatBytes, formatDate, formatDateTime, formatDay } from '../../lib/format';
 import { t, tn, tp } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
 import { c, curve, layer, mix, radius } from '../../theme/tokens';
 import { FileIcon, Thumb, kindColor, type Item } from './kinds';
+import { lockText } from './model';
 import { TagDots } from './tags';
 
 export const DRAG_TYPE = 'application/x-moecloud-nodes';
@@ -95,6 +98,31 @@ function Locked() {
     >
       {t('Schadsoftware')}
     </Box>
+  );
+}
+
+function ReminderBadge({ item }: { item: Item }) {
+  if (!item.reminder) return null;
+  const label = t('Erinnerung am {date}', { date: formatDateTime(item.reminder.dueAt) });
+  return (
+    <Tooltip title={label} describeChild>
+      <AlarmRounded aria-hidden={false} role="img" aria-label={label} sx={{ fontSize: 16, flex: 'none', ml: 0.75, color: c.tertiary }} />
+    </Tooltip>
+  );
+}
+
+function LockBadge({ item }: { item: Item }) {
+  if (!item.lock) return null;
+  const label = lockText(item.lock);
+  return (
+    <Tooltip title={label} describeChild>
+      <LockRounded
+        aria-hidden={false}
+        role="img"
+        aria-label={label}
+        sx={{ fontSize: 16, flex: 'none', ml: 0.75, color: item.lock.mine ? c.primary : c.error }}
+      />
+    </Tooltip>
   );
 }
 
@@ -401,6 +429,8 @@ export function Items(props: ItemsProps) {
                     {item.name}
                     {item.infected && <Locked />}
                   </Typography>
+                  <LockBadge item={item} />
+                  <ReminderBadge item={item} />
                   <TagDots ids={item.tags} />
                   {actions(item, true)}
                 </Box>
@@ -539,6 +569,8 @@ export function Items(props: ItemsProps) {
                   {item.name}
                   {item.infected && <Locked />}
                 </Typography>
+                <LockBadge item={item} />
+                <ReminderBadge item={item} />
                 <TagDots ids={item.tags} />
               </Box>
               <Typography variant="caption" noWrap component="p" sx={{ color: 'inherit', opacity: 0.75, display: { sm: 'none' } }}>

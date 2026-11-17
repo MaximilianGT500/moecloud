@@ -1,0 +1,34 @@
+services:
+  moecloud:
+    environment:
+      OFFICE_URL: http://office:3000
+    networks:
+      - default
+      - office
+    depends_on:
+      office:
+        condition: service_started
+
+  office:
+    image: gotenberg/gotenberg:8-libreoffice
+    container_name: moecloud-office
+    restart: unless-stopped
+    environment:
+      API_TIMEOUT: 150s
+      LOG_LEVEL: warn
+      LIBREOFFICE_DENY_PRIVATE_IPS: 'true'
+      WEBHOOK_DISABLE: 'true'
+      TZ: ${TZ:-Europe/Berlin}
+    networks:
+      - office
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+networks:
+  office:
+    internal: true

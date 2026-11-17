@@ -87,6 +87,19 @@ cli() {
   paused "$@"
 }
 
+plugins() {
+  local copy status=0
+  if [ "${1:-}" = "install" ] && [ -n "${2:-}" ] && [ -f "$2" ]; then
+    copy=".plugin-$$.zip"
+    cp "$2" "$DIR/data/$copy"
+    chmod 644 "$DIR/data/$copy"
+    cli plugins install "/data/$copy" || status=$?
+    rm -f "$DIR/data/$copy"
+    return "$status"
+  fi
+  cli plugins "$@"
+}
+
 state_of() {
   local id
   id="$(compose ps -q "$1" 2>/dev/null || true)"
@@ -118,10 +131,13 @@ clamav_enabled() { case "$(env_get COMPOSE_FILE)" in *clamav*) return 0 ;; *) re
 
 postgres_enabled() { case "$(env_get COMPOSE_FILE)" in *postgres*) return 0 ;; *) return 1 ;; esac; }
 
+office_enabled() { case "$(env_get COMPOSE_FILE)" in *office*) return 0 ;; *) return 1 ;; esac; }
+
 compose_files() {
   local files="docker-compose.yml"
   if clamav_enabled; then files="$files:docker/clamav.yml"; fi
   if [ "$1" = "postgres" ]; then files="$files:docker/postgres.yml"; fi
+  if office_enabled; then files="$files:docker/office.yml"; fi
   if [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
 }
 
@@ -156,6 +172,11 @@ status() {
     printf '  %-16s %s\n' "Virenscan" "ClamAV, $(state_of clamav)"
   else
     printf '  %-16s %s\n' "Virenscan" "nicht eingerichtet"
+  fi
+  if office_enabled; then
+    printf '  %-16s %s\n' "Office-Vorschau" "LibreOffice, $(state_of office)"
+  else
+    printf '  %-16s %s\n' "Office-Vorschau" "nicht eingerichtet"
   fi
   if timer_enabled; then
     printf '  %-16s %s\n' "Updates" "jede Nacht automatisch"
@@ -237,6 +258,12 @@ doctor() {
       healthy | running) ok "ClamAV läuft" ;;
       starting) warn "ClamAV lädt noch die Signaturen, das dauert beim Start ein paar Minuten" ;;
       *) warn "ClamAV läuft nicht. Mehr zeigt: sudo moecloud logs clamav" ;;
+    esac
+  fi
+  if office_enabled; then
+    case "$(state_of office)" in
+      healthy | running) ok "Die Office-Vorschau läuft" ;;
+      *) warn "Die Office-Vorschau läuft nicht. Mehr zeigt: sudo moecloud logs office" ;;
     esac
   fi
   if [ "$state" = "healthy" ]; then
@@ -411,6 +438,53 @@ to_sqlite() {
   printf 'Die Daten von PostgreSQL liegen weiter in %s/postgres. Brauchst du sie nicht mehr, lösch den Ordner mit: sudo rm -rf %s/postgres\n' "$DIR" "$DIR"
 }
 
+fetch_office() {
+  local version ref="main"
+  [ -f "$DIR/docker/office.yml" ] && return 0
+  version="$(env_get MOECLOUD_VERSION)"
+  case "$version" in [0-9]*.[0-9]*.[0-9]*) ref="v$version" ;; esac
+  mkdir -p "$DIR/docker"
+  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${ref}/docker/office.yml" -o "$DIR/docker/office.yml.neu" ||
+    fail "docker/office.yml ließ sich nicht von GitHub laden. Die Office-Vorschau gibt es ab MoeCloud 1.5.0."
+  mv "$DIR/docker/office.yml.neu" "$DIR/docker/office.yml"
+}
+
+office() {
+  local previous files
+  previous="$(env_get COMPOSE_FILE)"
+  case "${1:-}" in
+    on)
+      office_enabled && fail "Die Office-Vorschau ist schon eingerichtet."
+      fetch_office
+      env_set COMPOSE_FILE "${previous:-docker-compose.yml}:docker/office.yml"
+      if ! compose pull office; then
+        restore_files "$previous"
+        fail "Das Image für die Office-Vorschau ließ sich nicht laden. MoeCloud läuft unverändert weiter."
+      fi
+      compose up -d --remove-orphans
+      wait_ready
+      ok "Die Office-Vorschau ist eingerichtet"
+      ;;
+    off)
+      office_enabled || fail "Die Office-Vorschau ist nicht eingerichtet."
+      files="${previous//:docker\/office.yml/}"
+      if [ -z "$files" ] || [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
+      compose up -d --remove-orphans
+      wait_ready
+      ok "Die Office-Vorschau ist ausgeschaltet"
+      ;;
+    "")
+      if office_enabled; then
+        printf 'Die Office-Vorschau läuft über LibreOffice in einem eigenen Container (%s).\n' "$(state_of office)"
+        printf 'Ausschalten mit: sudo moecloud office off\n'
+      else
+        printf 'Die Office-Vorschau ist nicht eingerichtet. Einschalten mit: sudo moecloud office on\n'
+      fi
+      ;;
+    *) fail "Möglich sind: moecloud office, moecloud office on und moecloud office off" ;;
+  esac
+}
+
 database() {
   case "${1:-}" in
     postgres | postgresql) to_postgres ;;
@@ -439,6 +513,8 @@ help() {
     "moecloud start | stop" "MoeCloud mit allen Diensten starten oder anhalten" \
     "moecloud restart [dienst]" "MoeCloud oder einen anderen Dienst neu starten" \
     "moecloud database [postgres|sqlite]" "Datenbank zeigen oder zwischen SQLite und PostgreSQL umziehen" \
+    "moecloud office [on|off]" "Vorschau für PowerPoint, OpenDocument und ältere Office-Dateien" \
+    "moecloud plugins install <zip>" "Plugin aus einem ZIP-Archiv auf diesem Rechner einspielen" \
     "moecloud uninstall" "Container entfernen, deine Daten bleiben"
   printf '\nIm Container:\n'
   cli help 2>/dev/null | sed -n '3,$p' || printf '  MoeCloud läuft gerade nicht, starte es mit: sudo moecloud start\n'
@@ -452,6 +528,8 @@ case "$command" in
   update) update "$@" ;;
   auto-update) auto_update "$@" ;;
   database) database "$@" ;;
+  office) office "$@" ;;
+  plugins) plugins "$@" ;;
   logs)
     service="moecloud"
     if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then

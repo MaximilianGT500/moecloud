@@ -15,6 +15,8 @@ import { TextPreview, TEXT_LIMIT } from './TextPreview';
 const DocxPreview = lazy(() => import('./DocxPreview'));
 const ArchivePreview = lazy(() => import('./ArchivePreview'));
 const EmailPreview = lazy(() => import('./EmailPreview'));
+const EpubPreview = lazy(() => import('./EpubPreview'));
+const OfficePreview = lazy(() => import('./OfficePreview'));
 const CalendarPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.CalendarPreview })));
 const ContactPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.ContactPreview })));
 
@@ -109,6 +111,18 @@ export function Preview({
       return (
         <Suspense fallback={loading}>
           <ArchivePreview item={item} base={base} canDownload={canDownload} />
+        </Suspense>
+      );
+    case 'epub':
+      return (
+        <Suspense fallback={loading}>
+          <EpubPreview item={item} base={base} inline={inline} action={download} />
+        </Suspense>
+      );
+    case 'office':
+      return (
+        <Suspense fallback={loading}>
+          <OfficePreview item={item} base={base} inline={inline} action={download} />
         </Suspense>
       );
     case 'email':

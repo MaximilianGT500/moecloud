@@ -1,5 +1,6 @@
 import { html } from 'htm/preact';
 import type { FastifyRequest } from 'fastify';
+import { passwordMin } from '../services/passwords.ts';
 import * as settings from '../services/settings.ts';
 import { legalLinks } from '../lib/html.ts';
 import { t, type Lang } from '../lib/i18n.ts';
@@ -226,8 +227,8 @@ export function registerPage(request: FastifyRequest, view: RegisterView) {
           label: t(lang, 'Passwort'),
           type: 'password',
           autocomplete: 'new-password',
-          minlength: 10,
-          hint: t(lang, 'Mindestens 10 Zeichen.'),
+          minlength: passwordMin(),
+          hint: t(lang, 'Mindestens {count} Zeichen.', { count: passwordMin() }),
         })}
         <button class="button button--filled" type="submit">${t(lang, 'Konto erstellen')}</button>
       </form>
@@ -338,9 +339,9 @@ export function resetPage(request: FastifyRequest, view: { csrf: string; token: 
           label: t(lang, 'Neues Passwort'),
           type: 'password',
           autocomplete: 'new-password',
-          minlength: 10,
+          minlength: passwordMin(),
           autofocus: true,
-          hint: t(lang, 'Mindestens 10 Zeichen.'),
+          hint: t(lang, 'Mindestens {count} Zeichen.', { count: passwordMin() }),
         })}
         <button class="button button--filled" type="submit">${t(lang, 'Passwort speichern')}</button>
       </form>`

@@ -1,0 +1,19 @@
+{
+  "id": "farbpaket",
+  "name": { "de": "Farbpaket", "en": "Colour pack" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Vier zusätzliche Themes als Vorlage, ganz ohne Code.",
+    "en": "Four more themes as a starting point, without any code."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "themes": [
+    { "name": "Lavendel", "seed": "#9D8DF1", "style": "tonal", "font": "rounded", "corners": 1 },
+    { "name": "Espresso", "seed": "#6F4E37", "style": "neutral", "font": "serif", "corners": 0.5 },
+    { "name": "Neon", "seed": "#00E5A0", "style": "vibrant", "secondary": "#FF3D9A", "font": "system", "corners": 0.1 },
+    { "name": "Schiefer", "seed": "#5B7083", "style": "fidelity", "font": "system", "corners": 0.5 }
+  ]
+}

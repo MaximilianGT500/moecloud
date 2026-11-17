@@ -6,9 +6,10 @@ import { t } from '../lib/i18n.ts';
 import { audit } from './audit.ts';
 import { baseUrl } from './links.ts';
 import { deliver, mailReady } from './mail.ts';
+import { checkPassword } from './passwords.ts';
 import { destroyUserSessions } from './sessions.ts';
 import * as settings from './settings.ts';
-import { findByLogin, getUser, preferredLanguage, type UserRow } from './users.ts';
+import { findByLogin, getUser, inactive, preferredLanguage, type UserRow } from './users.ts';
 
 interface ResetRow {
   id: string;
@@ -60,7 +61,7 @@ async function issue(request: FastifyRequest, user: UserRow, hours: number, byAd
 export async function requestReset(request: FastifyRequest, login: string) {
   if (!mailReady()) return;
   const user = findByLogin(login.trim());
-  if (!user || !user.email || user.disabled) return;
+  if (!user || !user.email || inactive(user)) return;
   const recent =
     value<number>('SELECT COUNT(*) FROM password_resets WHERE user_id = ? AND created_at > ?', user.id, Date.now() - HOUR) ?? 0;
   if (recent >= 3) return;
@@ -80,13 +81,14 @@ export function findReset(token: string | undefined) {
   const row = one<ResetRow>('SELECT * FROM password_resets WHERE token_hash = ?', sha256(token));
   if (!row || row.used_at || row.expires_at < Date.now()) return null;
   const user = getUser(row.user_id);
-  if (!user || user.disabled) return null;
+  if (!user || inactive(user)) return null;
   return { row, user };
 }
 
 export async function completeReset(request: FastifyRequest, token: string, password: string) {
   const found = findReset(token);
   if (!found) throw badRequest('Der Link ist abgelaufen oder wurde schon benutzt, fordere einen neuen an');
+  await checkPassword(password);
   const hash = await hashPassword(password);
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, found.user.id);
   run('UPDATE password_resets SET used_at = ? WHERE id = ?', Date.now(), found.row.id);

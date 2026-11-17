@@ -21,6 +21,7 @@ import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
 import CallSplitRounded from '@mui/icons-material/CallSplitRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import ImageRounded from '@mui/icons-material/ImageRounded';
 import PictureAsPdfRounded from '@mui/icons-material/PictureAsPdfRounded';
 import RestartAltRounded from '@mui/icons-material/RestartAltRounded';
 import RotateLeftRounded from '@mui/icons-material/RotateLeftRounded';
@@ -46,9 +47,20 @@ interface Page {
 const baseName = (name: string) => splitExtension(name)[0];
 const turn = (value: number, step: number) => (((value + step) % 360) + 360) % 360;
 
-export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onClose: () => void; onDone: (node: Item) => void }) {
+export function PdfMergeDialog({
+  items,
+  images = false,
+  onClose,
+  onDone,
+}: {
+  items: Item[];
+  images?: boolean;
+  onClose: () => void;
+  onDone: (node: Item) => void;
+}) {
   const [order, setOrder] = useState(items);
-  const [name, setName] = useState(t('{name} (zusammengefügt)', { name: baseName(items[0].name) }));
+  const [name, setName] = useState(images ? baseName(items[0].name) : t('{name} (zusammengefügt)', { name: baseName(items[0].name) }));
+  const [layout, setLayout] = useState<'a4' | 'fit'>('a4');
   const [busy, setBusy] = useState(false);
   const move = (index: number, step: number) => {
     const next = [...order];
@@ -58,7 +70,12 @@ export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onCl
   };
   const submit = async () => {
     setBusy(true);
-    const result = await attempt(() => api.post<{ node: Item }>('/api/pdf/merge', { ids: order.map((item) => item.id), name }));
+    const ids = order.map((item) => item.id);
+    const result = await attempt(() =>
+      images
+        ? api.post<{ node: Item }>('/api/pdf/images', { ids, name, layout })
+        : api.post<{ node: Item }>('/api/pdf/merge', { ids, name })
+    );
     setBusy(false);
     if (!result) return;
     savedToast(result.node);
@@ -73,10 +90,12 @@ export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onCl
           void submit();
         }}
       >
-        <DialogTitle>{t('PDFs zusammenfügen')}</DialogTitle>
+        <DialogTitle>{images ? t('Als PDF speichern') : t('PDFs zusammenfügen')}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
-            {t('Die Seiten kommen in dieser Reihenfolge in die neue PDF.')}
+            {images
+              ? t('Jedes Bild wird eine Seite der neuen PDF, in dieser Reihenfolge. Die Bilder selbst bleiben, wie sie sind.')
+              : t('Die Seiten kommen in dieser Reihenfolge in die neue PDF.')}
           </Typography>
           <Box
             component="ol"
@@ -101,7 +120,11 @@ export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onCl
                 <Typography variant="body2" sx={{ color: c.onSurfaceVariant, width: 20 }}>
                   {index + 1}
                 </Typography>
-                <PictureAsPdfRounded sx={{ color: c.error }} fontSize="small" />
+                {images ? (
+                  <ImageRounded sx={{ color: c.tertiary }} fontSize="small" />
+                ) : (
+                  <PictureAsPdfRounded sx={{ color: c.error }} fontSize="small" />
+                )}
                 <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                   {item.name}
                 </Typography>
@@ -124,6 +147,18 @@ export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onCl
               </Box>
             ))}
           </Box>
+          {images && (
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={layout}
+              onChange={(_, value: 'a4' | 'fit' | null) => value && setLayout(value)}
+              aria-label={t('Seitengröße')}
+            >
+              <ToggleButton value="a4">{t('Seiten in A4')}</ToggleButton>
+              <ToggleButton value="fit">{t('So groß wie das Bild')}</ToggleButton>
+            </ToggleButtonGroup>
+          )}
           <TextField
             label={t('Name der neuen PDF')}
             value={name}
@@ -136,7 +171,7 @@ export function PdfMergeDialog({ items, onClose, onDone }: { items: Item[]; onCl
             {t('Abbrechen')}
           </Button>
           <Button type="submit" variant="contained" disabled={busy || !name.trim()}>
-            {t('Zusammenfügen')}
+            {busy ? <CircularProgress size={20} aria-label={t('Speichert')} /> : images ? t('PDF erstellen') : t('Zusammenfügen')}
           </Button>
         </DialogActions>
       </form>

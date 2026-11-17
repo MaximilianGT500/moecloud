@@ -7,6 +7,7 @@ import { safeRedirect } from '../lib/http.ts';
 import { isLang } from '../lib/i18n.ts';
 import { setLanguageCookie } from '../lib/request.ts';
 import * as settings from '../services/settings.ts';
+import { SERVICE_WORKER } from '../services/webpush.ts';
 
 export async function systemRoutes(app: FastifyInstance) {
   app.get('/healthz', { compress: false }, async (_request, reply) => {
@@ -65,6 +66,14 @@ export async function systemRoutes(app: FastifyInstance) {
     }
     return reply.redirect(safeRedirect(request.query.next, '/'));
   });
+
+  app.get('/sw.js', async (_request, reply) =>
+    reply
+      .type('text/javascript; charset=utf-8')
+      .header('Cache-Control', 'no-cache')
+      .header('Service-Worker-Allowed', '/')
+      .send(SERVICE_WORKER)
+  );
 
   app.get('/robots.txt', async (_request, reply) => reply.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 }

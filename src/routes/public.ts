@@ -24,18 +24,24 @@ import {
   linkByToken,
   linkNode,
   linkState,
+  logLinkEvent,
   resolveToken,
   unlockCookie,
   unlockToken,
   type LinkRow,
 } from '../services/links.ts';
+import { audit } from '../services/audit.ts';
+import { createReport, REPORT_REASONS } from '../services/reports.ts';
 import * as settings from '../services/settings.ts';
 import { getUser } from '../services/users.ts';
 import { stripLocation } from '../services/location.ts';
 import { emailSummary } from '../services/email.ts';
 import {
   archiveListing,
+  epubListing,
   nodeMeta,
+  sendEpubFile,
+  sendOffice,
   sendArchiveEntry,
   sendEmailAttachment,
   sendEmailBody,
@@ -47,6 +53,7 @@ import {
 import { sendVtt } from './tools.ts';
 import { uploadEndpoints } from './uploads.ts';
 import { value } from '../lib/db.ts';
+import { z } from 'zod';
 
 type TokenParams = { Params: { token: string } };
 
@@ -96,6 +103,7 @@ function shareInfo(link: LinkRow, node: NodeRow) {
     allowDownload: Boolean(link.allow_download),
     allowUpload: Boolean(link.allow_upload),
     uploadOnly: Boolean(link.upload_only),
+    reports: settings.get('share.reports'),
     expiresAt: link.expires_at,
     downloadsLeft: downloadsLeft(link),
     node: presentPublic([node])[0],
@@ -160,10 +168,10 @@ export async function publicRoutes(app: FastifyInstance) {
         body: sharePasswordPage(request, { csrf: request.csrf, name: node.name }),
       });
     }
-    countAccess(link, 'views');
+    countAccess(link, 'views', undefined, request.headers['user-agent']);
     const owner = getUser(link.owner_id);
     const site = settings.get('site.name');
-    const url = `${baseUrl(request)}/s/${link.token}`;
+    const url = `${baseUrl(request)}/s/${link.slug ?? link.token}`;
     const image = !link.password_hash && !link.upload_only && presentPublic([node])[0].thumb;
     const description = t(request.lang, 'Geteilt von {name} über {site}', { name: owner?.name ?? '', site });
     const extraHead = [
@@ -200,6 +208,7 @@ export async function publicRoutes(app: FastifyInstance) {
       unlockAttempts.check(`${request.ip}:${link.id}`);
       if (!(await verifyPassword(link.password_hash, String(form.password ?? '')))) {
         unlockAttempts.hit(`${request.ip}:${link.id}`);
+        logLinkEvent(link, 'denied', null, request.headers['user-agent']);
         throw forbidden('Das Passwort stimmt nicht');
       }
       reply.setCookie(unlockCookie(link), unlockToken(link), {
@@ -209,7 +218,7 @@ export async function publicRoutes(app: FastifyInstance) {
         secure: isSecure(request),
         maxAge: 7 * 86_400,
       });
-      return reply.redirect(`/s/${link.token}`, 303);
+      return reply.redirect(`/s/${link.slug ?? link.token}`, 303);
     } catch (error) {
       if (!(error instanceof HttpError)) throw error;
       return renderDocument(request, reply, {
@@ -252,7 +261,7 @@ export async function publicRoutes(app: FastifyInstance) {
       const download = request.query.download === '1';
       if (download && !link.allow_download) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
       const range = request.headers.range;
-      if (download && (!range || range.startsWith('bytes=0-'))) countAccess(link, 'downloads');
+      if (download && (!range || range.startsWith('bytes=0-'))) countAccess(link, 'downloads', node.name, request.headers['user-agent']);
       return sendNode(request, reply, node, download, { strip: stripLocation() });
     }
   );
@@ -338,6 +347,32 @@ export async function publicRoutes(app: FastifyInstance) {
     }
   );
 
+  app.get<{ Params: { token: string; id: string }; Querystring: { prepare?: string } }>(
+    '/api/public/:token/nodes/:id/office',
+    { compress: false },
+    async (request, reply) => {
+      const { link } = linkFor(request);
+      if (link.upload_only) throw notFound();
+      return sendOffice(request, reply, linkNode(link, request.params.id), request.query.prepare === '1');
+    }
+  );
+
+  app.get<{ Params: { token: string; id: string } }>('/api/public/:token/nodes/:id/epub', async (request) => {
+    const { link } = linkFor(request);
+    if (link.upload_only) throw notFound();
+    return epubListing(linkNode(link, request.params.id));
+  });
+
+  app.get<{ Params: { token: string; id: string; '*': string } }>(
+    '/api/public/:token/nodes/:id/epub/-/*',
+    { compress: false },
+    async (request, reply) => {
+      const { link } = linkFor(request);
+      if (link.upload_only) throw notFound();
+      return sendEpubFile(reply, linkNode(link, request.params.id), request.params['*']);
+    }
+  );
+
   app.get<TokenParams & { Querystring: { ids?: string } }>('/api/public/:token/zip', { compress: false }, async (request, reply) => {
     const { link } = linkFor(request);
     if (!link.allow_download || link.upload_only) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
@@ -345,14 +380,29 @@ export async function publicRoutes(app: FastifyInstance) {
       .split(',')
       .filter(Boolean);
     const roots = list.length ? parse(ids, list).map((nodeId) => linkNode(link, nodeId)) : [linkNode(link, link.node_id)];
-    countAccess(link, 'downloads');
+    countAccess(link, 'downloads', roots.length === 1 ? roots[0].name : undefined, request.headers['user-agent']);
     return sendZip(request, reply, roots, undefined, { strip: stripLocation() });
+  });
+
+  app.post<TokenParams>('/api/public/:token/report', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request) => {
+    const { link, node } = linkFor(request);
+    const input = parse(
+      z.object({
+        reason: z.enum(REPORT_REASONS),
+        text: z.string().max(2000, 'Die Nachricht ist zu lang').nullable().optional(),
+        contact: z.string().max(200).nullable().optional(),
+      }),
+      request.body
+    );
+    createReport(link, node, input);
+    audit('link_reported', { subject: link.owner_id, request, details: { label: link.label || node.name, reason: input.reason } });
+    return { ok: true };
   });
 
   uploadEndpoints(
     app,
     '/api/public/:token',
-    (request) => ({ user: null, link: linkFor(request as FastifyRequest<TokenParams>).link }),
+    (request) => ({ user: null, link: linkFor(request as FastifyRequest<TokenParams>).link, agent: request.headers['user-agent'] }),
     (request, nodeId) => {
       const { link } = linkFor(request as FastifyRequest<TokenParams>);
       return link.upload_only ? { id: nodeId } : presentPublic([linkNode(link, nodeId)])[0];

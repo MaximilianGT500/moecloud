@@ -1,31 +1,47 @@
 import { deviceOf } from '../lib/agent.ts';
 import { all, placeholders, run, value } from '../lib/db.ts';
 import { publish } from '../lib/events.ts';
-import { t, type Lang } from '../lib/i18n.ts';
+import { longDate, sizeIn, t, type Lang } from '../lib/i18n.ts';
 import { log } from '../lib/log.ts';
 import { deliver, mailReady } from './mail.ts';
+import { sendPush, type PushMessage } from './push.ts';
+import { hasSubscriptions, sendWebPush } from './webpush.ts';
 import * as settings from './settings.ts';
-import { getUser, preferredLanguage, prefsOf, type UserPrefs, type UserRow } from './users.ts';
+import { ACTIVE, getUser, inactive, preferredLanguage, prefsOf, type UserPrefs, type UserRow } from './users.ts';
 import { dispatch, type WebhookEvent } from './webhooks.ts';
 
 export type NotifyKind =
   | 'shared'
   | 'request_upload'
   | 'comment'
+  | 'mention'
+  | 'reminder'
+  | 'plugin'
   | 'watch'
   | 'virus'
   | 'storage'
   | 'import_done'
   | 'import_failed'
+  | 'dav_import_done'
+  | 'dav_import_partial'
+  | 'dav_import_failed'
   | 'login_new'
   | 'cleanup'
+  | 'account_expiring'
+  | 'lock_removed'
+  | 'link_download'
+  | 'link_expiring'
   | 'admin_user'
+  | 'admin_left'
+  | 'admin_storage'
+  | 'admin_report'
   | 'admin_virus'
   | 'admin_scan'
   | 'admin_backup'
   | 'admin_disk'
   | 'admin_update'
-  | 'admin_logins';
+  | 'admin_logins'
+  | 'admin_plugin';
 
 type Params = Record<string, string | number>;
 
@@ -35,9 +51,18 @@ interface Kind {
   pref?: keyof UserPrefs;
   action?: string;
   event?: WebhookEvent;
+  urgent?: boolean;
 }
 
 const many = (lang: Lang, count: number, one: string, other: string, params: Params) => t(lang, count === 1 ? one : other, params);
+
+function reportReason(lang: Lang, reason: string) {
+  if (reason === 'illegal') return t(lang, 'Verbotene Inhalte');
+  if (reason === 'malware') return t(lang, 'Schadsoftware oder Betrug');
+  if (reason === 'copyright') return t(lang, 'Urheberrecht');
+  if (reason === 'privacy') return t(lang, 'Persönliche Daten');
+  return t(lang, 'Sonstiges');
+}
 
 const KINDS: Record<NotifyKind, Kind> = {
   shared: {
@@ -58,6 +83,24 @@ const KINDS: Record<NotifyKind, Kind> = {
   },
   comment: {
     title: (lang, p) => t(lang, '{by} hat „{name}“ kommentiert', p),
+    text: (_lang, p) => String(p.text ?? ''),
+    pref: 'mailComments',
+    action: 'Ansehen',
+  },
+  reminder: {
+    title: (lang, p) => t(lang, 'Erinnerung: „{name}“', p),
+    text: (lang, p) => String(p.note || t(lang, 'Du wolltest an diese Datei erinnert werden.')),
+    pref: 'mailReminders',
+    action: 'Ansehen',
+  },
+  plugin: {
+    title: (_lang, p) => String(p.title ?? ''),
+    text: (_lang, p) => String(p.text ?? ''),
+    pref: 'mailPlugins',
+    action: 'Ansehen',
+  },
+  mention: {
+    title: (lang, p) => t(lang, '{by} hat dich in einem Kommentar zu „{name}“ erwähnt', p),
     text: (_lang, p) => String(p.text ?? ''),
     pref: 'mailComments',
     action: 'Ansehen',
@@ -83,6 +126,7 @@ const KINDS: Record<NotifyKind, Kind> = {
     action: 'Zum Ordner',
   },
   virus: {
+    urgent: true,
     title: (lang, p) => t(lang, '„{name}“ enthält Schadsoftware', p),
     text: (lang, p) => t(lang, 'Der Virenscan hat {signature} gefunden. Die Datei ist gesperrt, bis jemand sie löscht.', p),
     action: 'Ansehen',
@@ -101,7 +145,24 @@ const KINDS: Record<NotifyKind, Kind> = {
     title: (lang, p) => t(lang, 'Der Download von {host} hat nicht geklappt', p),
     text: (_lang, p) => String(p.error ?? ''),
   },
+  dav_import_done: {
+    title: (lang, p) => t(lang, 'Der Import von {host} ist fertig', p),
+    text: (lang, p) =>
+      many(lang, Number(p.files), 'Eine Datei liegt jetzt in „{folder}“.', '{files} Dateien liegen jetzt in „{folder}“.', p),
+    action: 'Zum Ordner',
+  },
+  dav_import_partial: {
+    title: (lang, p) => t(lang, 'Der Import von {host} ist fertig, aber nicht vollständig', p),
+    text: (lang, p) => t(lang, 'Geholt: {files}, nicht geholt: {failed}. Was fehlt, steht im Fenster „Per WebDAV importieren“.', p),
+    action: 'Zum Ordner',
+  },
+  dav_import_failed: {
+    title: (lang, p) => t(lang, 'Der Import von {host} hat nicht geklappt', p),
+    text: (_lang, p) => String(p.error ?? ''),
+    action: 'Zum Ordner',
+  },
   login_new: {
+    urgent: true,
     title: (lang) => t(lang, 'Neue Anmeldung bei deinem Konto'),
     text: (lang, p) =>
       t(
@@ -128,6 +189,7 @@ const KINDS: Record<NotifyKind, Kind> = {
     event: 'user_registered',
   },
   admin_virus: {
+    urgent: true,
     title: (lang, p) => t(lang, 'Schadsoftware in „{name}“', p),
     text: (lang, p) => t(lang, 'Von {user}, gefunden wurde {signature}.', p),
     pref: 'mailAdmin',
@@ -141,7 +203,71 @@ const KINDS: Record<NotifyKind, Kind> = {
     action: 'Zum Virenscan',
     event: 'scan_error',
   },
+  account_expiring: {
+    title: (lang) => t(lang, 'Dein Konto läuft bald ab'),
+    text: (lang, p) =>
+      t(
+        lang,
+        'Ab {date} kannst du dich nicht mehr anmelden. Lade vorher herunter, was du behalten willst, oder frag die Verwaltung nach mehr Zeit.',
+        {
+          date: longDate(lang, Number(p.date)),
+        }
+      ),
+    action: 'Zum Konto',
+  },
+  link_download: {
+    title: (lang, p) => t(lang, '„{name}“ wurde über deinen Link heruntergeladen', p),
+    text: (lang, p) =>
+      t(lang, 'Downloads über diesen Link bisher: {count}. Weitere Downloads meldet MoeCloud höchstens einmal pro Stunde.', p),
+    pref: 'mailShares',
+    action: 'Ansehen',
+  },
+  link_expiring: {
+    title: (lang, p) => t(lang, 'Dein Link zu „{name}“ läuft bald ab', p),
+    text: (lang, p) =>
+      t(
+        lang,
+        'Ab {date} kommt niemand mehr über den Link an den Inhalt. Brauchst du ihn länger, stell im Teilen-Fenster ein neues Datum ein.',
+        {
+          date: longDate(lang, Number(p.date)),
+        }
+      ),
+    pref: 'mailShares',
+    action: 'Ansehen',
+  },
+  lock_removed: {
+    title: (lang, p) => t(lang, '{name} hat deine Sperre für „{file}“ gelöst', p),
+    text: (lang) => t(lang, 'Andere können die Datei jetzt wieder ändern.'),
+    pref: 'mailShares',
+    action: 'Ansehen',
+  },
+  admin_report: {
+    title: (lang, p) => t(lang, 'Jemand hat den Link „{label}“ gemeldet', p),
+    text: (lang, p) =>
+      t(lang, 'Grund: {reason}. Der Link gehört {owner}.', { reason: reportReason(lang, String(p.reason)), owner: String(p.owner) }),
+    pref: 'mailAdmin',
+    action: 'Zu den Links',
+  },
+  admin_left: {
+    title: (lang, p) => t(lang, '{name} hat das eigene Konto gelöscht', p),
+    text: (lang, p) => t(lang, 'Benutzername: {username}', p),
+    pref: 'mailAdmin',
+    action: 'Zu den Personen',
+  },
+  admin_storage: {
+    title: (lang, p) => t(lang, '{name} fragt nach mehr Speicher', p),
+    text: (lang, p) =>
+      [
+        t(lang, '{used} von {quota} belegt.', { used: sizeIn(lang, Number(p.used)), quota: sizeIn(lang, Number(p.quota)) }),
+        p.message ? t(lang, 'Nachricht: {message}', p) : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    pref: 'mailAdmin',
+    action: 'Zu den Personen',
+  },
   admin_backup: {
+    urgent: true,
     title: (lang) => t(lang, 'Die automatische Sicherung ist fehlgeschlagen'),
     text: (_lang, p) => String(p.error ?? ''),
     pref: 'mailAdmin',
@@ -149,6 +275,7 @@ const KINDS: Record<NotifyKind, Kind> = {
     event: 'backup_failed',
   },
   admin_disk: {
+    urgent: true,
     title: (lang, p) => t(lang, 'Auf dem Server sind nur noch {free} frei', p),
     text: (lang) => t(lang, 'Ist die Platte voll, kann niemand mehr hochladen.'),
     pref: 'mailAdmin',
@@ -163,11 +290,27 @@ const KINDS: Record<NotifyKind, Kind> = {
     event: 'update',
   },
   admin_logins: {
+    urgent: true,
     title: (lang, p) => t(lang, '{count} fehlgeschlagene Anmeldungen in 15 Minuten', p),
     text: (lang) => t(lang, 'Im Protokoll siehst du, welche Konten betroffen sind.'),
     pref: 'mailAdmin',
     action: 'Zum Protokoll',
     event: 'login_failed',
+  },
+  admin_plugin: {
+    urgent: true,
+    title: (lang, p) => t(lang, 'Das Plugin „{name}“ steht still', p),
+    text: (lang, p) =>
+      p.reason === 'changed'
+        ? t(lang, 'Seine Dateien haben sich seit der Freigabe geändert. Schau sie dir an und gib das Plugin neu frei.')
+        : p.reason === 'failed'
+          ? t(lang, 'Der Start ist misslungen: {error}', p)
+          : p.reason === 'missing'
+            ? t(lang, 'Sein Ordner fehlt auf dem Server.')
+            : t(lang, 'Sein Ordner lässt sich nicht mehr lesen: {error}', p),
+    pref: 'mailAdmin',
+    action: 'Zu den Plugins',
+    event: 'plugin_stopped',
   },
 };
 
@@ -186,14 +329,88 @@ const absolute = (url: string) => {
   return base && url.startsWith('/') ? `${base}${url}` : url;
 };
 
+export function localClock(zone: string, now = Date.now()) {
+  let parts: Intl.DateTimeFormatPart[];
+  const options = { hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit' } as const;
+  try {
+    parts = new Intl.DateTimeFormat('en-US', { ...options, timeZone: zone || 'UTC' }).formatToParts(new Date(now));
+  } catch {
+    parts = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }).formatToParts(new Date(now));
+  }
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
+  return {
+    minutes: (Number(part('hour')) % 24) * 60 + Number(part('minute')),
+    weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(part('weekday')),
+  };
+}
+
+export const validZone = (zone: string) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export function inQuiet(prefs: Pick<UserPrefs, 'quiet' | 'zone'>, now = Date.now()) {
+  const quiet = prefs.quiet;
+  if (!quiet || quiet.from === quiet.to) return false;
+  const { minutes } = localClock(prefs.zone, now);
+  return quiet.from < quiet.to ? minutes >= quiet.from && minutes < quiet.to : minutes >= quiet.from || minutes < quiet.to;
+}
+
+const DIGEST_MINUTE = 8 * 60;
+
+export function digestCutoff(prefs: Pick<UserPrefs, 'digest' | 'zone'>, now = Date.now()) {
+  if (prefs.digest === 'off') return now;
+  const clock = localClock(prefs.zone, now);
+  let since = clock.minutes - DIGEST_MINUTE;
+  if (prefs.digest === 'weekly') {
+    since += ((clock.weekday + 6) % 7) * 24 * 60;
+    if (since < 0) since += 7 * 24 * 60;
+  } else if (since < 0) since += 24 * 60;
+  return now - since * 60_000;
+}
+
+const wantsMail = (user: UserRow, spec: Kind) =>
+  Boolean(user.email) && !inactive(user) && mailReady() && !(spec.pref && !prefsOf(user)[spec.pref]);
+
+const canPush = (user: UserRow) =>
+  !inactive(user) && settings.get('push.enabled') && (Boolean(prefsOf(user).push) || hasSubscriptions(user.id));
+
+const wantsPush = (user: UserRow, spec: Kind) => canPush(user) && !(spec.pref && !prefsOf(user)[spec.pref]);
+
+async function sendPushes(user: UserRow, message: PushMessage, kind: string) {
+  const target = prefsOf(user).push;
+  if (target) {
+    try {
+      await sendPush(target, message);
+    } catch (error) {
+      log.warn({ error: (error as Error).message, user: user.id, kind }, 'Push konnte nicht zugestellt werden');
+    }
+  }
+  await sendWebPush(user.id, message);
+}
+
+async function push(user: UserRow, kind: NotifyKind, params: Params, url: string | null) {
+  const spec = KINDS[kind];
+  if (!wantsPush(user, spec)) return;
+  const lang = preferredLanguage(user);
+  await sendPushes(
+    user,
+    { title: spec.title(lang, params), text: spec.text?.(lang, params) ?? '', url: url && settings.get('site.url') ? absolute(url) : url },
+    kind
+  );
+}
+
 async function mail(user: UserRow, kind: NotifyKind, params: Params, url: string | null) {
   const spec = KINDS[kind];
-  if (!user.email || user.disabled || !mailReady()) return;
-  if (spec.pref && !prefsOf(user)[spec.pref]) return;
+  if (!wantsMail(user, spec)) return;
   const lang = preferredLanguage(user);
   const text = spec.text?.(lang, params);
   try {
-    await deliver(user.email, {
+    await deliver(user.email!, {
       lang,
       title: spec.title(lang, params),
       lines: text ? [text] : [],
@@ -214,19 +431,106 @@ export function notify(
 ) {
   const user = getUser(userId);
   if (!user) return;
+  const spec = KINDS[kind];
+  const now = Date.now();
+  const outside = options.email !== false;
+  const prefs = prefsOf(user);
+  const quiet = outside && !spec.urgent && inQuiet(prefs, now);
+  const mailWanted = outside && wantsMail(user, spec);
+  const pushWanted = outside && wantsPush(user, spec);
+  const mailHeld = mailWanted && (quiet || (!spec.urgent && prefs.digest !== 'off'));
+  const pushHeld = pushWanted && quiet;
   const { lastId } = run(
-    'INSERT INTO notifications (user_id, kind, params, url, created_at) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO notifications (user_id, kind, params, url, created_at, mail_state, push_state) VALUES (?, ?, ?, ?, ?, ?, ?)',
     userId,
     kind,
     JSON.stringify(params),
     url,
-    Date.now()
+    now,
+    mailHeld ? 1 : 0,
+    pushHeld ? 1 : 0
   );
   publish([userId], 'notification', { id: lastId, unread: unreadCount(userId) });
-  if (options.email !== false) void mail(user, kind, params, url);
+  if (mailWanted && !mailHeld) void mail(user, kind, params, url);
+  if (pushWanted && !pushHeld) void push(user, kind, params, url);
 }
 
-const adminIds = () => all<{ id: number }>("SELECT id FROM users WHERE role = 'admin' AND disabled = 0").map((row) => row.id);
+const SUMMARY_LINES = 15;
+
+async function mailSummary(user: UserRow, rows: NotificationRow[]) {
+  if (!user.email || !mailReady()) return;
+  const lang = preferredLanguage(user);
+  const titles = rows.map((row) => KINDS[row.kind].title(lang, row.params ? (JSON.parse(row.params) as Params) : {}));
+  const site = settings.get('site.name');
+  const more = titles.length - SUMMARY_LINES;
+  try {
+    await deliver(user.email, {
+      lang,
+      title: many(lang, titles.length, 'Eine Neuigkeit in {site}', '{count} Neuigkeiten in {site}', { count: titles.length, site }),
+      lines: [
+        ...titles.slice(0, SUMMARY_LINES).map((title) => `• ${title}`),
+        ...(more > 0 ? [many(lang, more, '… und eine weitere', '… und {count} weitere', { count: more })] : []),
+      ],
+      action: settings.get('site.url') ? { label: t(lang, 'Ansehen'), url: absolute('/files') } : undefined,
+      note: t(lang, 'Welche E-Mails du bekommst, stellst du unter Konto › Benachrichtigungen ein.'),
+    });
+  } catch (error) {
+    log.warn({ error: (error as Error).message }, 'Zusammenfassung konnte nicht gesendet werden');
+  }
+}
+
+async function pushSummary(user: UserRow, rows: NotificationRow[]) {
+  const lang = preferredLanguage(user);
+  const titles = rows.map((row) => KINDS[row.kind].title(lang, row.params ? (JSON.parse(row.params) as Params) : {}));
+  await sendPushes(
+    user,
+    {
+      title: t(lang, '{count} neue Benachrichtigungen', { count: titles.length }),
+      text: titles.slice(0, 3).join('\n'),
+      url: settings.get('site.url') ? absolute('/files') : '/files',
+    },
+    'summary'
+  );
+}
+
+const paramsOf = (row: NotificationRow) => (row.params ? (JSON.parse(row.params) as Params) : {});
+
+export async function flushSummaries(now = Date.now()) {
+  const waiting = all<{ user_id: number }>('SELECT DISTINCT user_id FROM notifications WHERE mail_state = 1 OR push_state = 1');
+  let sent = 0;
+  for (const { user_id: userId } of waiting) {
+    const user = getUser(userId);
+    if (!user || inactive(user)) {
+      run('UPDATE notifications SET mail_state = 0, push_state = 0 WHERE user_id = ?', userId);
+      continue;
+    }
+    const prefs = prefsOf(user);
+    if (inQuiet(prefs, now)) continue;
+    const pushed = all<NotificationRow>('SELECT * FROM notifications WHERE user_id = ? AND push_state = 1 ORDER BY id', userId);
+    if (pushed.length) {
+      run('UPDATE notifications SET push_state = 0 WHERE user_id = ? AND push_state = 1 AND id <= ?', userId, pushed.at(-1)!.id);
+      const unread = pushed.filter((row) => !row.read_at);
+      if (unread.length === 1) await push(user, unread[0].kind, paramsOf(unread[0]), unread[0].url);
+      else if (unread.length > 1 && canPush(user)) await pushSummary(user, unread);
+      if (unread.length) sent += 1;
+    }
+    const mailed = all<NotificationRow>(
+      'SELECT * FROM notifications WHERE user_id = ? AND mail_state = 1 AND created_at <= ? ORDER BY id',
+      userId,
+      digestCutoff(prefs, now)
+    );
+    if (mailed.length) {
+      run(`UPDATE notifications SET mail_state = 0 WHERE id IN (${placeholders(mailed.length)})`, ...mailed.map((row) => row.id));
+      const unread = mailed.filter((row) => !row.read_at);
+      if (unread.length === 1) await mail(user, unread[0].kind, paramsOf(unread[0]), unread[0].url);
+      else if (unread.length > 1) await mailSummary(user, unread);
+      if (unread.length) sent += 1;
+    }
+  }
+  return sent;
+}
+
+const adminIds = () => all<{ id: number }>(`SELECT id FROM users WHERE role = 'admin' AND ${ACTIVE}`, Date.now()).map((row) => row.id);
 
 export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string | null = '/admin') {
   for (const id of adminIds()) notify(id, kind, params, url);
@@ -238,7 +542,7 @@ export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string 
     event: spec.event,
     title: spec.title(lang, params),
     text,
-    level: ['admin_virus', 'admin_scan', 'admin_backup', 'admin_disk', 'admin_logins'].includes(kind) ? 'error' : 'info',
+    level: ['admin_virus', 'admin_scan', 'admin_backup', 'admin_disk', 'admin_logins', 'admin_plugin'].includes(kind) ? 'error' : 'info',
   }).catch(() => undefined);
 }
 

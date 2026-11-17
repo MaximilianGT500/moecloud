@@ -4,7 +4,7 @@ import { hmac, newTotpSecret, normalizeRecoveryCode, randomId, recoveryCode, ver
 import { badRequest, unauthorized } from '../lib/errors.ts';
 import { Limiter } from '../lib/limiter.ts';
 import * as settings from './settings.ts';
-import { findByLogin, getUser, keyOf, type UserRow } from './users.ts';
+import { assertActive, findByLogin, getUser, inactive, keyOf, type UserRow } from './users.ts';
 
 export const secondFactorRequired = (user: Pick<UserRow, 'role'>, policy = settings.get('auth.require2fa')) =>
   policy === 'all' || (policy === 'admins' && user.role === 'admin');
@@ -41,7 +41,7 @@ export async function passwordLogin(request: FastifyRequest, login: string, pass
     perAccount.hit(accountKey);
     throw unauthorized('Benutzername oder Passwort stimmt nicht');
   }
-  if (user.disabled) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+  assertActive(user);
   perAccount.reset(accountKey);
   return user;
 }
@@ -67,7 +67,7 @@ export function pendingUser(token: string | undefined) {
   const entry = pending.get(token);
   if (!entry || entry.expires < Date.now()) return null;
   const user = getUser(entry.userId);
-  return user && !user.disabled ? { user, method: entry.method } : null;
+  return user && !inactive(user) ? { user, method: entry.method } : null;
 }
 
 export const finishSecondFactor = (token: string) => pending.delete(token);

@@ -6,6 +6,7 @@ import * as settings from '../services/settings.ts';
 import { baseUrl } from '../services/links.ts';
 import { mailReady } from '../services/mail.ts';
 import { unreadCount } from '../services/notify.ts';
+import { effectiveTheme, themeBoot, themeCss, type EffectiveTheme } from '../services/themes.ts';
 import { entryTags, type Entry } from './assets.ts';
 import { escapeHtml, serializeJson } from './http.ts';
 import { messagesFor, t } from './i18n.ts';
@@ -22,12 +23,14 @@ export function legalLinks(request: FastifyRequest) {
   return links;
 }
 
-export function siteInfo(request: FastifyRequest) {
+const themeOf = (request: FastifyRequest) => effectiveTheme(request.auth?.user, request.lang);
+
+export function siteInfo(request: FastifyRequest, theme: EffectiveTheme = themeOf(request)) {
   return {
     name: settings.get('site.name'),
     url: baseUrl(request),
-    seed: settings.get('site.seed'),
-    palette: settings.get('site.palette'),
+    seed: theme.spec.seed,
+    palette: theme.palette,
     version: config.version,
     registration: settings.get('auth.registration'),
     passkeys: settings.get('auth.passkeys'),
@@ -38,8 +41,7 @@ export function siteInfo(request: FastifyRequest) {
   };
 }
 
-function paletteCss() {
-  const palette = settings.get('site.palette');
+function paletteCss(palette: settings.Palette) {
   const vars = (tokens: Record<string, string>) =>
     Object.entries(tokens)
       .filter(([, value]) => /^#[0-9a-f]{6}$/i.test(value))
@@ -48,18 +50,17 @@ function paletteCss() {
   return `:root,:root[data-mui-color-scheme=dark]{color-scheme:dark;${vars(palette.dark)}}:root[data-mui-color-scheme=light]{color-scheme:light;${vars(palette.light)}}`;
 }
 
-function baseCss(withTokens: boolean) {
-  const palette = settings.get('site.palette');
+function baseCss(palette: settings.Palette, withTokens: boolean) {
   if (withTokens) {
-    return `${paletteCss()}html,body{margin:0;background:var(--mui-palette-m3-surface);color:var(--mui-palette-m3-onSurface)}`;
+    return `${paletteCss(palette)}html,body{margin:0;background:var(--mui-palette-m3-surface);color:var(--mui-palette-m3-onSurface)}`;
   }
   const dark = palette.dark;
   const light = palette.light;
   return `html,body{margin:0;background:${dark.surface};color:${dark.onSurface}}html[data-mui-color-scheme=light],html[data-mui-color-scheme=light] body{background:${light.surface};color:${light.onSurface}}`;
 }
 
-function head(request: FastifyRequest, title: string, extra = '', withTokens = true) {
-  const palette = settings.get('site.palette');
+function head(request: FastifyRequest, title: string, extra = '', withTokens = true, theme: EffectiveTheme = themeOf(request)) {
+  const palette = theme.palette;
   const nonce = escapeHtml(request.nonce);
   const site = settings.get('site.name');
   return `<meta charset="utf-8">
@@ -75,7 +76,8 @@ function head(request: FastifyRequest, title: string, extra = '', withTokens = t
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 ${extra}<script nonce="${nonce}">${THEME_SCRIPT}</script>
-<style nonce="${nonce}">${baseCss(withTokens)}.noscript{font-family:system-ui,sans-serif;padding:24px;max-width:560px;margin:0 auto;line-height:1.5}</style>`;
+<style nonce="${nonce}">${baseCss(palette, withTokens)}${themeCss(theme)}.noscript{font-family:system-ui,sans-serif;padding:24px;max-width:560px;margin:0 auto;line-height:1.5}</style>
+<style nonce="${nonce}" id="moe-theme-css">${theme.css}</style>`;
 }
 
 function missingBuild(request: FastifyRequest) {
@@ -97,10 +99,12 @@ export function renderApp(request: FastifyRequest, reply: FastifyReply, page: Ap
   reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-store');
   if (!tags) return reply.code(503).send(missingBuild(request));
   const auth = request.auth;
+  const theme = themeOf(request);
   const boot = {
     page: page.entry,
     lang: request.lang,
-    site: siteInfo(request),
+    site: siteInfo(request, theme),
+    theme: themeBoot(theme),
     csrf: auth?.session?.csrf ?? request.csrf,
     unread: auth?.session ? unreadCount(auth.user.id) : 0,
     ...page.data,
@@ -109,7 +113,7 @@ export function renderApp(request: FastifyRequest, reply: FastifyReply, page: Ap
   const html = `<!doctype html>
 <html lang="${request.lang}" data-mui-color-scheme="dark">
 <head>
-${head(request, page.title, page.extraHead, false)}
+${head(request, page.title, page.extraHead, false, theme)}
 ${tags.head}
 </head>
 <body>

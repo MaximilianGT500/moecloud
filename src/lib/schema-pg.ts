@@ -491,6 +491,85 @@ CREATE TABLE usage_days (
   stored BIGINT NOT NULL
 );
 `,
+  6: `
+ALTER TABLE users ADD COLUMN expires_at BIGINT;
+
+CREATE TABLE locks (
+  node_id ${T} PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT
+);
+CREATE INDEX locks_user ON locks(user_id);
+
+ALTER TABLE links ADD COLUMN notify_downloads BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE links ADD COLUMN notified_at BIGINT;
+
+ALTER TABLE nodes ADD COLUMN description ${T};
+
+CREATE TABLE reminders (
+  id ${T} PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  node_id ${T} NOT NULL REFERENCES nodes(id) ON DELETE CASCADE ${FK},
+  due_at BIGINT NOT NULL,
+  note ${T},
+  created_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX reminders_user_node ON reminders(user_id, node_id);
+CREATE INDEX reminders_due ON reminders(due_at);
+
+ALTER TABLE links ADD COLUMN slug ${T};
+ALTER TABLE links ADD COLUMN warned_at BIGINT;
+CREATE UNIQUE INDEX links_slug ON links(slug);
+
+CREATE TABLE link_events (
+  id ${T} PRIMARY KEY,
+  link_id ${T} NOT NULL REFERENCES links(id) ON DELETE CASCADE ${FK},
+  kind ${T} NOT NULL,
+  name ${T},
+  agent ${T},
+  at BIGINT NOT NULL
+);
+CREATE INDEX link_events_link ON link_events(link_id, at);
+
+CREATE TABLE reports (
+  id ${T} PRIMARY KEY,
+  link_id ${T} REFERENCES links(id) ON DELETE SET NULL ${FK},
+  owner_id BIGINT REFERENCES users(id) ON DELETE SET NULL ${FK},
+  label ${T} NOT NULL,
+  reason ${T} NOT NULL,
+  text ${T},
+  contact ${T},
+  created_at BIGINT NOT NULL,
+  resolved_at BIGINT
+);
+CREATE INDEX reports_open ON reports(resolved_at, created_at);
+
+ALTER TABLE notifications ADD COLUMN mail_state BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE notifications ADD COLUMN push_state BIGINT NOT NULL DEFAULT 0;
+
+CREATE TABLE push_subscriptions (
+  id ${T} PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  endpoint ${T} NOT NULL UNIQUE,
+  p256dh ${T} NOT NULL,
+  auth ${T} NOT NULL,
+  agent ${T},
+  origin ${T},
+  created_at BIGINT NOT NULL,
+  used_at BIGINT
+);
+CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+`,
+  7: `
+CREATE TABLE plugin_store (
+  plugin ${T} NOT NULL,
+  key ${T} NOT NULL,
+  value ${T} NOT NULL,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (plugin, key)
+);
+`,
 };
 
 export const PG_IDENTITY: Record<string, string> = {
@@ -539,6 +618,12 @@ export const TABLES = [
   'devices',
   'rules',
   'usage_days',
+  'locks',
+  'reminders',
+  'link_events',
+  'reports',
+  'push_subscriptions',
+  'plugin_store',
 ];
 
 export const RECOUNT_REFS =

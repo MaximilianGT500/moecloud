@@ -9,7 +9,7 @@ import { cleanTmp, collectGarbage } from './blobs.ts';
 import { purgeDevices } from './devices.ts';
 import { purgeInvites } from './invites.ts';
 import { purgeTrash } from './nodes.ts';
-import { notifyAdmins, purgeNotifications } from './notify.ts';
+import { flushSummaries, notifyAdmins, purgeNotifications } from './notify.ts';
 import { purgeResets } from './resets.ts';
 import { applyRules } from './rules.ts';
 import { rescan, scanEnabled } from './scan.ts';
@@ -20,6 +20,13 @@ import * as settings from './settings.ts';
 import { checkForUpdates, updatesEnabled } from './updates.ts';
 import { cleanupUploads, formatBytes } from './uploads.ts';
 import { recordUsage } from './usage.ts';
+import { remindExpiring } from './accounts.ts';
+import { purgeLocks } from './locks.ts';
+import { purgeLinkEvents, warnExpiringLinks } from './links.ts';
+import { reconcilePlugins } from './plugins.ts';
+import { fireReminders } from './reminders.ts';
+import { sendWeeklyReports } from './report.ts';
+import { purgeReports } from './reports.ts';
 import { purgeVersions } from './versions.ts';
 
 export async function runMaintenance() {
@@ -30,6 +37,10 @@ export async function runMaintenance() {
   const blobs = await collectGarbage();
   const tmp = await cleanTmp();
   const sessions = purgeExpiredSessions().changes;
+  remindExpiring();
+  purgeLocks();
+  purgeLinkEvents(settings.get('activity.days'));
+  purgeReports();
   purgeDevices();
   purgeInvites();
   purgeResets();
@@ -83,7 +94,9 @@ export function startJobs(log: FastifyBaseLogger) {
     try {
       expireGrants();
       expireGroupGrants();
+      warnExpiringLinks();
       await autoBackup();
+      await sendWeeklyReports();
       await checkDisk();
       checkLogins();
     } catch (error) {
@@ -101,7 +114,17 @@ export function startJobs(log: FastifyBaseLogger) {
     }
     if (scanEnabled() && settings.get('scan.rescanDays') > 0) rescan();
   };
+  const minute = async () => {
+    try {
+      fireReminders();
+      await flushSummaries();
+      await reconcilePlugins();
+    } catch (error) {
+      log.error(error, 'Erinnerungen fehlgeschlagen');
+    }
+  };
   const timers = [
+    setInterval(minute, 60_000),
     setTimeout(maintenance, 30_000),
     setTimeout(frequent, 45_000),
     setTimeout(daily, 90_000),

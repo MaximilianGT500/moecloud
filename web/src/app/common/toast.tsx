@@ -19,7 +19,10 @@ const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
 
 export function toast(message: string, options: { action?: Toast['action']; duration?: number } = {}) {
-  queue = [...queue, { id: ++id, message, action: options.action, duration: options.duration ?? (options.action ? 6000 : 4000) }];
+  queue = [
+    ...queue.filter((entry) => entry.action),
+    { id: ++id, message, action: options.action, duration: options.duration ?? (options.action ? 6000 : 4000) },
+  ];
   emit();
 }
 

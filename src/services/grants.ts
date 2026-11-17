@@ -6,7 +6,7 @@ import { record } from './activity.ts';
 import { getNode, requireAccess, type NodeRow } from './nodes.ts';
 import { notify } from './notify.ts';
 import * as settings from './settings.ts';
-import { getUser, initials, type UserRow } from './users.ts';
+import { getUser, inactive, initials, type UserRow } from './users.ts';
 
 export interface GrantRow {
   id: string;
@@ -33,7 +33,7 @@ export function shareWith(user: UserRow, nodeId: string, targetId: number, permi
   const { node } = requireAccess(user, nodeId, 'owner');
   if (!node.parent_id) throw badRequest('Den Hauptordner kannst du nicht teilen');
   const target = getUser(targetId);
-  if (!target || target.disabled) throw notFound('Diese Person gibt es nicht');
+  if (!target || inactive(target)) throw notFound('Diese Person gibt es nicht');
   if (target.id === user.id) throw badRequest('Mit dir selbst musst du nichts teilen');
   const existing = one<GrantRow>('SELECT * FROM grants WHERE node_id = ? AND user_id = ?', nodeId, target.id);
   if (existing && (existing.expires_at === null || existing.expires_at > Date.now())) {

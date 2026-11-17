@@ -24,7 +24,7 @@ import SearchRounded from '@mui/icons-material/SearchRounded';
 import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
 import { api, errorText } from '../../lib/api';
 import { boot } from '../../lib/boot';
-import { formatBytes, formatDate, formatNumber } from '../../lib/format';
+import { dayValue, endOfDay, formatBytes, formatDate, formatDay, formatNumber } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, fonts, radius } from '../../theme/tokens';
 import { Section, UserAvatar } from '../common/bits';
@@ -53,6 +53,8 @@ export interface AdminUser {
   sessions: number;
   links: number;
   files: number;
+  expiresAt: number | null;
+  expired: boolean;
 }
 
 function DeleteDialog({
@@ -157,6 +159,7 @@ function UserDialog({
   user,
   open,
   mail,
+  passwordMin,
   onClose,
   onSaved,
   onDelete,
@@ -164,6 +167,7 @@ function UserDialog({
   user: AdminUser | null;
   open: boolean;
   mail: boolean;
+  passwordMin: number;
   onClose: () => void;
   onSaved: () => void;
   onDelete: (user: AdminUser) => void;
@@ -177,6 +181,7 @@ function UserDialog({
     quota: null as number | null,
     disabled: false,
     sendLink: false,
+    expires: '',
   };
   const [form, setForm] = useState(empty);
   const [busy, setBusy] = useState(false);
@@ -195,6 +200,7 @@ function UserDialog({
         quota: user?.quota ?? null,
         disabled: user?.disabled ?? false,
         sendLink: !user && mail,
+        expires: dayValue(user?.expiresAt ?? null),
       });
     }
   }
@@ -212,6 +218,7 @@ function UserDialog({
           role: form.role,
           quota: form.quota,
           disabled: form.disabled,
+          ...(form.expires !== dayValue(user.expiresAt) ? { expiresAt: endOfDay(form.expires) } : {}),
           ...(form.password ? { password: form.password } : {}),
         });
         toast(t('Gespeichert'));
@@ -222,6 +229,7 @@ function UserDialog({
           email: form.email,
           role: form.role,
           quota: form.quota,
+          ...(form.expires ? { expiresAt: endOfDay(form.expires) } : {}),
           ...(linkMode ? { sendLink: true } : { password: form.password }),
         });
         toast(
@@ -271,7 +279,10 @@ function UserDialog({
             select
             label={t('Rolle')}
             value={form.role}
-            onChange={(event) => set({ role: event.target.value as 'admin' | 'user' })}
+            onChange={(event) => {
+              const role = event.target.value as 'admin' | 'user';
+              set({ role, expires: role === 'admin' ? '' : form.expires });
+            }}
             disabled={self}
           >
             <MenuItem value="user">{t('Mitglied')}</MenuItem>
@@ -280,6 +291,21 @@ function UserDialog({
           <Box sx={{ gridColumn: '1 / -1' }}>
             <QuotaField label={t('Speicher')} value={form.quota} allowDefault onChange={(quota) => set({ quota })} />
           </Box>
+          {form.role === 'user' && (
+            <TextField
+              sx={{ gridColumn: '1 / -1' }}
+              label={t('Konto gültig bis')}
+              type="date"
+              value={form.expires}
+              onChange={(event) => set({ expires: event.target.value })}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: dayValue(Date.now() + 86_400_000) } }}
+              helperText={
+                user?.expired && form.expires === dayValue(user.expiresAt)
+                  ? t('Das Konto ist abgelaufen. Wähle ein neues Datum oder lass das Feld leer.')
+                  : t('Danach kann sich die Person nicht mehr anmelden. Leer lassen für unbegrenzt.')
+              }
+            />
+          )}
           {!user && mail && (
             <FormControlLabel
               sx={{ gridColumn: '1 / -1', m: 0, gap: 1 }}
@@ -299,7 +325,7 @@ function UserDialog({
               helperText={
                 user
                   ? t('Setzt du ein neues Passwort, wird die Person überall abgemeldet.')
-                  : t('Mindestens 10 Zeichen. Gib es der Person auf einem sicheren Weg.')
+                  : t('Mindestens {count} Zeichen. Gib es der Person auf einem sicheren Weg.', { count: passwordMin })
               }
             />
           )}
@@ -419,12 +445,14 @@ interface ImportLine {
   email: string;
   role: 'admin' | 'user';
   quota: number | null;
+  expiresAt: number | null;
   status: 'ready' | 'created' | 'skipped' | 'error';
   message: string | null;
   sent?: boolean;
 }
 
-const IMPORT_EXAMPLE = 'username;name;email;role;quota\nlea;Lea;lea@example.com;user;10 GB\nmia;Mia;mia@example.com;admin;';
+const IMPORT_EXAMPLE =
+  'username;name;email;role;quota;expires\nlea;Lea;lea@example.com;user;10 GB;2027-03-31\nmia;Mia;mia@example.com;admin;;';
 
 function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: boolean; onClose: () => void; onDone: () => void }) {
   const [csv, setCsv] = useState('');
@@ -477,7 +505,7 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
           <>
             <DialogContentText>
               {t(
-                'Die erste Zeile nennt die Spalten. Pflicht sind username und name, dazu passen email, role, quota, password und language. Trenne mit Komma oder Semikolon.'
+                'Die erste Zeile nennt die Spalten. Pflicht sind username und name, dazu passen email, role, quota, password, language und expires. Trenne mit Komma oder Semikolon.'
               )}
             </DialogContentText>
             <Box
@@ -558,6 +586,7 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
                           line.email,
                           line.role === 'admin' ? t('Admin') : null,
                           line.quota ? formatBytes(line.quota) : null,
+                          line.expiresAt ? t('Bis {date}', { date: formatDay(line.expiresAt) }) : null,
                           line.sent ? t('Link verschickt') : null,
                         ]
                           .filter(Boolean)
@@ -609,17 +638,19 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
 export function PeopleSection() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [mail, setMail] = useState(false);
-  const [filter, setFilter] = useState('');
+  const [passwordMin, setPasswordMin] = useState(10);
+  const [filter, setFilter] = useState(() => new URLSearchParams(location.search).get('q') ?? '');
   const [editing, setEditing] = useState<{ user: AdminUser | null } | null>(null);
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
 
   const load = () =>
     api
-      .get<{ items: AdminUser[]; mail: boolean }>('/api/admin/users')
+      .get<{ items: AdminUser[]; mail: boolean; passwordMin: number }>('/api/admin/users')
       .then((result) => {
         setUsers(result.items);
         setMail(result.mail);
+        setPasswordMin(result.passwordMin);
       })
       .catch((error) => toast(errorText(error)));
 
@@ -706,6 +737,11 @@ export function PeopleSection() {
                         {user.disabled && (
                           <Chip size="small" label={t('Gesperrt')} sx={{ bgcolor: c.errorContainer, color: c.onErrorContainer }} />
                         )}
+                        {user.expired ? (
+                          <Chip size="small" label={t('Abgelaufen')} sx={{ bgcolor: c.errorContainer, color: c.onErrorContainer }} />
+                        ) : user.expiresAt ? (
+                          <Chip size="small" variant="outlined" label={t('Bis {date}', { date: formatDay(user.expiresAt) })} />
+                        ) : null}
                         {(user.totp || user.passkeys > 0) && (
                           <Chip size="small" label={user.totp ? '2FA' : t('Passkey')} variant="outlined" />
                         )}
@@ -754,6 +790,7 @@ export function PeopleSection() {
         user={editing?.user ?? null}
         open={Boolean(editing)}
         mail={mail}
+        passwordMin={passwordMin}
         onClose={() => setEditing(null)}
         onSaved={() => void load()}
         onDelete={(user) => {

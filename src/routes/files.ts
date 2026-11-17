@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { rm, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import { badRequest, notFound, tooLarge } from '../lib/errors.ts';
+import { badRequest, conflict, notFound, tooLarge } from '../lib/errors.ts';
 import { contentDisposition, PDF_CSP, sendFile } from '../lib/http.ts';
 import { t } from '../lib/i18n.ts';
 import { inlineType } from '../lib/mime.ts';
@@ -10,16 +10,23 @@ import { me } from '../lib/request.ts';
 import { id, ids, parse } from '../lib/validate.ts';
 import { forNode, forUser, record } from '../services/activity.ts';
 import { isZip, listArchive, openEntry } from '../services/archive.ts';
+import { EPUB_CSP, epubFile, epubInfo } from '../services/epub.ts';
+import { officePdf, officePrepared } from '../services/office.ts';
 import { extractArchive } from '../services/extract.ts';
 import { rotateImage } from '../services/rotate.ts';
 import { editImage, OUTPUTS } from '../services/editor.ts';
 import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
-import { addComment, deleteComment, listComments } from '../services/comments.ts';
+import { addComment, commentPeople, deleteComment, listComments } from '../services/comments.ts';
 import { ingest } from '../services/ingest.ts';
+import { lockNode, MAX_LOCK_MINUTES, unlockNode } from '../services/locks.ts';
+import { listReminders, removeReminder, setReminder } from '../services/reminders.ts';
+import { fromTemplate, setTemplates, templatesOf } from '../services/templates.ts';
 import { cleanDuplicates, memories, photos, storageReport } from '../services/library.ts';
 import { assertNotInfected } from '../services/scan.ts';
 import {
+  assertUnlocked,
   breadcrumbs,
+  describe,
   copy,
   createFolder,
   destroy,
@@ -42,18 +49,21 @@ import {
   children,
   assertSpace,
   setColor,
+  folderSize,
   FOLDER_COLORS,
   type NodeRow,
 } from '../services/nodes.ts';
+import { notifyAdmins } from '../services/notify.ts';
 import { rendition, thumbnail } from '../services/thumbs.ts';
 import { createTextFile, formatBytes } from '../services/uploads.ts';
+import { cancelDavImport, listDavImports, startDavImport } from '../services/davimport.ts';
 import { listImports, startImport } from '../services/imports.ts';
 import { deleteSearch, listSearches, renameSearch, saveSearch } from '../services/searches.ts';
 import { deleteVersion, getVersion, listVersions, restoreVersion, writeContent } from '../services/versions.ts';
 import { EMAIL_CSP, emailAttachment, emailBody, emailSummary } from '../services/email.ts';
 import { blanker, locationBlanks } from '../services/location.ts';
 import { zipName, zipStream, type ZipOptions } from '../services/zip.ts';
-import { storageOf } from '../services/users.ts';
+import { getUser, prefsOf, quotaOf, storageOf, updatePrefs, usageOf, type UserRow } from '../services/users.ts';
 import * as settings from '../services/settings.ts';
 
 type IdParams = { Params: { id: string } };
@@ -117,6 +127,46 @@ export async function sendArchiveEntry(reply: FastifyReply, node: NodeRow, path:
   reply.header('Content-Security-Policy', "sandbox; default-src 'none'");
   reply.header('Cache-Control', 'private, no-cache');
   reply.header('X-Content-Type-Options', 'nosniff');
+  return reply.send(entry.stream);
+}
+
+export async function sendOffice(request: FastifyRequest, reply: FastifyReply, node: NodeRow, prepare: boolean) {
+  if (!node.sha256 || node.type !== 'file') throw notFound();
+  assertNotInfected(node.sha256);
+  if (prepare) return reply.send({ ok: await officePrepared(node) });
+  const path = await officePdf(node);
+  const info = await stat(path);
+  return sendFile(request, reply, {
+    path,
+    size: info.size,
+    type: 'application/pdf',
+    etag: `${node.sha256}-pdf`,
+    modified: node.modified_at,
+    name: `${node.name.replace(/\.[^.]+$/, '')}.pdf`,
+    disposition: 'inline',
+    csp: PDF_CSP,
+  });
+}
+
+const isEpub = (node: NodeRow) => /\.epub$/i.test(node.name) || node.mime === 'application/epub+zip';
+
+export async function epubListing(node: NodeRow) {
+  if (!node.sha256 || node.type !== 'file' || !isEpub(node)) throw badRequest('Das ist kein E-Book im EPUB-Format');
+  assertNotInfected(node.sha256);
+  return epubInfo(blobPath(node.sha256));
+}
+
+export async function sendEpubFile(reply: FastifyReply, node: NodeRow, path: string) {
+  if (!node.sha256 || node.type !== 'file' || !isEpub(node)) throw notFound();
+  assertNotInfected(node.sha256);
+  const entry = await epubFile(blobPath(node.sha256), path);
+  reply.header('Content-Type', entry.type);
+  reply.header('Content-Length', entry.size);
+  reply.header('Content-Security-Policy', EPUB_CSP);
+  reply.header('X-Frame-Options', 'SAMEORIGIN');
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.header('Referrer-Policy', 'no-referrer');
+  reply.header('Cache-Control', 'private, max-age=3600');
   return reply.send(entry.stream);
 }
 
@@ -277,6 +327,31 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get('/api/imports', async (request) => ({ items: listImports(me(request)) }));
 
+  app.post<IdParams>(
+    '/api/nodes/:id/import/webdav',
+    { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } },
+    async (request, reply) => {
+      const input = parse(
+        z.object({
+          url: z.string().trim().min(1, 'Gib eine Adresse ein').max(2000, 'Die Adresse ist zu lang'),
+          username: z.string().min(1, 'Gib einen Benutzernamen ein').max(255),
+          password: z.string().min(1, 'Gib ein Passwort ein').max(1024),
+          name: z.string().max(255).nullable().optional(),
+        }),
+        request.body
+      );
+      const job = startDavImport(me(request), request.params.id, input, request.lang);
+      return reply.code(202).send({ job });
+    }
+  );
+
+  app.get('/api/imports/webdav', async (request) => ({ items: listDavImports(me(request)) }));
+
+  app.delete<IdParams>('/api/imports/webdav/:id', async (request) => {
+    if (!cancelDavImport(me(request), request.params.id)) throw notFound();
+    return { ok: true };
+  });
+
   const searchName = z.string().trim().min(1, 'Gib einen Namen ein').max(80, 'Der Name darf höchstens 80 Zeichen haben');
 
   app.get('/api/searches', async (request) => ({ items: listSearches(me(request)) }));
@@ -332,6 +407,79 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get('/api/storage', async (request) => storageOf(me(request)));
 
+  app.post('/api/storage/request', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ message: z.string().trim().max(500, 'Die Nachricht ist zu lang').optional() }), request.body);
+    const quota = quotaOf(user);
+    if (quota === null) throw badRequest('Für dein Konto gibt es keine Speichergrenze');
+    const asked = prefsOf(user).storageAsked;
+    if (asked && Date.now() - asked < 24 * 60 * 60 * 1000) throw conflict('Du hast heute schon nach mehr Speicher gefragt');
+    const now = Date.now();
+    updatePrefs(user.id, { storageAsked: now });
+    notifyAdmins(
+      'admin_storage',
+      { name: user.name, username: user.username, used: usageOf(user.id), quota, message: input.message ?? '' },
+      `/admin/people?q=${encodeURIComponent(user.username)}`
+    );
+    return { askedAt: now };
+  });
+
+  app.post<IdParams>('/api/nodes/:id/lock', async (request) => {
+    const user = me(request);
+    const input = parse(
+      z.object({ minutes: z.number().int().positive().max(MAX_LOCK_MINUTES, 'Höchstens 30 Tage am Stück').nullable().default(null) }),
+      request.body ?? {}
+    );
+    const lock = lockNode(user, request.params.id, input.minutes);
+    return { lock: { userId: lock.userId, name: lock.name, mine: true, expiresAt: lock.expiresAt } };
+  });
+
+  app.delete<IdParams>('/api/nodes/:id/lock', async (request) => ({ removed: unlockNode(me(request), request.params.id) }));
+
+  app.put<IdParams>('/api/nodes/:id/reminder', async (request) => {
+    const input = parse(
+      z.object({ dueAt: z.number().int().positive().max(253402300799000), note: z.string().max(2000).nullable().optional() }),
+      request.body
+    );
+    return { reminder: setReminder(me(request), request.params.id, input.dueAt, input.note) };
+  });
+
+  app.delete<IdParams>('/api/nodes/:id/reminder', async (request) => ({ removed: removeReminder(me(request), request.params.id) }));
+
+  app.get('/api/reminders', async (request) => ({ items: listReminders(me(request)) }));
+
+  const templates = (user: UserRow) => {
+    const { folder, items } = templatesOf(user);
+    return { folder: folder ? { id: folder.id, name: folder.name } : null, items: present(items, user, 'view') };
+  };
+
+  app.get('/api/templates', async (request) => templates(me(request)));
+
+  app.put('/api/templates', async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ folderId: z.string().min(1).max(64).nullable() }), request.body);
+    setTemplates(user, input.folderId);
+    return templates(getUser(user.id) ?? user);
+  });
+
+  app.post<IdParams>('/api/nodes/:id/from-template', async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ templateId: z.string().min(1).max(64), name: z.string().min(1).max(255) }), request.body);
+    const node = fromTemplate(user, request.params.id, input.templateId, input.name);
+    return { node: present([node], user, (entry) => resolveAccess(user, entry.id)?.role ?? 'view')[0] };
+  });
+
+  app.put<IdParams>('/api/nodes/:id/description', async (request) => {
+    const input = parse(z.object({ text: z.string().max(8000) }), request.body);
+    return { description: describe(me(request), request.params.id, input.text) };
+  });
+
+  app.get<IdParams>('/api/nodes/:id/size', async (request) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    if (node.type !== 'folder') throw badRequest('Die Größe gibt es nur für Ordner');
+    return folderSize(node.id);
+  });
+
   app.get<IdParams & { Querystring: { download?: string } }>('/api/nodes/:id/content', { compress: false }, async (request, reply) => {
     const { node } = requireAccess(me(request), request.params.id);
     if (node.type !== 'file') throw badRequest('Ordner lädst du als ZIP herunter');
@@ -342,6 +490,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const user = me(request);
     const { node } = requireAccess(user, request.params.id, 'edit');
     if (node.type !== 'file') throw badRequest('In einen Ordner kannst du nicht schreiben');
+    assertUnlocked(node, user.id);
     const max = settings.get('storage.maxUpload');
     const stream = request.body as Readable | undefined;
     if (!stream || typeof (stream as Readable).pipe !== 'function') throw badRequest('Der Inhalt fehlt');
@@ -447,6 +596,8 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get<IdParams>('/api/nodes/:id/comments', async (request) => ({ items: listComments(me(request), request.params.id) }));
 
+  app.get<IdParams>('/api/nodes/:id/comments/people', async (request) => ({ items: commentPeople(me(request), request.params.id) }));
+
   app.post<IdParams>('/api/nodes/:id/comments', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
     const { text } = parse(z.object({ text: z.string().max(5000) }), request.body);
     return { comment: addComment(me(request), request.params.id, text) };
@@ -476,6 +627,21 @@ export async function fileRoutes(app: FastifyInstance) {
   app.get<IdParams & { Querystring: { path?: string } }>('/api/nodes/:id/archive/entry', { compress: false }, async (request, reply) => {
     const { node } = requireAccess(me(request), request.params.id);
     return sendArchiveEntry(reply, node, String(request.query.path ?? ''));
+  });
+
+  app.get<IdParams & { Querystring: { prepare?: string } }>('/api/nodes/:id/office', { compress: false }, async (request, reply) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    return sendOffice(request, reply, node, request.query.prepare === '1');
+  });
+
+  app.get<IdParams>('/api/nodes/:id/epub', async (request) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    return epubListing(node);
+  });
+
+  app.get<{ Params: { id: string; '*': string } }>('/api/nodes/:id/epub/-/*', { compress: false }, async (request, reply) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    return sendEpubFile(reply, node, request.params['*']);
   });
 
   app.get<{ Querystring: { at?: string; seq?: string } }>('/api/photos', async (request) => {

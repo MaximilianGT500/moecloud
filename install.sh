@@ -394,6 +394,15 @@ download() {
   mv "${target}.neu" "$target"
 }
 
+download_optional() {
+  local source="$1" target="$2"
+  if curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${REF}/${source}" -o "${target}.neu" 2>/dev/null; then
+    mv "${target}.neu" "$target"
+  else
+    rm -f "${target}.neu"
+  fi
+}
+
 fetch_files() {
   mkdir -p "$DIR/docker"
   download docker-compose.yml "$DIR/docker-compose.yml"
@@ -401,7 +410,8 @@ fetch_files() {
   if [ -d "$DIR/docker/Caddyfile" ]; then rmdir "$DIR/docker/Caddyfile" 2>/dev/null || true; fi
   download docker/Caddyfile "$DIR/docker/Caddyfile"
   download docker/clamav.yml "$DIR/docker/clamav.yml"
-  download docker/postgres.yml "$DIR/docker/postgres.yml"
+  download_optional docker/postgres.yml "$DIR/docker/postgres.yml"
+  download_optional docker/office.yml "$DIR/docker/office.yml"
   download install.sh "$DIR/install.sh"
   chmod 700 "$DIR/install.sh"
   download docker/moecloud-host "$BIN"

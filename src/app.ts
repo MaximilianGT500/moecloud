@@ -36,8 +36,11 @@ import { groupRoutes } from './routes/groups.ts';
 import { tagRoutes } from './routes/tags.ts';
 import { albumRoutes } from './routes/albums.ts';
 import { toolRoutes } from './routes/tools.ts';
+import { themeRoutes } from './routes/themes.ts';
+import { pluginRoutes } from './routes/plugins.ts';
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const MODE_SWITCH_STYLE = "'sha256-GNF74DLkXb0fH3ILHgILFjk1ozCF3SNXQ5mQb7WLu/Y='";
 
 function loggerOptions() {
   if (config.test) return false;
@@ -53,7 +56,7 @@ function pagePolicy(nonce: string) {
   const directives: [string, ...string[]][] = [
     ['default-src', "'self'"],
     ['script-src', `'nonce-${nonce}'`, "'strict-dynamic'", ...(dev ? [dev] : [])],
-    ['style-src', "'self'", dev ? "'unsafe-inline'" : `'nonce-${nonce}'`, ...(dev ? [dev] : [])],
+    ['style-src', "'self'", ...(dev ? ["'unsafe-inline'", dev] : [`'nonce-${nonce}'`, MODE_SWITCH_STYLE])],
     ['img-src', "'self'", 'data:', 'blob:'],
     ['media-src', "'self'", 'blob:'],
     ['font-src', "'self'", ...(dev ? [dev] : [])],
@@ -77,10 +80,10 @@ function languageOf(request: FastifyRequest, user: UserRow | null): Lang {
 }
 
 const isAsset = (url: string) =>
-  url.startsWith('/assets/') || url === '/healthz' || url.startsWith('/icons/') || url.startsWith('/favicon');
+  url.startsWith('/assets/') || url === '/healthz' || url === '/sw.js' || url.startsWith('/icons/') || url.startsWith('/favicon');
 
 const OPEN_DURING_MAINTENANCE =
-  /^\/(login|logout|lang\/|api\/auth\/passkey|api\/session|manifest\.webmanifest|robots\.txt|metrics|apple-touch-icon|setup|api\/setup)/;
+  /^\/(login|logout|lang\/|api\/auth\/passkey|api\/session|manifest\.webmanifest|sw\.js|robots\.txt|metrics|apple-touch-icon|setup|api\/setup)/;
 
 function inMaintenance(request: FastifyRequest) {
   if (!settings.get('maintenance.enabled')) return false;
@@ -281,6 +284,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(tagRoutes);
   await app.register(albumRoutes);
   await app.register(toolRoutes);
+  await app.register(themeRoutes);
+  await app.register(pluginRoutes);
   await app.register(uploadRoutes);
   await app.register(shareRoutes);
   await app.register(publicRoutes);

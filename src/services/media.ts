@@ -1,13 +1,15 @@
 import { spawn } from 'node:child_process';
 import { config } from '../config.ts';
 
-export type Tool = 'ffmpeg' | 'ffprobe' | 'pdftoppm' | 'pdftotext';
+export type Tool = 'ffmpeg' | 'ffprobe' | 'pdftoppm' | 'pdftotext' | 'soffice';
 
-export const tools: Record<Tool, boolean> = { ffmpeg: false, ffprobe: false, pdftoppm: false, pdftotext: false };
+export const tools: Record<Tool, boolean> = { ffmpeg: false, ffprobe: false, pdftoppm: false, pdftotext: false, soffice: false };
 
 interface RunOptions {
   timeout?: number;
   maxBytes?: number;
+  env?: NodeJS.ProcessEnv;
+  group?: boolean;
 }
 
 interface Result {
@@ -20,7 +22,24 @@ export const execute = (command: string, args: string[], options: RunOptions = {
 
 function launch(command: string, args: string[], options: RunOptions = {}): Promise<Result> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: options.env,
+      detached: options.group === true,
+    });
+    const stop = () => {
+      if (options.group && child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+          return;
+        } catch {
+          child.kill('SIGKILL');
+          return;
+        }
+      }
+      child.kill('SIGKILL');
+    };
     const chunks: Buffer[] = [];
     const errors: Buffer[] = [];
     let size = 0;
@@ -35,13 +54,13 @@ function launch(command: string, args: string[], options: RunOptions = {}): Prom
       else resolve(result!);
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      stop();
       finish(new Error(`${command} hat zu lange gebraucht`));
     }, options.timeout ?? 30_000);
     child.stdout.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
-        child.kill('SIGKILL');
+        stop();
         finish(new Error(`${command} hat zu viele Daten geliefert`));
         return;
       }
@@ -61,7 +80,7 @@ function launch(command: string, args: string[], options: RunOptions = {}): Prom
 }
 
 async function available(tool: Tool) {
-  const flag = tool === 'pdftoppm' || tool === 'pdftotext' ? '-v' : '-version';
+  const flag = tool === 'soffice' ? '--version' : tool === 'pdftoppm' || tool === 'pdftotext' ? '-v' : '-version';
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(config.tools[tool], [flag], { stdio: 'ignore', windowsHide: true });

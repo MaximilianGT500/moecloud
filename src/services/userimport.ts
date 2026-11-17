@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { badRequest } from '../lib/errors.ts';
 import { isLang, t, type Lang } from '../lib/i18n.ts';
 import { displayName, email, password, username } from '../lib/validate.ts';
+import { passwordMin } from './passwords.ts';
 import { audit } from './audit.ts';
 import { mailReady } from './mail.ts';
 import { sendResetByAdmin } from './resets.ts';
@@ -11,7 +12,7 @@ import { all } from '../lib/db.ts';
 
 export const IMPORT_LIMIT = 500;
 
-type Field = 'username' | 'name' | 'email' | 'role' | 'quota' | 'password' | 'language';
+type Field = 'username' | 'name' | 'email' | 'role' | 'quota' | 'password' | 'language' | 'expires';
 
 const HEADERS: Record<string, Field> = {
   username: 'username',
@@ -33,6 +34,11 @@ const HEADERS: Record<string, Field> = {
   passwort: 'password',
   language: 'language',
   sprache: 'language',
+  expires: 'expires',
+  expiry: 'expires',
+  ablauf: 'expires',
+  ablaufdatum: 'expires',
+  gültigbis: 'expires',
 };
 
 const UNITS: Record<string, number> = { '': 1, b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 };
@@ -46,6 +52,7 @@ export interface PlannedUser {
   quota: number | null;
   password: string | null;
   language: Lang | null;
+  expiresAt: number | null;
 }
 
 export interface ImportLine {
@@ -55,6 +62,7 @@ export interface ImportLine {
   email: string;
   role: 'admin' | 'user';
   quota: number | null;
+  expiresAt: number | null;
   status: 'ready' | 'created' | 'skipped' | 'error';
   message: string | null;
   sent?: boolean;
@@ -104,6 +112,16 @@ function sizeOf(value: string) {
   return Math.round(Number(match[1].replace(',', '.')) * UNITS[(match[2] ?? '').toLowerCase()]);
 }
 
+function dateOf(value: string) {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value);
+  if (!match) return undefined;
+  const [year, month, day] = match[1].length === 4 ? [match[1], match[2], match[3]] : [match[3], match[2], match[1]];
+  const date = new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59);
+  if (date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) return undefined;
+  return date.getTime();
+}
+
 const roleOf = (value: string) => {
   const key = value.toLowerCase();
   if (!key || ['user', 'mitglied', 'member', 'benutzer'].includes(key)) return 'user';
@@ -145,6 +163,7 @@ export function planImport(text: string, sendLinks: boolean, lang: Lang) {
       quota: null,
       password: value('password') || null,
       language: null,
+      expiresAt: null,
     };
     const shown: ImportLine = {
       line: planned.line,
@@ -153,6 +172,7 @@ export function planImport(text: string, sendLinks: boolean, lang: Lang) {
       email: planned.email,
       role: planned.role,
       quota: null,
+      expiresAt: null,
       status: 'ready',
       message: null,
     };
@@ -165,6 +185,15 @@ export function planImport(text: string, sendLinks: boolean, lang: Lang) {
     if (language && !isLang(language)) return fail(t(lang, 'Als Sprache gehen de und en'));
     planned.language = language ? (language as Lang) : null;
     if (!roleOf(value('role'))) return fail(t(lang, 'Als Rolle gehen user und admin'));
+    if (planned.password && [...planned.password].length < passwordMin()) {
+      return fail(t(lang, 'Das Passwort braucht mindestens {count} Zeichen', { count: passwordMin() }));
+    }
+    const expiresAt = dateOf(value('expires'));
+    if (expiresAt === undefined) return fail(t(lang, 'Das Ablaufdatum ist kein Datum wie 2027-03-31'));
+    if (expiresAt !== null && expiresAt <= Date.now()) return fail(t(lang, 'Das Ablaufdatum muss in der Zukunft liegen'));
+    if (expiresAt !== null && planned.role === 'admin') return fail(t(lang, 'Admins bekommen kein Ablaufdatum'));
+    planned.expiresAt = expiresAt;
+    shown.expiresAt = expiresAt;
     const problem =
       first(username, planned.username) ??
       first(displayName, planned.name) ??
@@ -208,6 +237,7 @@ export async function runImport(request: FastifyRequest, actor: UserRow, text: s
         role: entry.planned.role,
         quota: entry.planned.quota,
         language: entry.planned.language,
+        expiresAt: entry.planned.expiresAt,
       });
       created++;
       let sent = false;

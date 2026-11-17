@@ -16,6 +16,7 @@ export const WEBHOOK_EVENTS = [
   'disk_low',
   'update',
   'login_failed',
+  'plugin_stopped',
   'test',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];

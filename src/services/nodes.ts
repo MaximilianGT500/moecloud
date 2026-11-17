@@ -1,11 +1,12 @@
 import { all, dialect, IN_LIST, one, run, tx, type Param } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
-import { badRequest, conflict, forbidden, insufficientStorage, notFound } from '../lib/errors.ts';
+import { badRequest, conflict, forbidden, HttpError, insufficientStorage, notFound } from '../lib/errors.ts';
 import { publish } from '../lib/events.ts';
 import { kindOf, mimeOf } from '../lib/mime.ts';
 import { cleanName, nameKey, uniqueName } from '../lib/names.ts';
 import { record } from './activity.ts';
 import { typeOf, type BlobRow } from './blobs.ts';
+import { canConvert } from './office.ts';
 import { previews } from './thumbs.ts';
 import { getUser, quotaOf, usageOf, type UserRow } from './users.ts';
 
@@ -29,6 +30,7 @@ export interface NodeRow {
   trash_root: number;
   etag: number;
   color: string | null;
+  description: string | null;
 }
 
 export type Role = 'owner' | 'edit' | 'view';
@@ -56,6 +58,18 @@ export const getNode = (id: string) => one<NodeRow>('SELECT * FROM nodes WHERE i
 
 export const chain = (id: string) =>
   all<NodeRow & { depth: number }>(`${CHAIN} SELECT n.*, c.depth FROM chain c JOIN nodes n ON n.id = c.id ORDER BY c.depth DESC`, id);
+
+export function folderSize(folderId: string) {
+  const row = one<{ files: number; folders: number; size: number }>(
+    `${TREE('WHERE n.trashed_at IS NULL')}
+     SELECT COUNT(CASE WHEN n.type = 'file' THEN 1 END) AS files, COUNT(CASE WHEN n.type = 'folder' THEN 1 END) AS folders,
+       COALESCE(SUM(CASE WHEN n.type = 'file' THEN n.size ELSE 0 END), 0) AS size
+     FROM tree t JOIN nodes n ON n.id = t.id WHERE t.id != ?`,
+    folderId,
+    folderId
+  );
+  return { size: Number(row?.size ?? 0), files: Number(row?.files ?? 0), folders: Number(row?.folders ?? 0) };
+}
 
 export function subtree(rootId: string, includeTrashed = false) {
   return all<NodeRow & { depth: number }>(
@@ -108,10 +122,61 @@ export function requireFolder(user: UserRow, nodeId: string, need: Role = 'view'
 export function requireMutable(user: UserRow, nodeId: string): Access {
   const access = requireAccess(user, nodeId, 'view');
   if (!access.node.parent_id) throw forbidden('Den Hauptordner kannst du nicht ändern');
-  if (access.role === 'owner') return access;
-  if (access.rootId === access.node.id) throw forbidden('Diesen geteilten Ordner kann nur die Person ändern, der er gehört');
-  if (access.role !== 'edit') throw forbidden('Dafür fehlen dir die Rechte');
+  if (access.role !== 'owner') {
+    if (access.rootId === access.node.id) throw forbidden('Diesen geteilten Ordner kann nur die Person ändern, der er gehört');
+    if (access.role !== 'edit') throw forbidden('Dafür fehlen dir die Rechte');
+  }
+  assertUnlocked(access.node, user.id);
   return access;
+}
+
+export interface LockInfo {
+  userId: number;
+  name: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
+export function locksOf(ids: string[], now = Date.now()) {
+  if (ids.length === 0) return new Map<string, LockInfo>();
+  return new Map(
+    all<{ node_id: string; user_id: number; name: string; created_at: number; expires_at: number | null }>(
+      `SELECT l.node_id, l.user_id, u.name, l.created_at, l.expires_at FROM locks l JOIN users u ON u.id = l.user_id
+       WHERE l.node_id ${IN_LIST} AND (l.expires_at IS NULL OR l.expires_at > ?)`,
+      JSON.stringify(ids),
+      now
+    ).map((row) => [
+      row.node_id,
+      {
+        userId: row.user_id,
+        name: row.name,
+        createdAt: Number(row.created_at),
+        expiresAt: row.expires_at === null ? null : Number(row.expires_at),
+      },
+    ])
+  );
+}
+
+export const lockOf = (id: string) => locksOf([id]).get(id) ?? null;
+
+export function assertUnlocked(node: Pick<NodeRow, 'id' | 'type' | 'owner_id'>, actorId: number | null) {
+  if (node.type === 'file') {
+    const lock = lockOf(node.id);
+    if (lock && lock.userId !== actorId) throw new HttpError(423, '{name} hat die Datei gesperrt', 'locked', { name: lock.name });
+    return;
+  }
+  const held = all<{ node_id: string; name: string }>(
+    `SELECT l.node_id, u.name FROM locks l JOIN nodes n ON n.id = l.node_id JOIN users u ON u.id = l.user_id
+     WHERE n.owner_id = ? AND n.trashed_at IS NULL AND l.user_id != ? AND (l.expires_at IS NULL OR l.expires_at > ?)`,
+    node.owner_id,
+    actorId ?? 0,
+    Date.now()
+  );
+  for (const lock of held) {
+    if (one(`${CHAIN} SELECT 1 AS found FROM chain WHERE id = ? LIMIT 1`, lock.node_id, node.id)) {
+      throw new HttpError(423, 'In diesem Ordner hat {name} eine Datei gesperrt', 'locked', { name: lock.name });
+    }
+  }
 }
 
 export function breadcrumbs(access: Access) {
@@ -693,6 +758,17 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
       ...filter.params
     );
   }
+  const described = all<Found>(
+    `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
+     WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.description IS NOT NULL
+       AND LOWER(n.description) LIKE ? ESCAPE '\\' ${filter.sql}
+     ORDER BY n.updated_at DESC LIMIT 50`,
+    user.id,
+    `%${text.toLowerCase().replace(/[%_\\]/g, (char) => `\\${char}`)}%`,
+    ...filter.params
+  );
+  const known = new Set(byName.map((node) => node.id));
+  for (const node of described) if (!known.has(node.id)) byName.push(node);
   if (!content || filters.kind === 'folder') return byName;
   let inside: Found[] = [];
   try {
@@ -743,6 +819,10 @@ export interface Presented {
   progress: number | null;
   watching: boolean;
   cleanup: number | null;
+  lock: { userId: number; name: string; mine: boolean; expiresAt: number | null } | null;
+  description: string | null;
+  reminder: { dueAt: number; note: string | null } | null;
+  office: boolean;
 }
 
 type BlobInfo = Pick<BlobRow, 'sha256' | 'thumb' | 'meta' | 'scan_status' | 'taken_at' | 'width' | 'height'>;
@@ -822,6 +902,11 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       : []
   );
   const blobs = blobInfo(nodes.filter((node) => node.sha256).map((node) => node.sha256!));
+  const locks = locksOf(nodes.filter((node) => node.type === 'file').map((node) => node.id));
+  const reminders = remindersOf(
+    viewer.id,
+    nodes.map((node) => node.id)
+  );
   const owners = new Map<number, string>();
   for (const node of nodes) {
     if (node.owner_id !== viewer.id && !owners.has(node.owner_id)) owners.set(node.owner_id, getUser(node.owner_id)?.name ?? '');
@@ -859,6 +944,34 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       progress: progress.get(node.id) ?? null,
       watching: watching.has(node.id),
       cleanup: cleanup.get(node.id) ?? null,
+      lock: lockFor(locks.get(node.id), viewer.id),
+      description: node.description ?? null,
+      reminder: reminders.get(node.id) ?? null,
+      office: canConvert(node),
     };
   });
+}
+
+function remindersOf(userId: number, ids: string[]) {
+  if (ids.length === 0) return new Map<string, { dueAt: number; note: string | null }>();
+  return new Map(
+    all<{ node_id: string; due_at: number; note: string | null }>(
+      `SELECT node_id, due_at, note FROM reminders WHERE user_id = ? AND node_id ${IN_LIST}`,
+      userId,
+      JSON.stringify(ids)
+    ).map((row) => [row.node_id, { dueAt: Number(row.due_at), note: row.note }])
+  );
+}
+
+export function describe(user: UserRow, id: string, raw: string) {
+  const { node } = requireMutable(user, id);
+  const text = raw.replace(/\r\n?/g, '\n').trim();
+  if (text.length > 2000) throw badRequest('Die Beschreibung darf höchstens 2000 Zeichen haben');
+  run('UPDATE nodes SET description = ? WHERE id = ?', text || null, node.id);
+  changed([node.parent_id]);
+  return text || null;
+}
+
+function lockFor(lock: LockInfo | undefined, viewerId: number) {
+  return lock ? { userId: lock.userId, name: lock.name, mine: lock.userId === viewerId, expiresAt: lock.expiresAt } : null;
 }

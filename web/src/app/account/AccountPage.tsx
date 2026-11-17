@@ -25,6 +25,7 @@ import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import ComputerRounded from '@mui/icons-material/ComputerRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
+import DeleteForeverRounded from '@mui/icons-material/DeleteForeverRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import FolderZipRounded from '@mui/icons-material/FolderZipRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
@@ -52,6 +53,8 @@ import { CopyField, QrCode, Row, Section, StorageMeter, UserAvatar, copyText } f
 import { confirm, prompt } from '../common/dialogs';
 import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
+import { useThemeControl } from '../mount';
+import { ThemeChoice } from './ThemeChoice';
 
 interface MailPrefs {
   mailShares: boolean;
@@ -60,14 +63,36 @@ interface MailPrefs {
   mailWatch: boolean;
   mailAdmin: boolean;
   mailLogins: boolean;
+  mailReminders: boolean;
+  mailPlugins: boolean;
 }
+
+interface Prefs extends MailPrefs {
+  digest: 'off' | 'daily' | 'weekly';
+  quiet: { from: number; to: number } | null;
+  zone: string;
+}
+
+const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+const minutesOf = (value: string) => {
+  const [hours, minutes] = value.split(':').map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+};
+const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 interface Account {
   user: SessionUser;
   storage: Storage;
   passkeysEnabled: boolean;
   mail: boolean;
-  prefs: MailPrefs;
+  prefs: Prefs;
+  webPush: number;
+  passwordMin: number;
+  expiresAt: number | null;
+  selfDelete: boolean;
+  plugins?: boolean;
+  push: { kind: 'ntfy' | 'gotify'; url: string; hasToken: boolean } | null;
+  pushEnabled: boolean;
   security: {
     required: boolean;
     setupRequired: boolean;
@@ -301,7 +326,88 @@ function CodeDialog({
   );
 }
 
-function PasswordDialog({ open, hasPassword, onClose }: { open: boolean; hasPassword: boolean; onClose: () => void }) {
+function DeleteAccountDialog({
+  open,
+  username,
+  hasPassword,
+  onClose,
+}: {
+  open: boolean;
+  username: string;
+  hasPassword: boolean;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const matches = confirm.trim().toLowerCase() === username.toLowerCase();
+  const close = () => {
+    if (busy) return;
+    setPassword('');
+    setConfirm('');
+    setError('');
+    onClose();
+  };
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.post('/api/account/delete', { password: hasPassword ? password : undefined, confirm: confirm.trim() });
+      location.assign('/login');
+    } catch (failure) {
+      setError(errorText(failure));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onClose={close} fullWidth maxWidth="xs">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (matches && (!hasPassword || password)) void submit();
+        }}
+      >
+        <DialogTitle>{t('Konto endgültig löschen?')}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <DialogContentText>
+            {t(
+              'MoeCloud löscht dein Konto mit allen Dateien, Freigaben, Links, Alben und Einstellungen. Das lässt sich nicht rückgängig machen.'
+            )}
+          </DialogContentText>
+          {error && <Alert severity="error">{error}</Alert>}
+          {hasPassword && (
+            <TextField
+              type="password"
+              label={t('Passwort')}
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={busy}
+            />
+          )}
+          <TextField
+            label={t('Gib zur Bestätigung „{username}“ ein', { username })}
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            disabled={busy}
+            slotProps={{ htmlInput: { autoCapitalize: 'none', spellCheck: false, autoComplete: 'off' } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={close} disabled={busy}>
+            {t('Abbrechen')}
+          </Button>
+          <Button type="submit" variant="contained" color="error" disabled={busy || !matches || (hasPassword && !password)}>
+            {t('Endgültig löschen')}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+}
+
+function PasswordDialog({ open, hasPassword, min, onClose }: { open: boolean; hasPassword: boolean; min: number; onClose: () => void }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -351,7 +457,7 @@ function PasswordDialog({ open, hasPassword, onClose }: { open: boolean; hasPass
               autoComplete="new-password"
               value={next}
               onChange={(event) => setNext(event.target.value)}
-              helperText={t('Mindestens 10 Zeichen.')}
+              helperText={t('Mindestens {count} Zeichen.', { count: min })}
               required
             />
             <TextField
@@ -368,7 +474,7 @@ function PasswordDialog({ open, hasPassword, onClose }: { open: boolean; hasPass
         </DialogContent>
         <DialogActions>
           <Button onClick={close}>{t('Abbrechen')}</Button>
-          <Button type="submit" variant="contained" disabled={busy || next.length < 10 || next !== repeat}>
+          <Button type="submit" variant="contained" disabled={busy || next.length < min || next !== repeat}>
             {t('Speichern')}
           </Button>
         </DialogActions>
@@ -492,16 +598,24 @@ function SecurityLog() {
   );
 }
 
-function MailSection({ account, onChanged }: { account: Account; onChanged: (prefs: MailPrefs) => void }) {
-  const toggle = async (key: keyof MailPrefs, value: boolean) => {
+function MailSection({ account, onChanged }: { account: Account; onChanged: (prefs: Prefs) => void }) {
+  const save = async (patch: Partial<Prefs>) => {
     try {
-      const result = await api.patch<{ prefs: MailPrefs }>('/api/account/prefs', { [key]: value });
+      const result = await api.patch<{ prefs: Prefs }>('/api/account/prefs', patch);
       onChanged(result.prefs);
     } catch (error) {
       toast(errorText(error));
     }
   };
-  const disabled = !account.mail || !account.user.email;
+  const toggle = (key: keyof MailPrefs, value: boolean) => save({ [key]: value });
+  const quiet = account.prefs.quiet;
+  const setQuiet = (next: { from: number; to: number } | null) => {
+    if (next && next.from === next.to) return;
+    void save({ quiet: next, zone: zone() });
+  };
+  const mailing = account.mail && Boolean(account.user.email);
+  const pushing = Boolean(account.push) || account.webPush > 0;
+  const disabled = !mailing && !pushing;
   const options: { key: keyof MailPrefs; label: string; text: string }[] = [
     { key: 'mailShares', label: t('Wenn jemand etwas mit dir teilt'), text: t('Freigaben von anderen Personen') },
     { key: 'mailUploads', label: t('Wenn über einen Link etwas ankommt'), text: t('Nur für Links, bei denen du das eingeschaltet hast') },
@@ -515,12 +629,20 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
       label: t('Bei Änderungen in beobachteten Ordnern'),
       text: t('Für Ordner, bei denen du „Beobachten“ eingeschaltet hast'),
     },
+    { key: 'mailReminders', label: t('Bei Erinnerungen an Dateien'), text: t('Für Erinnerungen, die du dir selbst gesetzt hast') },
     {
       key: 'mailLogins',
       label: t('Bei Anmeldung von einem neuen Gerät'),
       text: t('Damit du merkst, wenn sich jemand anderes mit deinem Konto anmeldet'),
     },
   ];
+  if (account.plugins) {
+    options.push({
+      key: 'mailPlugins',
+      label: t('Bei Nachrichten von Plugins'),
+      text: t('Was die Plugins dieses Servers dir melden'),
+    });
+  }
   if (account.user.role === 'admin') {
     options.push({
       key: 'mailAdmin',
@@ -531,13 +653,23 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
   return (
     <Section
       id="benachrichtigungen"
-      title={t('E-Mail-Benachrichtigungen')}
+      title={
+        mailing && pushing
+          ? t('Benachrichtigungen per E-Mail und Push')
+          : pushing
+            ? t('Push-Benachrichtigungen')
+            : t('E-Mail-Benachrichtigungen')
+      }
       description={
-        !account.mail
-          ? t('Auf diesem Server ist kein E-Mail-Versand eingerichtet. Neuigkeiten siehst du über die Glocke oben.')
-          : !account.user.email
-            ? t('Hinterleg oben eine E-Mail-Adresse, dann kommen Benachrichtigungen auch per E-Mail.')
-            : t('In der Glocke oben siehst du alles. Per E-Mail kommt nur, was du hier einschaltest.')
+        mailing && pushing
+          ? t('In der Glocke oben siehst du alles. Per E-Mail und Push kommt nur, was du hier einschaltest.')
+          : pushing
+            ? t('In der Glocke oben siehst du alles. Per Push kommt nur, was du hier einschaltest.')
+            : !account.mail
+              ? t('Auf diesem Server ist kein E-Mail-Versand eingerichtet. Neuigkeiten siehst du über die Glocke oben.')
+              : !account.user.email
+                ? t('Hinterleg oben eine E-Mail-Adresse, dann kommen Benachrichtigungen auch per E-Mail.')
+                : t('In der Glocke oben siehst du alles. Per E-Mail kommt nur, was du hier einschaltest.')
       }
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -565,6 +697,340 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
           />
         ))}
       </Box>
+      {!disabled && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, maxWidth: 560 }}>
+          {mailing && (
+            <TextField
+              select
+              label={t('E-Mails schicken')}
+              value={account.prefs.digest}
+              onChange={(event) => void save({ digest: event.target.value as Prefs['digest'], zone: zone() })}
+              helperText={t('Gesammelt bekommst du eine E-Mail mit allem, was du noch nicht gelesen hast.')}
+            >
+              <MenuItem value="off">{t('Sofort, jede für sich')}</MenuItem>
+              <MenuItem value="daily">{t('Gesammelt, jeden Morgen um 8 Uhr')}</MenuItem>
+              <MenuItem value="weekly">{t('Gesammelt, montags um 8 Uhr')}</MenuItem>
+            </TextField>
+          )}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={Boolean(quiet)}
+                  onChange={(event) => setQuiet(event.target.checked ? { from: 22 * 60, to: 7 * 60 } : null)}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {t('Ruhezeiten')}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                    {t(
+                      'In dieser Zeit kommen weder E-Mails noch Push. Danach bekommst du eine Zusammenfassung. Neue Anmeldungen meldet MoeCloud immer sofort.'
+                    )}
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: 'center', m: 0, gap: 1 }}
+            />
+            {quiet && (
+              <Box sx={{ display: 'flex', gap: 2, mt: 1.5 }}>
+                <TextField
+                  label={t('Von')}
+                  type="time"
+                  value={clock(quiet.from)}
+                  onChange={(event) => {
+                    const from = minutesOf(event.target.value);
+                    if (from !== null) setQuiet({ from, to: quiet.to });
+                  }}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label={t('Bis')}
+                  type="time"
+                  value={clock(quiet.to)}
+                  onChange={(event) => {
+                    const to = minutesOf(event.target.value);
+                    if (to !== null) setQuiet({ from: quiet.from, to });
+                  }}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ flex: 1 }}
+                />
+              </Box>
+            )}
+          </Box>
+        </Box>
+      )}
+    </Section>
+  );
+}
+
+interface BrowserPushState {
+  enabled: boolean;
+  publicKey: string | null;
+  items: { id: string; device: string; createdAt: number; current: boolean }[];
+}
+
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+async function currentSubscription() {
+  if (!pushSupported()) return null;
+  const registration = await navigator.serviceWorker.getRegistration('/');
+  return (await registration?.pushManager.getSubscription()) ?? null;
+}
+
+function keyBytes(key: string) {
+  const text = atob(key.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(text, (char) => char.charCodeAt(0));
+}
+
+function BrowserPush({ onChanged }: { onChanged: () => void }) {
+  const [state, setState] = useState<BrowserPushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const supported = pushSupported();
+
+  const load = async () => {
+    const subscription = await currentSubscription().catch(() => null);
+    const query = subscription ? `?endpoint=${encodeURIComponent(subscription.endpoint)}` : '';
+    setState(await api.get<BrowserPushState>(`/api/account/webpush${query}`));
+  };
+
+  useEffect(() => {
+    let active = true;
+    currentSubscription()
+      .catch(() => null)
+      .then((subscription) =>
+        api.get<BrowserPushState>(`/api/account/webpush${subscription ? `?endpoint=${encodeURIComponent(subscription.endpoint)}` : ''}`)
+      )
+      .then((result) => {
+        if (active) setState(result);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const run = async (task: () => Promise<unknown>, done?: string) => {
+    setBusy(true);
+    try {
+      await task();
+      if (done) toast(done);
+      await load();
+      onChanged();
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enable = () =>
+    run(async () => {
+      if (!state?.publicKey) return;
+      if ((await Notification.requestPermission()) !== 'granted') {
+        throw new Error(t('Dein Browser erlaubt MoeCloud keine Benachrichtigungen. Erlaub sie in den Einstellungen für diese Seite.'));
+      }
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready;
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(state.publicKey) }));
+      const { endpoint, keys } = subscription.toJSON();
+      await api.post('/api/account/webpush', { endpoint, keys });
+    }, t('Push ist in diesem Browser eingeschaltet'));
+
+  const remove = (item: BrowserPushState['items'][number]) =>
+    run(
+      async () => {
+        if (item.current) await (await currentSubscription())?.unsubscribe();
+        await api.delete(`/api/account/webpush/${item.id}`);
+      },
+      item.current ? t('Push ist in diesem Browser ausgeschaltet') : undefined
+    );
+
+  if (!state?.enabled) return null;
+  const here = state.items.some((item) => item.current);
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxWidth: 560 }}>
+      <Typography variant="subtitle2" component="h3">
+        {t('In diesem Browser')}
+      </Typography>
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+        {supported
+          ? t('Benachrichtigungen erscheinen dann auf diesem Gerät, auch wenn MoeCloud gerade nicht offen ist.')
+          : t(
+              'Dieser Browser kann das nicht. Auf iPhone und iPad geht es, wenn du MoeCloud über Teilen zum Home-Bildschirm hinzufügst und von dort öffnest.'
+            )}
+      </Typography>
+      {supported && (
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {!here && (
+            <Button variant="contained" disabled={busy} onClick={() => void enable()}>
+              {t('In diesem Browser einschalten')}
+            </Button>
+          )}
+          {state.items.length > 0 && (
+            <Button
+              variant="tonal"
+              disabled={busy}
+              onClick={() => void run(() => api.post('/api/account/webpush/test'), t('Die Testnachricht ist unterwegs'))}
+            >
+              {t('Testnachricht schicken')}
+            </Button>
+          )}
+        </Box>
+      )}
+      {state.items.length > 0 && (
+        <Box
+          component="ul"
+          aria-label={t('Browser mit Push')}
+          sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 0.5 }}
+        >
+          {state.items.map((item) => (
+            <Box
+              component="li"
+              key={item.id}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                pl: 1.5,
+                pr: 0.5,
+                py: 0.5,
+                borderRadius: `${radius.md}px`,
+                bgcolor: c.surfaceContainerHigh,
+              }}
+            >
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                {item.device}
+                {item.current ? ` · ${t('dieser Browser')}` : ''}
+              </Typography>
+              <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: 'none' }}>
+                {formatDate(item.createdAt)}
+              </Typography>
+              <Button size="small" color="error" disabled={busy} onClick={() => void remove(item)}>
+                {t('Ausschalten')}
+              </Button>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function PushSection({ account, onChanged }: { account: Account; onChanged: () => void }) {
+  const current = account.push;
+  const [kind, setKind] = useState<'ntfy' | 'gotify'>(current?.kind ?? 'ntfy');
+  const [url, setUrl] = useState(current?.url ?? '');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const keeps = Boolean(current?.hasToken && current.kind === kind);
+  const run = async (task: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    try {
+      await task();
+      toast(done);
+      onChanged();
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = () =>
+    run(async () => {
+      await api.put('/api/account/push', {
+        kind,
+        url: url.trim(),
+        ...(token.trim() ? { token: token.trim() } : keeps ? {} : { token: null }),
+      });
+      setToken('');
+    }, t('Push ist eingerichtet'));
+  return (
+    <Section
+      id="push"
+      title={t('Push')}
+      description={t('So erfährst du von Neuigkeiten, auch wenn MoeCloud nicht offen ist: direkt im Browser oder über ntfy und Gotify.')}
+    >
+      <BrowserPush onChanged={onChanged} />
+      <Typography variant="subtitle2" component="h3" sx={{ mt: 3 }}>
+        {t('Über ntfy oder Gotify')}
+      </Typography>
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant, mb: 2, mt: 0.5, maxWidth: 560 }}>
+        {t('MoeCloud schickt deine Benachrichtigungen an ntfy oder Gotify. Von dort landen sie auf dem Handy oder Rechner.')}
+      </Typography>
+      <Box
+        component="form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+        sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 560 }}
+      >
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={kind}
+          onChange={(_, value: 'ntfy' | 'gotify' | null) => value && setKind(value)}
+          aria-label={t('Push-Dienst')}
+        >
+          <ToggleButton value="ntfy">ntfy</ToggleButton>
+          <ToggleButton value="gotify">Gotify</ToggleButton>
+        </ToggleButtonGroup>
+        <TextField
+          label={kind === 'ntfy' ? t('Adresse mit Thema') : t('Adresse des Gotify-Servers')}
+          placeholder={kind === 'ntfy' ? 'https://ntfy.sh/mia-moecloud' : 'https://gotify.example.com'}
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          required
+          disabled={busy}
+          helperText={kind === 'ntfy' ? t('Nimm ein Thema, das niemand errät. Wer es kennt, kann mitlesen.') : undefined}
+          slotProps={{ htmlInput: { inputMode: 'url', autoCapitalize: 'none', spellCheck: false } }}
+        />
+        <TextField
+          type="password"
+          label={kind === 'ntfy' ? t('Zugangstoken (freiwillig)') : t('App-Token')}
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          required={kind === 'gotify' && !keeps}
+          disabled={busy}
+          autoComplete="off"
+          helperText={keeps ? t('Ein Token ist gespeichert. Lass das Feld leer, um ihn zu behalten.') : undefined}
+        />
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button type="submit" variant="contained" disabled={busy || !url.trim()}>
+            {t('Speichern')}
+          </Button>
+          {current && (
+            <Button
+              variant="tonal"
+              disabled={busy}
+              onClick={() => void run(() => api.post('/api/account/push/test'), t('Die Testnachricht ist unterwegs'))}
+            >
+              {t('Testnachricht schicken')}
+            </Button>
+          )}
+          {current && (
+            <Button
+              color="error"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await api.delete('/api/account/push');
+                  setUrl('');
+                  setToken('');
+                }, t('Push ist ausgeschaltet'))
+              }
+            >
+              {t('Ausschalten')}
+            </Button>
+          )}
+        </Box>
+      </Box>
     </Section>
   );
 }
@@ -573,8 +1039,9 @@ export function AccountPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [dialog, setDialog] = useState<'password' | 'totp' | 'disable' | 'recovery' | 'app' | null>(null);
+  const [dialog, setDialog] = useState<'password' | 'totp' | 'disable' | 'recovery' | 'app' | 'delete' | null>(null);
   const prefs = usePrefs();
+  const control = useThemeControl();
   const supportsPasskeys = typeof window !== 'undefined' && browserSupportsWebAuthn() && window.isSecureContext;
 
   const load = () =>
@@ -647,6 +1114,13 @@ export function AccountPage() {
           </Box>
         ) : (
           <>
+            {account.expiresAt ? (
+              <Alert severity={account.expiresAt - Date.now() < 7 * 86_400_000 ? 'warning' : 'info'}>
+                {t('Dein Konto ist bis {date} freigeschaltet. Danach kannst du dich nicht mehr anmelden.', {
+                  date: formatDateTime(account.expiresAt),
+                })}
+              </Alert>
+            ) : null}
             {locked && (
               <Box
                 role="status"
@@ -809,7 +1283,11 @@ export function AccountPage() {
               </Box>
             </Section>
 
-            <Section title={t('Darstellung')} description={t('Gilt für diesen Browser.')} action={<ThemeToggleButton placement="bottom" />}>
+            <Section title={t('Darstellung')} action={<ThemeToggleButton placement="bottom" />}>
+              {!locked && <ThemeChoice />}
+              <Typography variant="subtitle2" sx={{ mt: 1 }}>
+                {t('Nur in diesem Browser')}
+              </Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2.5 }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <Typography variant="subtitle2">{t('Design')}</Typography>
@@ -836,8 +1314,8 @@ export function AccountPage() {
                     exclusive
                     size="small"
                     fullWidth
-                    value={prefs.corners}
-                    onChange={(_event, value) => value !== null && setPrefs({ corners: value })}
+                    value={prefs.shape ?? control.spec.corners}
+                    onChange={(_event, value) => value !== null && setPrefs({ shape: value })}
                     aria-label={t('Ecken')}
                   >
                     <ToggleButton value={1}>{t('Rund')}</ToggleButton>
@@ -863,6 +1341,8 @@ export function AccountPage() {
             </Section>
 
             <MailSection account={account} onChanged={(next) => setAccount({ ...account, prefs: next })} />
+
+            {account.pushEnabled && !locked && <PushSection account={account} onChanged={() => void load()} />}
 
             <Section title={t('Sicherheit')} description={t('Je mehr du einrichtest, desto schwerer kommen Fremde an deine Dateien.')}>
               <Row
@@ -1128,10 +1608,25 @@ export function AccountPage() {
             >
               <SecurityLog />
             </Section>
+
+            {account.selfDelete && !locked && (
+              <Section title={t('Konto löschen')} description={t('Lade vorher mit „Daten exportieren“ herunter, was du behalten willst.')}>
+                <Box>
+                  <Button variant="outlined" color="error" startIcon={<DeleteForeverRounded />} onClick={() => setDialog('delete')}>
+                    {t('Konto löschen')}
+                  </Button>
+                </Box>
+              </Section>
+            )}
           </>
         )}
       </Box>
-      <PasswordDialog open={dialog === 'password'} hasPassword={Boolean(security?.hasPassword)} onClose={() => setDialog(null)} />
+      <PasswordDialog
+        open={dialog === 'password'}
+        hasPassword={Boolean(security?.hasPassword)}
+        min={account?.passwordMin ?? 10}
+        onClose={() => setDialog(null)}
+      />
       <TotpDialog open={dialog === 'totp'} onClose={() => setDialog(null)} onDone={() => void load()} />
       <CodeDialog
         open={dialog === 'disable'}
@@ -1158,6 +1653,14 @@ export function AccountPage() {
         }}
       />
       <AppPasswordDialog open={dialog === 'app'} onClose={() => setDialog(null)} onCreated={() => void load()} />
+      {account && (
+        <DeleteAccountDialog
+          open={dialog === 'delete'}
+          username={account.user.username}
+          hasPassword={Boolean(security?.hasPassword)}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </AppShell>
   );
 }

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { all, one, run } from '../lib/db.ts';
 import { badRequest, notFound, unauthorized } from '../lib/errors.ts';
 import * as settings from './settings.ts';
-import { getUser, type UserRow } from './users.ts';
+import { assertActive, getUser, type UserRow } from './users.ts';
 
 const webauthn = () => import('@simplewebauthn/server');
 
@@ -161,7 +161,8 @@ export async function authenticate(request: FastifyRequest, key: string, respons
   if (!verification.verified) throw unauthorized('Der Passkey konnte nicht geprüft werden');
   run('UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?', verification.authenticationInfo.newCounter, Date.now(), passkey.id);
   const user = getUser(passkey.user_id);
-  if (!user || user.disabled) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+  if (!user) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+  assertActive(user);
   return user;
 }
 

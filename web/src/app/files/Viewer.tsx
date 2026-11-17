@@ -184,7 +184,7 @@ export function Viewer({
     void go(dx < 0 ? 1 : -1);
   };
 
-  const editable = Boolean(item && base === '/api' && (item.role === 'owner' || item.role === 'edit'));
+  const editable = Boolean(item && base === '/api' && canEdit(item));
   const ambient = item?.thumb && !item.infected ? thumbUrl(item, base) : null;
 
   return (

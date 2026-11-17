@@ -3,7 +3,7 @@ import { all, one, run } from '../lib/db.ts';
 import { randomId, sha256 } from '../lib/crypto.ts';
 import { isSecure, truncateIp } from '../lib/http.ts';
 import { rememberDevice } from './devices.ts';
-import { getUser, type UserRow } from './users.ts';
+import { getUser, inactive, type UserRow } from './users.ts';
 
 export const SESSION_COOKIE = 'moe_session';
 const LIFETIME = 30 * 24 * 60 * 60 * 1000;
@@ -79,7 +79,7 @@ export function readSession(request: FastifyRequest): Auth | null {
     return null;
   }
   const user = getUser(session.user_id);
-  if (!user || user.disabled) return null;
+  if (!user || inactive(user)) return null;
   if (now - session.last_seen_at > TOUCH_EVERY) {
     session.last_seen_at = now;
     session.expires_at = now + LIFETIME;

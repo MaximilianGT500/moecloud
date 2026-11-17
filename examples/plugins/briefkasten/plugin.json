@@ -1,0 +1,46 @@
+{
+  "id": "briefkasten",
+  "name": { "de": "Briefkasten", "en": "Drop box" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Nimmt Dateien über eine eigene Adresse entgegen, etwa von Skripten oder Scannern, und legt sie in einen Ordner.",
+    "en": "Accepts files at an address of its own, for example from scripts or scanners, and puts them into a folder."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "permissions": ["files", "users", "notify"],
+  "settings": [
+    {
+      "key": "token",
+      "label": { "de": "Geheimer Teil der Adresse", "en": "Secret part of the address" },
+      "hint": {
+        "de": "Mindestens 16 Zeichen. Dateien schickst du an /ext/briefkasten/<geheimer Teil>/<Dateiname>",
+        "en": "At least 16 characters. Send files to /ext/briefkasten/<secret part>/<file name>"
+      },
+      "type": "secret",
+      "required": true
+    },
+    {
+      "key": "konto",
+      "label": { "de": "Konto, das die Dateien bekommt", "en": "Account that receives the files" },
+      "hint": { "de": "Der Benutzername", "en": "The username" },
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "ordner",
+      "label": { "de": "Ordner", "en": "Folder" },
+      "type": "text",
+      "default": "Briefkasten",
+      "required": true
+    },
+    {
+      "key": "melden",
+      "label": { "de": "Bei jeder Datei benachrichtigen", "en": "Notify for every file" },
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

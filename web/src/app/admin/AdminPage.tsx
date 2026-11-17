@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography';
 import BackupRounded from '@mui/icons-material/BackupRounded';
 import DashboardRounded from '@mui/icons-material/DashboardRounded';
 import DnsRounded from '@mui/icons-material/DnsRounded';
+import ExtensionRounded from '@mui/icons-material/ExtensionRounded';
 import GppGoodRounded from '@mui/icons-material/GppGoodRounded';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
@@ -29,6 +30,7 @@ import { LinksSection } from './Links';
 import { MailSection } from './Mail';
 import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
+import { PluginsSection } from './Plugins';
 import { ScanSection } from './Scan';
 import { SettingsSection } from './Settings';
 import { SsoSection } from './Sso';
@@ -47,6 +49,7 @@ type SectionKey =
   | 'mail'
   | 'sso'
   | 'webhooks'
+  | 'plugins'
   | 'backups'
   | 'settings'
   | 'system';
@@ -65,6 +68,7 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
     { key: 'mail', label: t('E-Mail'), icon: <MailRounded />, group: 2 },
     { key: 'sso', label: t('Single Sign-on'), icon: <LoginRounded />, group: 2 },
     { key: 'webhooks', label: t('Webhooks'), icon: <WebhookRounded />, group: 2 },
+    { key: 'plugins', label: t('Plugins'), icon: <ExtensionRounded />, group: 2 },
     { key: 'backups', label: t('Sicherungen'), icon: <BackupRounded />, group: 2 },
     { key: 'settings', label: t('Einstellungen'), icon: <SettingsRounded />, group: 3 },
     { key: 'system', label: t('System'), icon: <DnsRounded />, group: 3 },
@@ -214,6 +218,7 @@ export function AdminPage() {
           {section === 'mail' && <MailSection />}
           {section === 'sso' && <SsoSection />}
           {section === 'webhooks' && <WebhooksSection />}
+          {section === 'plugins' && <PluginsSection />}
           {section === 'backups' && <BackupsSection />}
           {section === 'settings' && <SettingsSection onChanged={(settings) => setRegistration(String(settings['auth.registration']))} />}
           {section === 'system' && <SystemSection />}

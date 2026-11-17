@@ -4,6 +4,7 @@ import { cleanName, splitName } from '../lib/names.ts';
 import { record } from './activity.ts';
 import { blobPath, getBlob, typeOf } from './blobs.ts';
 import { createDerived, writableFolder } from './derived.ts';
+import { editable, loadImage } from './editor.ts';
 import { ingestBuffer } from './ingest.ts';
 import { assertSpace, changed, requireAccess, requireMutable, type NodeRow } from './nodes.ts';
 import { assertNotInfected } from './scan.ts';
@@ -13,6 +14,9 @@ import { writeContent } from './versions.ts';
 export const MAX_PDF_BYTES = 200 * 1024 * 1024;
 export const MAX_PAGES = 2000;
 const MAX_MERGE = 50;
+const MAX_IMAGES = 200;
+const IMAGE_EDGE = 2480;
+const A4 = { short: 595.28, long: 841.89 };
 
 const pdfName = (raw: string) => {
   const name = cleanName(raw);
@@ -110,4 +114,50 @@ export async function merge(user: UserRow, ids: string[], name: string) {
     for (const page of await output.copyPages(source, source.getPageIndices())) output.addPage(page);
   }
   return createDerived(user, writableFolder(user, nodes[0].parent_id), pdfName(name), Buffer.from(await output.save()));
+}
+
+export async function fromImages(user: UserRow, ids: string[], name: string, layout: 'a4' | 'fit') {
+  if (ids.length < 1) throw badRequest('Wähle mindestens ein Bild aus');
+  if (ids.length > MAX_IMAGES) throw badRequest('Höchstens {count} Bilder auf einmal', { count: MAX_IMAGES });
+  const nodes = ids.map((id) => {
+    const { node } = requireAccess(user, id);
+    const type = node.type === 'file' && node.sha256 ? typeOf(node, getBlob(node.sha256)) : null;
+    if (!type || !editable(type)) throw badRequest('„{name}“ ist kein Bild, das in eine PDF passt', { name: node.name });
+    assertNotInfected(node.sha256!);
+    return { node, type };
+  });
+  const { PDFDocument } = await library();
+  const output = await PDFDocument.create();
+  let bytes = 0;
+  for (const { node, type } of nodes) {
+    const source = await loadImage(node, type);
+    try {
+      const jpeg = await source.image
+        .resize({ width: IMAGE_EDGE, height: IMAGE_EDGE, fit: 'inside', withoutEnlargement: true })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: 85, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true });
+      bytes += jpeg.data.length;
+      if (bytes > MAX_PDF_BYTES) throw badRequest('Die Bilder sind zusammen zu groß für eine PDF');
+      const { width, height } = jpeg.info;
+      const wide = width > height;
+      const page: [number, number] =
+        layout === 'a4'
+          ? wide
+            ? [A4.long, A4.short]
+            : [A4.short, A4.long]
+          : [(width / Math.max(width, height)) * A4.long, (height / Math.max(width, height)) * A4.long];
+      const scale = Math.min(page[0] / width, page[1] / height);
+      const sheet = output.addPage(page);
+      sheet.drawImage(await output.embedJpg(jpeg.data), {
+        x: (page[0] - width * scale) / 2,
+        y: (page[1] - height * scale) / 2,
+        width: width * scale,
+        height: height * scale,
+      });
+    } finally {
+      await source.cleanup();
+    }
+  }
+  return createDerived(user, writableFolder(user, nodes[0].node.parent_id), pdfName(name), Buffer.from(await output.save()));
 }

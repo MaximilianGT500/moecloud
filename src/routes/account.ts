@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { run, one } from '../lib/db.ts';
 import { hashPassword, verifyPassword } from '../lib/crypto.ts';
-import { badRequest, conflict, unauthorized } from '../lib/errors.ts';
+import { badRequest, conflict, forbidden, unauthorized } from '../lib/errors.ts';
+import { t } from '../lib/i18n.ts';
 import { contentDisposition } from '../lib/http.ts';
 import { me, setLanguageCookie } from '../lib/request.ts';
 import { displayName, email, parse, password } from '../lib/validate.ts';
@@ -23,11 +24,20 @@ import { oidcEnabled, unlink } from '../services/oidc.ts';
 import { clearNotifications, listNotifications, markRead, unreadCount } from '../services/notify.ts';
 import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword } from '../services/apppasswords.ts';
 import { deletePasskey, listPasskeys, presentPasskey, register, registrationOptions, renamePasskey } from '../services/passkeys.ts';
+import { deleteOwnAccount, selfDeleteAllowed } from '../services/accounts.ts';
 import { forgetOtherDevices } from '../services/devices.ts';
 import { exportName, exportStream } from '../services/export.ts';
-import { describeSession, destroySession, destroyUserSessions, listSessions } from '../services/sessions.ts';
+import { clearSessionCookie, describeSession, destroySession, destroyUserSessions, listSessions } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
-import { getUser, keyOf, prefsOf, publicUser, storageOf, updatePrefs } from '../services/users.ts';
+import { validZone } from '../services/notify.ts';
+import { checkPassword, passwordMin } from '../services/passwords.ts';
+import { pushUrl, sendPush } from '../services/push.ts';
+import { listSubscriptions, removeSubscription, saveSubscription, sendWebPush, vapidKeys } from '../services/webpush.ts';
+import { getUser, keyOf, prefsOf, publicUser, storageOf, updatePrefs, type PushTarget, type UserPrefs } from '../services/users.ts';
+import { activePlugins } from '../services/plugins.ts';
+
+const shownPrefs = ({ push, ...prefs }: UserPrefs) => prefs;
+const shownPush = (target: PushTarget | null) => (target ? { kind: target.kind, url: target.url, hasToken: Boolean(target.token) } : null);
 
 function session(request: FastifyRequest) {
   const current = request.auth?.session;
@@ -55,7 +65,14 @@ export async function accountRoutes(app: FastifyInstance) {
       storage: storageOf(user),
       passkeysEnabled: settings.get('auth.passkeys'),
       mail: mailReady(),
-      prefs: prefsOf(user),
+      prefs: shownPrefs(prefsOf(user)),
+      push: settings.get('push.enabled') ? shownPush(prefsOf(user).push) : null,
+      pushEnabled: settings.get('push.enabled'),
+      passwordMin: passwordMin(),
+      webPush: settings.get('push.enabled') ? listSubscriptions(user, request.lang).length : 0,
+      expiresAt: user.expires_at ?? null,
+      selfDelete: selfDeleteAllowed(user),
+      plugins: activePlugins().length > 0,
       security: {
         required: secondFactorRequired(user),
         setupRequired: secondFactorPending(user, request.auth?.session?.method),
@@ -99,6 +116,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const input = parse(z.object({ current: z.string().max(512).optional().default(''), next: password }), request.body);
     if (user.password_hash && !(await verifyPassword(user.password_hash, input.current)))
       throw badRequest('Das aktuelle Passwort stimmt nicht');
+    await checkPassword(input.next);
     run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(input.next), user.id);
     destroyUserSessions(user.id, request.auth?.session?.id);
     forgetOtherDevices(request, reply, user);
@@ -116,11 +134,97 @@ export async function accountRoutes(app: FastifyInstance) {
           mailWatch: z.boolean(),
           mailAdmin: z.boolean(),
           mailLogins: z.boolean(),
+          mailReminders: z.boolean(),
+          mailPlugins: z.boolean(),
+          digest: z.enum(['off', 'daily', 'weekly']),
+          quiet: z
+            .object({ from: z.number().int().min(0).max(1439), to: z.number().int().min(0).max(1439) })
+            .refine((value) => value.from !== value.to, 'Beginn und Ende der Ruhezeit dürfen nicht gleich sein')
+            .nullable(),
+          zone: z.string().max(64).refine(validZone, 'Diese Zeitzone kennt MoeCloud nicht'),
         })
         .partial(),
       request.body
     );
-    return { prefs: updatePrefs(me(request).id, input) };
+    const next = updatePrefs(me(request).id, input);
+    return { prefs: next ? shownPrefs(next) : null };
+  });
+
+  app.put('/api/account/push', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    if (!settings.get('push.enabled')) throw forbidden('Push ist auf diesem Server ausgeschaltet');
+    const input = parse(
+      z.object({
+        kind: z.enum(['ntfy', 'gotify']),
+        url: z.string().min(1, 'Gib eine Adresse ein').max(500, 'Die Adresse ist zu lang'),
+        token: z.string().max(500, 'Der Token ist zu lang').nullable().optional(),
+      }),
+      request.body
+    );
+    const current = prefsOf(user).push;
+    const url = pushUrl(input.kind, input.url).href;
+    const token = input.token === undefined ? (current?.kind === input.kind ? current.token : null) : input.token?.trim() || null;
+    if (input.kind === 'gotify' && !token) throw badRequest('Gotify braucht einen App-Token');
+    const next = updatePrefs(user.id, { push: { kind: input.kind, url, token } });
+    return { push: shownPush(next?.push ?? null) };
+  });
+
+  app.get<{ Querystring: { endpoint?: string } }>('/api/account/webpush', async (request) => {
+    const user = me(request);
+    const enabled = settings.get('push.enabled');
+    return {
+      enabled,
+      publicKey: enabled ? vapidKeys().publicKey : null,
+      items: listSubscriptions(user, request.lang, request.query.endpoint),
+    };
+  });
+
+  app.post('/api/account/webpush', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    const input = parse(
+      z.object({
+        endpoint: z.string().min(1).max(2000),
+        keys: z.object({ p256dh: z.string().min(20).max(300), auth: z.string().min(8).max(100) }),
+      }),
+      request.body
+    );
+    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : null;
+    const id = saveSubscription(user, input, { agent: request.headers['user-agent'], origin });
+    return { id, items: listSubscriptions(user, request.lang, input.endpoint) };
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/account/webpush/:id', async (request) => {
+    removeSubscription(me(request), request.params.id);
+    return { ok: true };
+  });
+
+  app.post('/api/account/webpush/test', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    if (!settings.get('push.enabled')) throw forbidden('Push ist auf diesem Server ausgeschaltet');
+    const sent = await sendWebPush(user.id, {
+      title: t(request.lang, 'Test von MoeCloud'),
+      text: t(request.lang, 'Wenn du das liest, kommen Benachrichtigungen bei dir an.'),
+      url: '/account#push',
+    });
+    if (!sent) throw badRequest('Die Testnachricht kam bei keinem Browser an');
+    return { sent };
+  });
+
+  app.delete('/api/account/push', async (request) => {
+    updatePrefs(me(request).id, { push: null });
+    return { push: null };
+  });
+
+  app.post('/api/account/push/test', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    if (!settings.get('push.enabled')) throw forbidden('Push ist auf diesem Server ausgeschaltet');
+    const target = prefsOf(user).push;
+    if (!target) throw badRequest('Richte zuerst einen Push-Dienst ein');
+    await sendPush(target, {
+      title: t(request.lang, 'Test von MoeCloud'),
+      text: t(request.lang, 'Wenn du das liest, kommen Benachrichtigungen bei dir an.'),
+    });
+    return { ok: true };
   });
 
   app.get<{ Querystring: { before?: string } }>('/api/account/security', async (request) => {
@@ -239,6 +343,14 @@ export async function accountRoutes(app: FastifyInstance) {
     const { language } = parse(z.object({ language: z.enum(['de', 'en']) }), request.body);
     setLanguageCookie(request, reply, language);
     if (request.auth) run('UPDATE users SET language = ? WHERE id = ?', language, request.auth.user.id);
+    return { ok: true };
+  });
+
+  app.post('/api/account/delete', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (request, reply) => {
+    const user = me(request);
+    const input = parse(z.object({ password: z.string().max(1024).optional(), confirm: z.string().max(200) }), request.body);
+    await deleteOwnAccount(request, user, input);
+    clearSessionCookie(request, reply);
     return { ok: true };
   });
 

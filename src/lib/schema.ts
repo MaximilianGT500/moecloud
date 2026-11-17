@@ -477,6 +477,85 @@ const MIGRATIONS = [
     stored INTEGER NOT NULL
   );
   `,
+  `
+  ALTER TABLE users ADD COLUMN expires_at INTEGER;
+
+  CREATE TABLE locks (
+    node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER
+  );
+  CREATE INDEX locks_user ON locks(user_id);
+
+  ALTER TABLE links ADD COLUMN notify_downloads INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE links ADD COLUMN notified_at INTEGER;
+
+  ALTER TABLE nodes ADD COLUMN description TEXT;
+
+  CREATE TABLE reminders (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    due_at INTEGER NOT NULL,
+    note TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX reminders_user_node ON reminders(user_id, node_id);
+  CREATE INDEX reminders_due ON reminders(due_at);
+
+  ALTER TABLE links ADD COLUMN slug TEXT;
+  ALTER TABLE links ADD COLUMN warned_at INTEGER;
+  CREATE UNIQUE INDEX links_slug ON links(slug);
+
+  CREATE TABLE link_events (
+    id TEXT PRIMARY KEY,
+    link_id TEXT NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    name TEXT,
+    agent TEXT,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX link_events_link ON link_events(link_id, at);
+
+  CREATE TABLE reports (
+    id TEXT PRIMARY KEY,
+    link_id TEXT REFERENCES links(id) ON DELETE SET NULL,
+    owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    label TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    text TEXT,
+    contact TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER
+  );
+  CREATE INDEX reports_open ON reports(resolved_at, created_at);
+
+  ALTER TABLE notifications ADD COLUMN mail_state INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE notifications ADD COLUMN push_state INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TABLE push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    agent TEXT,
+    origin TEXT,
+    created_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+  CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+  `,
+  `
+  CREATE TABLE plugin_store (
+    plugin TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (plugin, key)
+  );
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

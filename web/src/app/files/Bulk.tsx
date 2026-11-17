@@ -20,7 +20,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import { api } from '../../lib/api';
-import { splitExtension } from '../../lib/format';
+import { formatDateTime, splitExtension } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, radius } from '../../theme/tokens';
 import { toast } from '../common/toast';
@@ -385,6 +385,159 @@ export function PackDialog({ items, onClose, onDone }: { items: Item[]; onClose:
           </Button>
         </DialogActions>
       </form>
+    </Dialog>
+  );
+}
+
+function reminderChoices() {
+  const now = new Date();
+  const at = (days: number, hour: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour).getTime();
+  const untilMonday = (8 - now.getDay()) % 7 || 7;
+  const list = [{ key: 'hour', label: t('In einer Stunde'), time: now.getTime() + 3_600_000 }];
+  if (now.getHours() < 17) list.push({ key: 'evening', label: t('Heute um 18 Uhr'), time: at(0, 18) });
+  list.push({ key: 'tomorrow', label: t('Morgen um 8 Uhr'), time: at(1, 8) });
+  list.push({ key: 'monday', label: t('Nächsten Montag um 8 Uhr'), time: at(untilMonday, 8) });
+  return list;
+}
+
+const localValue = (time: number) => {
+  const date = new Date(time);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
+};
+
+export function ReminderDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
+  const [choices] = useState(reminderChoices);
+  const [choice, setChoice] = useState(item.reminder ? 'custom' : 'tomorrow');
+  const [custom, setCustom] = useState(() => localValue(item.reminder?.dueAt ?? choices[choices.length - 2].time));
+  const [note, setNote] = useState(item.reminder?.note ?? '');
+  const [busy, setBusy] = useState(false);
+  const time = choice === 'custom' ? new Date(custom).getTime() : (choices.find((entry) => entry.key === choice)?.time ?? NaN);
+  const valid = Number.isFinite(time) && time > Date.now();
+  const save = async () => {
+    setBusy(true);
+    const result = await attempt(() => api.put(`/api/nodes/${item.id}/reminder`, { dueAt: time, note: note.trim() || null }));
+    setBusy(false);
+    if (!result) return;
+    toast(t('Erinnerung für {when} gemerkt', { when: formatDateTime(time) }));
+    onDone();
+    onClose();
+  };
+  const remove = async () => {
+    setBusy(true);
+    const result = await attempt(() => api.delete(`/api/nodes/${item.id}/reminder`));
+    setBusy(false);
+    if (result === undefined) return;
+    toast(t('Erinnerung gelöscht'));
+    onDone();
+    onClose();
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (valid) void save();
+        }}
+      >
+        <DialogTitle>{t('An „{name}“ erinnern', { name: item.name })}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+            {t('Zur gewählten Zeit bekommst du eine Benachrichtigung. Die Erinnerung siehst nur du.')}
+          </Typography>
+          <TextField select label={t('Wann')} value={choice} onChange={(event) => setChoice(event.target.value)} disabled={busy}>
+            {choices.map((entry) => (
+              <MenuItem key={entry.key} value={entry.key}>
+                {entry.label}
+              </MenuItem>
+            ))}
+            <MenuItem value="custom">{t('Eigener Zeitpunkt')}</MenuItem>
+          </TextField>
+          {choice === 'custom' && (
+            <TextField
+              label={t('Datum und Uhrzeit')}
+              type="datetime-local"
+              value={custom}
+              onChange={(event) => setCustom(event.target.value)}
+              disabled={busy}
+              error={!valid}
+              helperText={valid ? undefined : t('Der Zeitpunkt muss in der Zukunft liegen')}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: localValue(Date.now()) } }}
+            />
+          )}
+          <TextField
+            label={t('Notiz (freiwillig)')}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            disabled={busy}
+            multiline
+            maxRows={4}
+            slotProps={{ htmlInput: { maxLength: 500 } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          {item.reminder && (
+            <Button color="error" onClick={() => void remove()} disabled={busy} sx={{ mr: 'auto' }}>
+              {t('Erinnerung löschen')}
+            </Button>
+          )}
+          <Button onClick={onClose} disabled={busy}>
+            {t('Abbrechen')}
+          </Button>
+          <Button type="submit" variant="contained" disabled={busy || !valid}>
+            {t('Erinnern')}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+}
+
+const LOCK_CHOICES = [60, 480, 1440, 10080, 0];
+
+export function LockDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
+  const [minutes, setMinutes] = useState(480);
+  const [busy, setBusy] = useState(false);
+  const label = (value: number) => {
+    if (value === 0) return t('Bis ich sie entsperre');
+    if (value < 1440) return tn(value / 60, 'Für eine Stunde', 'Für {count} Stunden');
+    if (value === 10080) return t('Für eine Woche');
+    return tn(value / 1440, 'Für einen Tag', 'Für {count} Tage');
+  };
+  const save = async () => {
+    setBusy(true);
+    const result = await attempt(() => api.post(`/api/nodes/${item.id}/lock`, { minutes: minutes || null }));
+    setBusy(false);
+    if (!result) return;
+    toast(t('„{name}“ ist jetzt gesperrt', { name: item.name }));
+    onDone();
+    onClose();
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <DialogTitle>{t('„{name}“ sperren', { name: item.name })}</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+          {t(
+            'Solange die Sperre gilt, können andere die Datei ansehen und herunterladen, aber nicht ändern, umbenennen, verschieben oder löschen.'
+          )}
+        </Typography>
+        <TextField select label={t('Dauer')} value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} disabled={busy}>
+          {LOCK_CHOICES.map((value) => (
+            <MenuItem key={value} value={value}>
+              {label(value)}
+            </MenuItem>
+          ))}
+        </TextField>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>
+          {t('Abbrechen')}
+        </Button>
+        <Button variant="contained" onClick={() => void save()} disabled={busy}>
+          {busy ? <CircularProgress size={20} aria-label={t('Speichert')} /> : t('Sperren')}
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

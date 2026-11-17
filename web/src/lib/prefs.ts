@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 export interface Prefs {
   contrast: 0 | 0.5 | 1;
   trueBlack: boolean;
-  corners: 1 | 0.5 | 0.1;
+  shape: 1 | 0.5 | 0.1 | null;
   view: 'list' | 'grid';
   details: boolean;
   sort: 'name' | 'modified' | 'size';
@@ -11,12 +11,15 @@ export interface Prefs {
 }
 
 const KEY = 'moecloud-prefs';
-const DEFAULTS: Prefs = { contrast: 0, trueBlack: false, corners: 1, view: 'list', details: true, sort: 'name', order: 'asc' };
+const DEFAULTS: Prefs = { contrast: 0, trueBlack: false, shape: null, view: 'list', details: true, sort: 'name', order: 'asc' };
 const listeners = new Set<() => void>();
 
 function read(): Prefs {
   try {
-    return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<Prefs>) };
+    const stored = JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<Prefs> & { corners?: number };
+    const { corners, ...rest } = stored;
+    const shape = rest.shape === undefined && (corners === 0.5 || corners === 0.1) ? corners : (rest.shape ?? null);
+    return { ...DEFAULTS, ...rest, shape };
   } catch {
     return DEFAULTS;
   }

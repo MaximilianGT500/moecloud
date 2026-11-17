@@ -12,6 +12,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Switch from '@mui/material/Switch';
@@ -32,6 +33,7 @@ import LinkRounded from '@mui/icons-material/LinkRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import PersonAddRounded from '@mui/icons-material/PersonAddRounded';
 import PersonRemoveRounded from '@mui/icons-material/PersonRemoveRounded';
+import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import QrCode2Rounded from '@mui/icons-material/QrCode2Rounded';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import TimerOutlined from '@mui/icons-material/TimerOutlined';
@@ -41,7 +43,7 @@ import UploadRounded from '@mui/icons-material/UploadRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
 import { api, errorText } from '../../lib/api';
 import { boot } from '../../lib/boot';
-import { dayValue, endOfDay, formatDay, formatNumber } from '../../lib/format';
+import { dayValue, endOfDay, formatDateTime, formatDay, formatNumber } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, radius } from '../../theme/tokens';
 import { CopyField, QrCode, UserAvatar, copyText } from '../common/bits';
@@ -54,6 +56,7 @@ interface ShareSettings {
   links: boolean;
   users: boolean;
   requirePassword: boolean;
+  slugs?: boolean;
   maxDays: number;
 }
 
@@ -101,6 +104,7 @@ function LinkForm({
   const rules = settings();
   const folder = item.type === 'folder';
   const [label, setLabel] = useState(link?.label ?? '');
+  const [slug, setSlug] = useState(link?.slug ?? '');
   const [password, setPassword] = useState('');
   const [removePassword, setRemovePassword] = useState(false);
   const [expires, setExpires] = useState(dayValue(link?.expiresAt ?? (rules.maxDays ? Date.now() + rules.maxDays * 86_400_000 : null)));
@@ -108,6 +112,7 @@ function LinkForm({
   const [allowUpload, setAllowUpload] = useState(link?.allowUpload ?? false);
   const [uploadOnly, setUploadOnly] = useState(link?.uploadOnly ?? false);
   const [notify, setNotify] = useState(link?.notify ?? true);
+  const [notifyDownloads, setNotifyDownloads] = useState(link?.notifyDownloads ?? false);
   const [maxDownloads, setMaxDownloads] = useState<number | null>(link?.maxDownloads ?? null);
   const [busy, setBusy] = useState(false);
   const today = dayValue(Date.now() + 86_400_000);
@@ -119,6 +124,7 @@ function LinkForm({
     try {
       const body = {
         label: label.trim() || null,
+        ...(rules.slugs || link?.slug ? { slug: slug.trim() || null } : {}),
         password: password || null,
         removePassword: Boolean(link?.hasPassword && removePassword && !password),
         expiresAt: endOfDay(expires),
@@ -126,6 +132,7 @@ function LinkForm({
         allowUpload: allowUpload || uploadOnly,
         uploadOnly,
         notify: (allowUpload || uploadOnly) && notify,
+        notifyDownloads: allowDownload && !uploadOnly && notifyDownloads,
         maxDownloads: allowDownload && !uploadOnly ? maxDownloads : null,
       };
       const result = link
@@ -155,6 +162,18 @@ function LinkForm({
         slotProps={{ htmlInput: { maxLength: 80 } }}
         helperText={t('Hilft dir, Links auseinanderzuhalten. Besucher sehen sie als Titel.')}
       />
+      {(rules.slugs || link?.slug) && (
+        <TextField
+          label={t('Eigene Adresse (freiwillig)')}
+          value={slug}
+          onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+          slotProps={{
+            htmlInput: { maxLength: 64, autoCapitalize: 'none', spellCheck: false },
+            input: { startAdornment: <InputAdornment position="start">/s/</InputAdornment> },
+          }}
+          helperText={t('Etwa urlaub-2026. Wer die Adresse errät, kommt an den Inhalt, nimm bei Vertraulichem ein Passwort dazu.')}
+        />
+      )}
       <TextField
         label={link?.hasPassword && !removePassword ? t('Neues Passwort') : t('Passwort')}
         type="password"
@@ -217,6 +236,12 @@ function LinkForm({
               </MenuItem>
             ))}
           </TextField>
+        )}
+        {allowDownload && !uploadOnly && (
+          <FormControlLabel
+            control={<Switch checked={notifyDownloads} onChange={(event) => setNotifyDownloads(event.target.checked)} />}
+            label={t('Benachrichtigen, wenn jemand herunterlädt')}
+          />
         )}
         {folder && (
           <FormControlLabel
@@ -301,6 +326,61 @@ function SendForm({ link, onSent }: { link: SharedLink; onSent: () => void }) {
   );
 }
 
+interface LinkEvent {
+  kind: 'view' | 'download' | 'upload' | 'denied';
+  name: string | null;
+  device: string | null;
+  at: number;
+}
+
+function LinkHistory({ link }: { link: SharedLink }) {
+  const [events, setEvents] = useState<LinkEvent[] | null>(null);
+  useEffect(() => {
+    const abort = new AbortController();
+    api
+      .get<{ items: LinkEvent[] }>(`/api/links/${link.id}/events`, abort.signal)
+      .then((result) => setEvents(result.items))
+      .catch(() => setEvents([]));
+    return () => abort.abort();
+  }, [link.id]);
+  const describe = (event: LinkEvent) => {
+    if (event.kind === 'view') return t('Link geöffnet');
+    if (event.kind === 'denied') return t('Falsches Passwort eingegeben');
+    if (event.kind === 'upload') return t('„{name}“ hochgeladen', { name: event.name ?? '' });
+    return event.name ? t('„{name}“ heruntergeladen', { name: event.name }) : t('Als ZIP heruntergeladen');
+  };
+  if (!events) return <CircularProgress size={20} aria-label={t('Lädt')} sx={{ display: 'block', mx: 'auto', my: 1.5 }} />;
+  if (events.length === 0) {
+    return (
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant, py: 1 }}>
+        {t('Noch hat niemand den Link genutzt. Hier siehst du, wann er geöffnet wurde und was heruntergeladen oder hochgeladen wurde.')}
+      </Typography>
+    );
+  }
+  return (
+    <Box
+      component="ol"
+      aria-label={t('Verlauf des Links')}
+      sx={{ listStyle: 'none', m: 0, p: 0, py: 0.5, maxHeight: 220, overflowY: 'auto' }}
+    >
+      {events.map((event, index) => (
+        <Box component="li" key={`${event.at}-${index}`} sx={{ display: 'flex', gap: 1, alignItems: 'baseline', py: 0.5 }}>
+          <Typography
+            variant="body2"
+            sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', color: event.kind === 'denied' ? c.error : c.onSurface }}
+          >
+            {describe(event)}
+          </Typography>
+          <Typography variant="caption" sx={{ color: c.onSurfaceVariant, flex: 'none', textAlign: 'right' }}>
+            {event.device ? `${event.device} · ` : ''}
+            {formatDateTime(event.at)}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function LinkCard({
   item,
   link,
@@ -315,6 +395,7 @@ function LinkCard({
   const [edit, setEdit] = useState(false);
   const [qr, setQr] = useState(false);
   const [send, setSend] = useState(false);
+  const [history, setHistory] = useState(false);
   const sendable = Boolean(boot().site.mail) && !link.expired && !link.paused && !link.exhausted;
   const chips = [
     link.hasPassword && { icon: <LockRounded />, label: t('Passwort') },
@@ -379,6 +460,11 @@ function LinkCard({
             <QrCode2Rounded />
           </IconButton>
         </Tooltip>
+        <Tooltip title={t('Verlauf')}>
+          <IconButton aria-label={t('Verlauf')} aria-expanded={history} onClick={() => setHistory(!history)}>
+            <HistoryRounded />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={t('Einstellungen')}>
           <IconButton aria-label={t('Einstellungen')} aria-expanded={edit} onClick={() => setEdit(!edit)}>
             <TuneRounded />
@@ -392,6 +478,9 @@ function LinkCard({
       </Box>
       <Collapse in={send && sendable} unmountOnExit>
         <SendForm link={link} onSent={() => setSend(false)} />
+      </Collapse>
+      <Collapse in={history} unmountOnExit>
+        <LinkHistory link={link} />
       </Collapse>
       <Collapse in={qr} unmountOnExit>
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>

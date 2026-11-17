@@ -25,7 +25,9 @@ import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
 import DriveFolderUploadRounded from '@mui/icons-material/DriveFolderUploadRounded';
 import CreateNewFolderRounded from '@mui/icons-material/CreateNewFolderRounded';
 import NoteAddRounded from '@mui/icons-material/NoteAddRounded';
+import PostAddRounded from '@mui/icons-material/PostAddRounded';
 import CloudDownloadRounded from '@mui/icons-material/CloudDownloadRounded';
+import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
 import { AnimatePresence, m } from 'motion/react';
 import { formatBytes } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
@@ -200,14 +202,18 @@ export function useNewMenu({
   onUploadFolder,
   onNewFolder,
   onNewText,
+  onTemplate,
   onImport,
+  onDavImport,
   disabled,
 }: {
   onUploadFiles: () => void;
   onUploadFolder: () => void;
   onNewFolder: () => void;
   onNewText: () => void;
+  onTemplate?: () => void;
   onImport?: () => void;
+  onDavImport?: () => void;
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -230,7 +236,9 @@ export function useNewMenu({
       <Divider sx={{ my: 0.5 }} />
       {item(<CreateNewFolderRounded />, t('Neuer Ordner'), onNewFolder)}
       {item(<NoteAddRounded />, t('Neue Textdatei'), onNewText)}
+      {onTemplate && item(<PostAddRounded />, t('Neu aus Vorlage'), onTemplate)}
       {onImport && item(<CloudDownloadRounded />, t('Aus dem Internet laden'), onImport)}
+      {onDavImport && item(<CloudSyncRounded />, t('Per WebDAV importieren'), onDavImport)}
     </Menu>
   );
   return {

@@ -1,3 +1,4 @@
+import { emitHook } from '../lib/hooks.ts';
 import type { FastifyRequest } from 'fastify';
 import { all, placeholders, run } from '../lib/db.ts';
 import { truncateIp } from '../lib/http.ts';
@@ -20,6 +21,9 @@ export const AUDIT_ACTIONS = [
   'sessions_revoked',
   'sso_unlinked',
   'account_exported',
+  'account_deleted',
+  'link_reported',
+  'report_resolved',
   'registered',
   'user_created',
   'user_updated',
@@ -39,6 +43,14 @@ export const AUDIT_ACTIONS = [
   'sso_changed',
   'scan_changed',
   'webhook_changed',
+  'theme_saved',
+  'theme_deleted',
+  'plugin_enabled',
+  'plugin_disabled',
+  'plugin_settings',
+  'plugin_installed',
+  'plugin_removed',
+  'plugin_stopped',
   'link_removed',
   'virus_found',
   'virus_released',
@@ -95,6 +107,13 @@ export interface AuditInput {
 
 export function audit(action: AuditAction, input: AuditInput = {}) {
   const ip = input.ip ?? (input.request ? truncateIp(input.request.ip) : null);
+  emitHook(`audit.${action}`, () => ({
+    action,
+    actorId: input.actor ?? null,
+    subjectId: input.subject ?? input.actor ?? null,
+    details: input.details ?? null,
+    at: Date.now(),
+  }));
   run(
     'INSERT INTO audit (actor_id, subject_id, action, ip, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     input.actor ?? null,

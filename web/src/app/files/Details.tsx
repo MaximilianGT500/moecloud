@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
+import Skeleton from '@mui/material/Skeleton';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
@@ -10,6 +11,8 @@ import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import DifferenceRounded from '@mui/icons-material/DifferenceRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import EditRounded from '@mui/icons-material/EditRounded';
+import NotesRounded from '@mui/icons-material/NotesRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
@@ -22,7 +25,7 @@ import { formatBytes, formatDateTime } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { c, radius } from '../../theme/tokens';
-import { confirm } from '../common/dialogs';
+import { confirm, prompt } from '../common/dialogs';
 import { lazyNamed } from '../common/lazy';
 import { toast } from '../common/toast';
 import { triggerDownload } from './actions';
@@ -30,6 +33,7 @@ import { ActivityList, type ActivityEntry } from './activity';
 import { Comments } from './Comments';
 import { Fact, MetaFacts, ScanState } from './facts';
 import { canCompare, FileIcon, kindColor, kindLabel, thumbUrl, type Item } from './kinds';
+import { canEdit, lockText } from './model';
 import { useMeta } from './preview/meta';
 import { TagChips } from './tags';
 
@@ -48,7 +52,7 @@ interface Version {
 function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => void; onUpload?: () => void }) {
   const [versions, setVersions] = useState<{ key: string; list: Version[] } | null>(null);
   const [comparing, setComparing] = useState<Version | null>(null);
-  const editable = item.role === 'owner' || item.role === 'edit';
+  const editable = canEdit(item);
   const key = item.id + item.version;
 
   useEffect(() => {
@@ -199,6 +203,65 @@ function NodeActivity({ item }: { item: Item }) {
   return <ActivityList entries={list} />;
 }
 
+interface FolderSize {
+  size: number;
+  files: number;
+  folders: number;
+}
+
+function useFolderSize(item: Item) {
+  const key = `${item.id}:${item.version}:${item.items ?? 0}`;
+  const wanted = item.type === 'folder' && !item.trashedAt;
+  const [state, setState] = useState<{ key: string; size: FolderSize | null } | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const abort = new AbortController();
+    api
+      .get<FolderSize>(`/api/nodes/${item.id}/size`, abort.signal)
+      .then((size) => setState({ key, size }))
+      .catch((error: Error) => {
+        if (error.name !== 'AbortError') setState({ key, size: null });
+      });
+    return () => abort.abort();
+  }, [item.id, key, wanted]);
+  return state?.key === key ? state.size : undefined;
+}
+
+function FolderSizeFact({ item }: { item: Item }) {
+  const size = useFolderSize(item);
+  if (size === null) return null;
+  return (
+    <Fact label={t('Größe')}>
+      {size === undefined ? (
+        <Skeleton width={120} aria-label={t('Lädt')} />
+      ) : (
+        `${formatBytes(size.size)} · ${tn(size.files, '{count} Datei', '{count} Dateien')}${
+          size.folders ? ` · ${tn(size.folders, '{count} Ordner', '{count} Ordner')}` : ''
+        }`
+      )}
+    </Fact>
+  );
+}
+
+async function describe(item: Item) {
+  const text = await prompt({
+    title: t('Beschreibung'),
+    label: t('Beschreibung'),
+    value: item.description ?? '',
+    confirm: t('Speichern'),
+    helper: t('Sehen alle, die hier Zugriff haben. Die Suche findet den Text auch.'),
+    multiline: true,
+    optional: true,
+    maxLength: 2000,
+  });
+  if (text === null) return;
+  try {
+    await api.put(`/api/nodes/${item.id}/description`, { text });
+  } catch (error) {
+    toast(errorText(error));
+  }
+}
+
 function InfoTab({
   item,
   location,
@@ -215,6 +278,7 @@ function InfoTab({
   onUploadVersion?: (item: Item) => void;
 }) {
   const meta = useMeta(item);
+  const editable = canEdit(item);
   return (
     <>
       <Box
@@ -244,6 +308,25 @@ function InfoTab({
           {kindLabel(item.kind)}
         </Typography>
       </Box>
+      {item.parentId && !item.trashedAt && (item.description || editable) && (
+        <Box>
+          {item.description && (
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {item.description}
+            </Typography>
+          )}
+          {editable && (
+            <Button
+              size="small"
+              startIcon={item.description ? <EditRounded /> : <NotesRounded />}
+              onClick={() => void describe(item)}
+              sx={{ ml: -0.5, mt: item.description ? 0.5 : 0 }}
+            >
+              {item.description ? t('Beschreibung ändern') : t('Beschreibung hinzufügen')}
+            </Button>
+          )}
+        </Box>
+      )}
       {onTags && item.parentId && !item.trashedAt && (
         <Box role="group" aria-label={t('Schlagwörter')}>
           <TagChips ids={item.tags} onEdit={() => onTags(item)} />
@@ -253,7 +336,10 @@ function InfoTab({
         {item.type === 'file' ? (
           <Fact label={t('Größe')}>{formatBytes(item.size)}</Fact>
         ) : (
-          <Fact label={t('Inhalt')}>{tn(item.items ?? 0, '{count} Element', '{count} Elemente')}</Fact>
+          <>
+            <Fact label={t('Inhalt')}>{tn(item.items ?? 0, '{count} Element', '{count} Elemente')}</Fact>
+            {!item.trashedAt && <FolderSizeFact item={item} />}
+          </>
         )}
         {location !== undefined && <Fact label={t('Ort')}>{location || t('Meine Dateien')}</Fact>}
         <Fact label={t('Geändert')}>{formatDateTime(item.modifiedAt)}</Fact>
@@ -262,6 +348,13 @@ function InfoTab({
         {item.viaGroup && <Fact label={t('Geteilt über')}>{t('Gruppe {name}', { name: item.viaGroup })}</Fact>}
         {item.role && item.role !== 'owner' && (
           <Fact label={t('Deine Rechte')}>{item.role === 'edit' ? t('Kann bearbeiten') : t('Kann ansehen')}</Fact>
+        )}
+        {item.lock && <Fact label={t('Sperre')}>{lockText(item.lock)}</Fact>}
+        {item.reminder && (
+          <Fact label={t('Erinnerung')}>
+            {formatDateTime(item.reminder.dueAt)}
+            {item.reminder.note ? ` · ${item.reminder.note}` : ''}
+          </Fact>
         )}
         {meta && <MetaFacts item={item} meta={meta} />}
       </Box>

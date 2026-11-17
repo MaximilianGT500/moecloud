@@ -12,6 +12,19 @@ export interface SiteInfo {
   mail?: boolean;
 }
 
+export interface ThemeBoot {
+  id: string;
+  name: string;
+  source: 'site' | 'builtin' | 'custom' | 'own';
+  personal: boolean;
+  seed: string;
+  style: 'content' | 'tonal' | 'vibrant' | 'expressive' | 'fidelity' | 'neutral' | 'mono';
+  secondary: string | null;
+  tertiary: string | null;
+  font: 'rounded' | 'system' | 'serif' | 'mono';
+  corners: 1 | 0.5 | 0.1;
+}
+
 export interface SessionUser {
   id: number;
   username: string;
@@ -28,16 +41,60 @@ export interface Storage {
   quota: number | null;
 }
 
+export type PluginIcon =
+  | 'extension'
+  | 'bolt'
+  | 'chart'
+  | 'send'
+  | 'label'
+  | 'print'
+  | 'cloud'
+  | 'star'
+  | 'build'
+  | 'image'
+  | 'document'
+  | 'lock'
+  | 'download'
+  | 'share'
+  | 'schedule'
+  | 'code';
+
+export interface PluginAction {
+  plugin: string;
+  id: string;
+  label: string;
+  icon: PluginIcon;
+  kinds: ('file' | 'folder')[];
+  extensions: string[] | null;
+  multiple: boolean;
+  confirm: string;
+}
+
+export interface PluginPage {
+  plugin: string;
+  id: string;
+  label: string;
+  icon: PluginIcon;
+  src: string;
+}
+
+export interface PluginBoot {
+  actions: PluginAction[];
+  pages: PluginPage[];
+}
+
 export interface Boot {
   page: string;
   lang: 'de' | 'en';
   site: SiteInfo;
+  theme?: ThemeBoot;
   csrf: string;
   user?: SessionUser;
   storage?: Storage;
   webdav?: string;
   unread?: number;
   setup2fa?: boolean;
+  plugins?: PluginBoot;
 }
 
 let cached: Boot | null = null;

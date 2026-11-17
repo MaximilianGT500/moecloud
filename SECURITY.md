@@ -8,7 +8,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 
 | Version | Sicherheitsupdates |
 | ------- | ------------------ |
-| 1.4.x   | Ja                 |
+| 1.5.x   | Ja                 |
 | Älter   | Nein               |
 
 ## Eine Lücke melden
@@ -16,7 +16,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 Melde Sicherheitslücken bitte nicht öffentlich als Issue, sondern vertraulich:
 
 - über **Security › Report a vulnerability** in diesem Repository oder
-- über das [Kontaktformular](https://mm-s.gg).
+- über das [Kontaktformular](https://m-s.gg).
 
 Hilfreich sind:
 
@@ -39,6 +39,7 @@ Du bekommst eine Rückmeldung, sobald die Meldung geprüft ist. Bestätigt sich 
 - Schalte den [Virenscan](README.md#virenscan-mit-clamav) ein, sobald andere Dateien hochladen.
 - Lass die [Versionsprüfung](README.md#versionsprüfung) an und spiel Updates zeitnah ein.
 - Bewahre [Sicherungen](README.md#datensicherung) so sicher auf wie den Server selbst. Sie enthalten Passwort-Hashes und die Schlüssel der Authenticator-Apps.
+- Schalte nur [Plugins](README.md#plugins) ein, deren Code du gelesen hast oder deren Quelle du vertraust. Sie laufen mit allen Rechten von MoeCloud. Lass `PLUGIN_UPLOAD` aus, solange du Plugins nicht im Browser einspielen musst.
 - Schau ab und zu ins Protokoll unter **Admin › Protokoll**, dort stehen auch fehlgeschlagene Anmeldungen.
 
 Deine Dateien liegen unverschlüsselt im Datenordner. Wer Zugriff auf den Server oder eine Sicherung hat, kann sie lesen. Das ist eine bewusste Grenze von MoeCloud und keine Lücke. Gleiches gilt für Schadsoftware, die ClamAV nicht erkennt: Das meldest du am besten direkt an [ClamAV](https://www.clamav.net).

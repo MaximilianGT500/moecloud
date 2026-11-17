@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, it } from 'node:test';
 import pg from 'pg';
@@ -9,7 +11,7 @@ import { config } from '../src/config.ts';
 import { copyDatabase, copyDatabaseSync } from '../src/lib/copy.ts';
 import * as store from '../src/lib/db.ts';
 import { schemaVersion } from '../src/lib/schema.ts';
-import { TABLES } from '../src/lib/schema-pg.ts';
+import { PG_BASE, PG_BASE_VERSION, PG_STEPS, TABLES } from '../src/lib/schema-pg.ts';
 import { toPostgres } from '../src/lib/sql.ts';
 import { findByUsername } from '../src/services/users.ts';
 
@@ -174,6 +176,69 @@ describe('Kopieren zwischen Datenbanken', () => {
     assert.equal(result.tables.users, contents(source).users.length);
     await assert.rejects(copyDatabase(empty, url), /nicht leer/);
   });
+
+  it(
+    'sichert PostgreSQL vor einem Update auch von einem älteren Stand',
+    { skip: !server && 'TEST_POSTGRES ist nicht gesetzt' },
+    async () => {
+      const url = await freshPostgres('moecloud_test_aelter');
+      const older = schemaVersion() - 1;
+      assert.ok(older >= PG_BASE_VERSION);
+      const prepare = new pg.Client({ connectionString: url });
+      await prepare.connect();
+      try {
+        await prepare.query('CREATE TABLE moecloud_schema (version BIGINT NOT NULL)');
+        await prepare.query(PG_BASE);
+        for (let version = PG_BASE_VERSION + 1; version <= older; version++) await prepare.query(PG_STEPS[version]);
+        await prepare.query('INSERT INTO moecloud_schema (version) VALUES ($1)', [older]);
+        await prepare.query("INSERT INTO settings (key, value) VALUES ('site.name', '\"Cloud von Emi\"')");
+      } finally {
+        await prepare.end();
+      }
+      const inspect = (file: string) => {
+        const db = new DatabaseSync(file, { readOnly: true });
+        try {
+          return {
+            version: (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+            name: (db.prepare("SELECT value FROM settings WHERE key = 'site.name'").get() as { value: string } | undefined)?.value,
+            check: (db.prepare('PRAGMA quick_check').get() as { quick_check: string }).quick_check,
+          };
+        } finally {
+          db.close();
+        }
+      };
+      const copy = join(dir, 'aelter.db');
+      copyDatabaseSync(url, copy);
+      assert.deepEqual(inspect(copy), { version: older, name: '"Cloud von Emi"', check: 'ok' });
+      await assert.rejects(copyDatabase(url, await freshPostgres('moecloud_test_aelter_ziel')), /Starte MoeCloud einmal mit der Quelle/);
+
+      const backups = join(dir, 'vor-dem-update');
+      const script = join(dir, 'start-aelter.mjs');
+      writeFileSync(
+        script,
+        `const db = await import(${JSON.stringify(pathToFileURL(resolve(import.meta.dirname, '../src/lib/db.ts')).href)});\n` +
+          'db.openDatabase(process.env.OLDER_URL, process.env.OLDER_BACKUPS);\ndb.closeDatabase();\n'
+      );
+      const started = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', script], {
+        env: { ...process.env, OLDER_URL: url, OLDER_BACKUPS: backups },
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
+      assert.equal(started.status, 0, started.stderr);
+      const files = readdirSync(backups);
+      assert.equal(files.length, 1);
+      assert.match(files[0], new RegExp(`^moecloud-update-v${older}-\\d{8}-\\d{6}\\.db$`));
+      assert.deepEqual(inspect(join(backups, files[0])), { version: older, name: '"Cloud von Emi"', check: 'ok' });
+      const check = new pg.Client({ connectionString: url });
+      await check.connect();
+      try {
+        assert.equal(Number((await check.query('SELECT version FROM moecloud_schema')).rows[0].version), schemaVersion());
+        assert.equal((await check.query("SELECT value FROM settings WHERE key = 'site.name'")).rows[0].value, '"Cloud von Emi"');
+      } finally {
+        await check.end();
+      }
+    }
+  );
 
   it('hat in SQLite und PostgreSQL dieselben Spalten', { skip: !server && 'TEST_POSTGRES ist nicht gesetzt' }, async () => {
     const url = await freshPostgres('moecloud_test_schema');

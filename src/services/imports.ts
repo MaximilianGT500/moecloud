@@ -1,7 +1,5 @@
-import { lookup } from 'node:dns/promises';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { BlockList, isIP, type LookupFunction } from 'node:net';
 import { Transform } from 'node:stream';
 import { config } from '../config.ts';
 import { randomId } from '../lib/crypto.ts';
@@ -10,11 +8,12 @@ import { t, type Lang } from '../lib/i18n.ts';
 import { extensionFor } from '../lib/mime.ts';
 import { cleanName } from '../lib/names.ts';
 import { log } from '../lib/log.ts';
+import { guardedLookup, isPublicAddress, privateLiteral } from '../lib/netguard.ts';
 import { requireFolder } from './nodes.ts';
 import { notify } from './notify.ts';
 import * as settings from './settings.ts';
 import { uploadStream } from './uploads.ts';
-import { getUser, type UserRow } from './users.ts';
+import { getUser, inactive, type UserRow } from './users.ts';
 
 export interface ImportJob {
   id: string;
@@ -41,68 +40,11 @@ const pending = new Map<string, Promise<void>>();
 
 export const importsSettled = () => Promise.all([...pending.values()]);
 
-const blocked = new BlockList();
-for (const [network, prefix] of [
-  ['0.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-  ['172.16.0.0', 12],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['192.88.99.0', 24],
-  ['192.168.0.0', 16],
-  ['198.18.0.0', 15],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4],
-  ['240.0.0.0', 4],
-] as const) {
-  blocked.addSubnet(network, prefix, 'ipv4');
-}
-for (const [network, prefix] of [
-  ['::', 128],
-  ['::1', 128],
-  ['64:ff9b::', 96],
-  ['100::', 64],
-  ['2001::', 23],
-  ['2001:db8::', 32],
-  ['2002::', 16],
-  ['fc00::', 7],
-  ['fe80::', 10],
-  ['fec0::', 10],
-  ['ff00::', 8],
-] as const) {
-  blocked.addSubnet(network, prefix, 'ipv6');
-}
-
-export function isPublicAddress(address: string) {
-  const family = isIP(address);
-  if (family === 4) return !blocked.check(address, 'ipv4');
-  if (family !== 6) return false;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  if (mapped) return !blocked.check(mapped[1], 'ipv4');
-  return !blocked.check(address, 'ipv6');
-}
-
 const allowPrivate = () => settings.get('import.private');
 
-const safeLookup: LookupFunction = (hostname, options, callback) => {
-  lookup(hostname, { all: true, order: 'verbatim' })
-    .then((addresses) => {
-      if (addresses.length === 0) throw new Error('ENOTFOUND');
-      if (!allowPrivate() && addresses.some((entry) => !isPublicAddress(entry.address))) {
-        throw Object.assign(new Error('Die Adresse zeigt ins lokale Netz'), { code: 'MOE_PRIVATE' });
-      }
-      const wanted =
-        typeof options === 'object' && options.family ? addresses.filter((entry) => entry.family === options.family) : addresses;
-      const chosen = wanted[0] ?? addresses[0];
-      if (typeof options === 'object' && options.all) callback(null, wanted.length ? wanted : addresses);
-      else callback(null, chosen.address, chosen.family);
-    })
-    .catch((error: NodeJS.ErrnoException) => callback(error, '', 0));
-};
+const safeLookup = guardedLookup(allowPrivate);
+
+export { isPublicAddress };
 
 export function parseUrl(input: string) {
   let url: URL;
@@ -117,8 +59,7 @@ export function parseUrl(input: string) {
 }
 
 function checkLiteral(url: URL) {
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (isIP(host) && !allowPrivate() && !isPublicAddress(host)) throw forbidden('Adressen im lokalen Netz sind für Downloads gesperrt');
+  if (!allowPrivate() && privateLiteral(url)) throw forbidden('Adressen im lokalen Netz sind für Downloads gesperrt');
 }
 
 interface Opened {
@@ -240,7 +181,7 @@ async function work(job: ImportJob, lang: Lang) {
       job.name || fileName(opened.url, opened.response.headers['content-disposition'], opened.response.headers['content-type'])
     );
     const user = getUser(job.userId);
-    if (!user || user.disabled) throw forbidden('Dein Konto ist gesperrt, wende dich an die Verwaltung');
+    if (!user || inactive(user)) throw forbidden('Dein Konto ist gesperrt, wende dich an die Verwaltung');
     opened.response.setTimeout(TIMEOUT * 2, () =>
       opened.response.destroy(Object.assign(new Error('Zeitüberschreitung'), { code: 'MOE_TIMEOUT' }))
     );

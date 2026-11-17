@@ -1,10 +1,24 @@
 import { createHash } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { open, rm } from 'node:fs/promises';
+import { runFilter } from '../lib/hooks.ts';
 import { store, tmpPath, type Received } from './blobs.ts';
 import { wake } from './processing.ts';
 import { checkUpload, markBlob, type ScanContext } from './scan.ts';
 
 export async function ingest(received: Received, context: ScanContext) {
+  try {
+    await runFilter('upload', () => ({
+      name: context.name,
+      size: received.size,
+      sha256: received.sha256,
+      via: context.via,
+      userId: context.userId,
+      path: received.path,
+    }));
+  } catch (error) {
+    await rm(received.path, { force: true });
+    throw error;
+  }
   const verdict = await checkUpload(received.path, received.size, received.sha256, context);
   const sha = await store(received);
   markBlob(sha, verdict);

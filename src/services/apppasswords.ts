@@ -3,7 +3,7 @@ import { hmac, randomId } from '../lib/crypto.ts';
 import { notFound } from '../lib/errors.ts';
 import { Limiter } from '../lib/limiter.ts';
 import * as settings from './settings.ts';
-import { findByLogin, getUser, type UserRow } from './users.ts';
+import { findByLogin, getUser, inactive, type UserRow } from './users.ts';
 
 export interface AppPasswordRow {
   id: string;
@@ -62,7 +62,7 @@ export function basicAuth(header: string | undefined, ip: string): UserRow | nul
   const token = decoded.slice(split + 1).replace(/[\s-]/g, '');
   const user = findByLogin(login);
   const row = token.length === 30 ? one<AppPasswordRow>('SELECT * FROM app_passwords WHERE token_hash = ?', hash(token)) : undefined;
-  if (!user || !row || row.user_id !== user.id || user.disabled) {
+  if (!user || !row || row.user_id !== user.id || inactive(user)) {
     failures.hit(ip);
     return null;
   }

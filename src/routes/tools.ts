@@ -13,7 +13,7 @@ import { setRule } from '../services/rules.ts';
 import { setWatch } from '../services/watches.ts';
 import { children, present, requireAccess, resolveAccess, type NodeRow } from '../services/nodes.ts';
 import { packZip } from '../services/pack.ts';
-import { merge, pdfInfo, pdfPath, rearrange } from '../services/pdf.ts';
+import { fromImages, merge, pdfInfo, pdfPath, rearrange } from '../services/pdf.ts';
 import type { UserRow } from '../services/users.ts';
 
 type IdParams = { Params: { id: string } };
@@ -71,6 +71,15 @@ export async function toolRoutes(app: FastifyInstance) {
     const user = me(request);
     const input = parse(z.object({ ids, name }), request.body);
     return { node: shown(user, await merge(user, input.ids, input.name)) };
+  });
+
+  app.post('/api/pdf/images', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    const input = parse(
+      z.object({ ids: z.array(z.string().min(1).max(64)).min(1).max(200), name, layout: z.enum(['a4', 'fit']).default('a4') }),
+      request.body
+    );
+    return { node: shown(user, await fromImages(user, input.ids, input.name, input.layout)) };
   });
 
   app.get<IdParams>('/api/nodes/:id/subtitles', async (request) => {

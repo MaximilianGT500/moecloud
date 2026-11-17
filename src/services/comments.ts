@@ -5,7 +5,7 @@ import { publish } from '../lib/events.ts';
 import { record } from './activity.ts';
 import { audience, requireAccess, resolveAccess, type NodeRow } from './nodes.ts';
 import { notify } from './notify.ts';
-import { getUser, initials, type UserRow } from './users.ts';
+import { getUser, inactive, initials, keyOf, type UserRow } from './users.ts';
 
 interface CommentRow {
   id: string;
@@ -16,11 +16,41 @@ interface CommentRow {
   updated_at: number;
 }
 
-function present(row: CommentRow, viewer: UserRow) {
+const MENTION = /(?<![\w@.-])@([a-zA-Z0-9._-]{3,32})/g;
+
+function mentioned(text: string, people: Map<string, UserRow>) {
+  const found = new Map<number, UserRow>();
+  for (const match of text.matchAll(MENTION)) {
+    const handle = match[1].replace(/[.-]+$/, '');
+    const person = people.get(keyOf(match[1])) ?? people.get(keyOf(handle));
+    if (person) found.set(person.id, person);
+  }
+  return [...found.values()];
+}
+
+function peopleOf(nodeId: string) {
+  const people = new Map<string, UserRow>();
+  for (const id of audience([nodeId])) {
+    const person = getUser(id);
+    if (person && !inactive(person)) people.set(person.username_key, person);
+  }
+  return people;
+}
+
+export function commentPeople(user: UserRow, nodeId: string) {
+  requireAccess(user, nodeId, 'view');
+  return [...peopleOf(nodeId).values()]
+    .filter((person) => person.id !== user.id)
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    .map((person) => ({ id: person.id, name: person.name, username: person.username, initials: initials(person.name) }));
+}
+
+function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>) {
   const author = row.user_id ? getUser(row.user_id) : null;
   return {
     id: row.id,
     text: row.text,
+    mentions: mentioned(row.text, people).map((person) => ({ username: person.username, name: person.name, me: person.id === viewer.id })),
     author: author ? { id: author.id, name: author.name, initials: initials(author.name) } : null,
     mine: row.user_id === viewer.id,
     edited: row.updated_at > row.created_at,
@@ -36,7 +66,10 @@ function commentUrl(person: UserRow, node: NodeRow) {
 
 export function listComments(user: UserRow, nodeId: string) {
   requireAccess(user, nodeId, 'view');
-  return all<CommentRow>('SELECT * FROM comments WHERE node_id = ? ORDER BY created_at LIMIT 500', nodeId).map((row) => present(row, user));
+  const people = peopleOf(nodeId);
+  return all<CommentRow>('SELECT * FROM comments WHERE node_id = ? ORDER BY created_at LIMIT 500', nodeId).map((row) =>
+    present(row, user, people)
+  );
 }
 
 export function addComment(user: UserRow, nodeId: string, raw: string) {
@@ -61,13 +94,16 @@ export function addComment(user: UserRow, nodeId: string, raw: string) {
     people.add(row.user_id);
   }
   people.delete(user.id);
+  const known = peopleOf(node.id);
+  const named = new Set(mentioned(text, known).map((person) => person.id));
   for (const person of people) {
     const target = getUser(person);
     if (!target) continue;
-    notify(person, 'comment', { by: user.name, name: node.name, text: text.slice(0, 280) }, commentUrl(target, node));
+    const params = { by: user.name, name: node.name, text: text.slice(0, 280) };
+    notify(person, named.has(person) ? 'mention' : 'comment', params, commentUrl(target, node));
   }
   publish(audience([node.id]), 'comment', { nodeId });
-  return present(one<CommentRow>('SELECT * FROM comments WHERE id = ?', id)!, user);
+  return present(one<CommentRow>('SELECT * FROM comments WHERE id = ?', id)!, user, known);
 }
 
 export function deleteComment(user: UserRow, nodeId: string, id: string) {

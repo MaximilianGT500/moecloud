@@ -8,6 +8,8 @@ import IconButton from '@mui/material/IconButton';
 import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import AlarmRounded from '@mui/icons-material/AlarmRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
 import NotificationsNoneRounded from '@mui/icons-material/NotificationsNoneRounded';
 import NotificationsRounded from '@mui/icons-material/NotificationsRounded';
 import { api, errorText } from '../../lib/api';
@@ -29,16 +31,46 @@ interface Note {
   createdAt: number;
 }
 
+interface Reminder {
+  nodeId: string;
+  name: string;
+  dueAt: number;
+  note: string | null;
+  url: string;
+}
+
 export function NotificationBell({ onNavigate }: { onNavigate?: (href: string) => boolean }) {
   const [unread, setUnread] = useState(boot().unread ?? 0);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [notes, setNotes] = useState<Note[] | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
 
   const load = async () => {
     try {
       const data = await api.get<{ items: Note[]; unread: number }>('/api/notifications');
       setNotes(data.items);
       setUnread(data.unread);
+    } catch (error) {
+      toast(errorText(error));
+    }
+    api
+      .get<{ items: Reminder[] }>('/api/reminders')
+      .then((data) => setReminders(data.items))
+      .catch(() => {});
+  };
+
+  const open = (url: string) => {
+    setAnchor(null);
+    if (!(onNavigate?.(url) ?? false)) {
+      if (url.startsWith('/files') && location.pathname.startsWith('/files')) navigate(url);
+      else location.href = url;
+    }
+  };
+
+  const forget = async (reminder: Reminder) => {
+    try {
+      await api.delete(`/api/nodes/${reminder.nodeId}/reminder`);
+      setReminders((current) => current.filter((entry) => entry.nodeId !== reminder.nodeId));
     } catch (error) {
       toast(errorText(error));
     }
@@ -148,6 +180,57 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (href: string) =
           )}
         </Box>
         <Box sx={{ flex: 1, overflowY: 'auto', px: 1, pb: 1 }}>
+          {reminders.length > 0 && (
+            <Box sx={{ mb: 1 }}>
+              <Typography
+                variant="caption"
+                component="h3"
+                sx={{ display: 'block', px: 1.25, py: 0.5, color: c.onSurfaceVariant, fontWeight: 700 }}
+              >
+                {t('Anstehende Erinnerungen')}
+              </Typography>
+              <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                {reminders.map((reminder) => (
+                  <Box component="li" key={reminder.nodeId} sx={{ display: 'flex', alignItems: 'center' }}>
+                    <ButtonBase
+                      onClick={() => open(reminder.url)}
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 1.25,
+                        textAlign: 'left',
+                        p: 1.25,
+                        borderRadius: `${radius.md}px`,
+                        '&:hover': { bgcolor: c.surfaceContainerHigh },
+                      }}
+                    >
+                      <AlarmRounded fontSize="small" sx={{ color: c.tertiary, mt: 0.25 }} />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                          {reminder.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: c.onSurfaceVariant, display: 'block', overflowWrap: 'anywhere' }}>
+                          {formatDateTime(reminder.dueAt)}
+                          {reminder.note ? ` · ${reminder.note}` : ''}
+                        </Typography>
+                      </Box>
+                    </ButtonBase>
+                    <Tooltip title={t('Erinnerung löschen')}>
+                      <IconButton
+                        size="small"
+                        aria-label={t('Erinnerung an „{name}“ löschen', { name: reminder.name })}
+                        onClick={() => void forget(reminder)}
+                      >
+                        <CloseRounded fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
           {!notes ? (
             <Box sx={{ display: 'grid', placeItems: 'center', py: 4 }}>
               <CircularProgress size={28} aria-label={t('Lädt')} />

@@ -55,9 +55,10 @@ COPY --from=web /build/dist/web ./dist/web
 COPY package.json cli.ts ./
 COPY src ./src
 COPY public ./public
+COPY examples ./examples
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/moecloud-entrypoint
 COPY --chmod=755 docker/moecloud /usr/local/bin/moecloud
-RUN chmod -R a+rX package.json cli.ts src public dist \
+RUN chmod -R a+rX package.json cli.ts src public examples dist \
   && mkdir -p /data
 EXPOSE 3000
 VOLUME ["/data"]

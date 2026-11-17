@@ -1,18 +1,11 @@
 @import '../theme/fonts.css';
 
 :root {
-  --radius-field: 12px;
-  --radius-card: 28px;
+  --radius-field: calc(12px * var(--moe-corners, 1));
+  --radius-card: calc(28px * var(--moe-corners, 1));
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --enter: cubic-bezier(0.05, 0.7, 0.1, 1);
-  font-family:
-    'M PLUS Rounded 1c',
-    'Hiragino Maru Gothic ProN',
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--moe-font, 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

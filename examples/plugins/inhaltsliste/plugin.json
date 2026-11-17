@@ -1,0 +1,31 @@
+{
+  "id": "inhaltsliste",
+  "name": { "de": "Inhaltsliste", "en": "Table of contents" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Schreibt eine Übersicht aller Dateien eines Ordners als Markdown-Datei hinein.",
+    "en": "Writes an overview of all files in a folder into it as a Markdown file."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "permissions": ["files"],
+  "settings": [
+    {
+      "key": "name",
+      "label": { "de": "Name der Datei", "en": "File name" },
+      "type": "text",
+      "default": "Inhalt.md",
+      "required": true
+    }
+  ],
+  "actions": [
+    {
+      "id": "schreiben",
+      "label": { "de": "Inhaltsliste schreiben", "en": "Write table of contents" },
+      "icon": "document",
+      "kinds": ["folder"]
+    }
+  ]
+}

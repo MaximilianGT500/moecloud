@@ -1,0 +1,43 @@
+{
+  "id": "upload-regeln",
+  "name": { "de": "Upload-Regeln", "en": "Upload rules" },
+  "version": "1.0.0",
+  "description": {
+    "de": "Lehnt Uploads nach Dateiendung oder Größe ab, auf Wunsch nur bei Uploads über Links.",
+    "en": "Rejects uploads by file extension or size, optionally only for uploads through links."
+  },
+  "author": "MoeStudio",
+  "homepage": "https://github.com/MaximilianGT500/moecloud",
+  "api": 1,
+  "moecloud": ">=1.5.0",
+  "settings": [
+    {
+      "key": "gesperrt",
+      "label": { "de": "Gesperrte Endungen", "en": "Blocked extensions" },
+      "hint": { "de": "Mit Komma getrennt, zum Beispiel exe, bat, scr", "en": "Separated by commas, for example exe, bat, scr" },
+      "type": "text",
+      "default": "exe, bat, cmd, scr, msi"
+    },
+    {
+      "key": "maxMb",
+      "label": { "de": "Größte Datei in MB", "en": "Largest file in MB" },
+      "hint": { "de": "0 heißt: keine Grenze", "en": "0 means no limit" },
+      "type": "number",
+      "min": 0,
+      "max": 1000000,
+      "default": 0
+    },
+    {
+      "key": "nurLinks",
+      "label": { "de": "Nur bei Uploads über Links", "en": "Only for uploads through links" },
+      "hint": { "de": "Angemeldete Personen laden dann weiter alles hoch", "en": "People who are signed in can still upload everything" },
+      "type": "boolean"
+    },
+    {
+      "key": "hinweis",
+      "label": { "de": "Hinweis bei Ablehnung", "en": "Message when rejecting" },
+      "type": "text",
+      "default": "Diese Datei nimmt die Cloud nicht an"
+    }
+  ]
+}
