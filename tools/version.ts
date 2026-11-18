@@ -19,7 +19,6 @@ interface Spot {
 
 const full = (release: Release) => release.version;
 const minor = (release: Release) => release.version.split('.').slice(0, 2).join('.');
-const major = (release: Release) => release.version.split('.')[0];
 const day = (release: Release) => release.date;
 
 const SPOTS: Spot[] = [
@@ -31,21 +30,6 @@ const SPOTS: Spot[] = [
     pattern: /^ {4}"": \{\n {6}"name": "[^"]+",\n {6}"version": "([^"]+)"/dm,
     expect: full,
   },
-  { file: 'README.md', what: 'Beispiel für MOECLOUD_VERSION', pattern: /Mit `MOECLOUD_VERSION=([\d.]+)` in der `\.env`/d, expect: full },
-  {
-    file: 'README.md',
-    what: 'Beispiel für den Tag mit ganzer Version',
-    pattern: /eigene Tags wie `([\d.]+)`, `[\d.]+` und `\d+`/d,
-    expect: full,
-  },
-  { file: 'README.md', what: 'Beispiel für den Tag ohne Patch', pattern: /eigene Tags wie `[\d.]+`, `([\d.]+)` und `\d+`/d, expect: minor },
-  {
-    file: 'README.md',
-    what: 'Beispiel für den Tag der Hauptversion',
-    pattern: /eigene Tags wie `[\d.]+`, `[\d.]+` und `(\d+)`/d,
-    expect: major,
-  },
-  { file: 'README.md', what: 'Beispiel in der Tabelle der Variablen', pattern: /Tag des Images, etwa `([\d.]+)`/d, expect: full },
   { file: 'README.md', what: 'version im Beispiel der version.json', pattern: /^ {2}"version": "([\d.]+)",$/dm, expect: full },
   { file: 'README.md', what: 'date im Beispiel der version.json', pattern: /^ {2}"date": "([\d-]+)",$/dm, expect: day },
   { file: 'README.md', what: 'changelog im Beispiel der version.json', pattern: /changelog\.html#v([\d.]+)"/d, expect: full },

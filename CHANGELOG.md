@@ -2,6 +2,35 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.5.1] · 2026-11-17
+
+Diese Version repariert Installation und Update über das Skript. Es verlangte ein Image mit der Versionsnummer als Tag, das es in der Registry nicht gibt. MoeCloud läuft jetzt immer mit dem Image `latest`.
+
+### Behoben
+
+- Das Installationsskript und `sudo moecloud update` brachen bei **Images laden** ab, weil sie ein Image wie `moecloud:1.5.0` verlangten. In der Registry liegt der neueste Stand als `latest`, und genau dieses Image nimmt das Skript jetzt immer
+- Nach einem so abgebrochenen Update blieb die Versionsnummer in der `.env` stehen, und MoeCloud kam nach `sudo moecloud stop` nicht wieder hoch. Die Compose-Datei beachtet `MOECLOUD_VERSION` nicht mehr, und das Skript nimmt die Zeile samt `MOECLOUD_PIN` beim nächsten Update heraus
+- `sudo moecloud database postgres` und `sudo moecloud office on` suchten ihre Ergänzung für Docker unter einem Tag im Repository, den es nicht gibt, wenn die Datei auf dem Server noch fehlte. Jetzt kommen beide vom Hauptzweig
+- `BREACH_CHECK_URL` aus der `.env` kam mit Docker nicht im Container an
+
+### Installationsskript
+
+- Auf dem Server reicht `sudo moecloud update`, auch wenn dort noch ein älteres Skript liegt. Es holt die neue Compose-Datei, bevor es das Image lädt
+- `--version` entfällt beim Skript und bei `sudo moecloud update`, weil es einzelne Versionen nicht als Image gibt. `--version latest` bleibt erlaubt und ändert nichts
+- `sudo moecloud status` und die Meldung nach einem Update nennen die Version, die wirklich läuft, statt der Zeile aus der `.env`
+- Nennt die Website schon eine neuere Version, als das Image `latest` enthält, sagt das Update dazu, dass GitHub das Image noch baut
+- Lässt sich ein Image nicht laden, zeigt das Skript die Meldung von Docker und sagt, dass MoeCloud unverändert weiterläuft
+
+### Docker
+
+- Das Tag des Images steht in `MOECLOUD_TAG` statt in `MOECLOUD_VERSION`, ohne Angabe bleibt es bei `latest`. Wer bei einem Stand bleiben möchte, trägt ein Tag wie `sha-1a2b3c4` ein. `sudo moecloud update` und die automatischen Updates bleiben dann bei diesem Image, `sudo moecloud status` zeigt das an
+- README und `.env.example` nennen nur noch Tags, die es gibt
+
+### Kleinigkeiten
+
+- Tests spielen Installation und Update mit Attrappen für Docker und curl durch und prüfen, welches Image das Skript laden würde
+- Das README sagt dazu, dass Änderungen an der `.env` erst nach `docker compose up -d` oder `sudo moecloud start` gelten und ein `restart` allein sie nicht übernimmt
+
 ## [1.5.0] · 2026-11-17
 
 Diese Version bringt Plugins und Themes: MoeCloud lässt sich um eigene Aktionen, Seiten und Regeln erweitern und bekommt zwölf fertige Themes samt Editor für eigene. Dazu kommen der Umzug von Nextcloud und anderen Speichern per WebDAV, Push direkt im Browser, Erinnerungen, Erwähnungen, Vorlagen und ein Schnellzugriff mit Strg+K. Beim Teilen kommen Wunschadressen, ein Verlauf für jeden Link und ein Knopf zum Melden dazu. Die Vorschau zeigt jetzt E-Books und über LibreOffice auch PowerPoint- und OpenDocument-Dateien. Für die Verwaltung gibt es eine Passwort-Richtlinie, einen Wochenbericht, Sperren für Dateien und Ablaufdaten für Konten.
@@ -47,13 +76,16 @@ Diese Version bringt Plugins und Themes: MoeCloud lässt sich um eigene Aktionen
 - Änderungen von der Kommandozeile kamen bei einem laufenden MoeCloud erst nach einem Neustart an, etwa der Wartungsmodus oder ein neuer Einrichtungscode. Jetzt gelten sie nach wenigen Sekunden
 - Beim Wechsel zwischen hellem und dunklem Design meldete der Browser in der Konsole einen Verstoß gegen die Content-Security-Policy
 - Mehrere Hinweise kurz nacheinander stauten sich am unteren Rand. Jetzt ersetzt der neueste die älteren
+- README, `SECURITY.md` und der Verhaltenskodex verlinken auf die richtige Adresse `m-s.gg`
 - Das Installationsskript bricht bei einer festgehaltenen älteren Version nicht mehr ab, wenn es eine Ergänzung für Docker dort noch nicht gibt
 
 ### Kleinigkeiten
 
+- Die Datenbank bekommt Stand 7. Vorher legt MoeCloud wie gewohnt eine Sicherung an
 - Wer bisher eine eigene Grundfarbe eingestellt hatte, behält sie. Die Ecken, die du unter **Konto** gewählt hast, bleiben ebenfalls
 - Neue Umgebungsvariablen: `OFFICE_URL` für einen eigenen Dienst zur Umwandlung, `SOFFICE_PATH` für den Pfad zu LibreOffice, `BREACH_CHECK_URL` für eine eigene Quelle der Datenlecks oder `off`, dazu `PLUGINS`, `PLUGINS_DIR`, `PLUGIN_UPLOAD` und `PLUGINS_DEV` für Plugins
 - Webhooks kennen das neue Ereignis **Plugin angehalten**
+- Die Vorlage `.env.example` erklärt jede Variable mit Standard, möglichen Werten und Beispiel
 - Abhängigkeiten aktualisiert, darunter Motion 14.14, nodemailer 10.6, music-metadata 12.5 und Playwright 1.65.1
 - Hinweise zu Passwörtern nennen überall die eingestellte Mindestlänge
 - 515 neue Texte mit englischer Übersetzung
@@ -482,6 +514,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.5.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.1
 [1.5.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.0
 [1.4.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.4.0
 [1.3.4]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.3.4

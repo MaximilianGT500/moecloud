@@ -1,6 +1,6 @@
 services:
   moecloud:
-    image: ghcr.io/maximiliangt500/moecloud:${MOECLOUD_VERSION:-latest}
+    image: ghcr.io/maximiliangt500/moecloud:${MOECLOUD_TAG:-latest}
     build: .
     container_name: moecloud
     restart: unless-stopped
@@ -23,6 +23,7 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
+      BREACH_CHECK_URL: ${BREACH_CHECK_URL:-}
       CLAMAV_HOST: ${CLAMAV_HOST:-}
       CLAMAV_PORT: ${CLAMAV_PORT:-}
       OFFICE_URL: ${OFFICE_URL:-}

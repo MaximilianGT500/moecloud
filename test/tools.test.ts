@@ -71,12 +71,12 @@ describe('Versionsangaben', () => {
   it('meldet veraltete Angaben mit Datei und Zeile', () => {
     const dir = copy();
     change(dir, 'SECURITY.md', (text) => text.replace(/^\| [\d.]+\.x /m, '| 0.9.x '));
-    change(dir, 'README.md', (text) => text.replace(/MOECLOUD_VERSION=[\d.]+/, 'MOECLOUD_VERSION=0.9.0'));
+    change(dir, 'README.md', (text) => text.replace(/^ {2}"version": "[\d.]+",$/m, '  "version": "0.9.0",'));
     change(dir, 'package-lock.json', (text) => text.replace(`"version": "${version}"`, '"version": "0.9.0"'));
     const result = run(dir);
     assert.equal(result.status, 1);
     assert.match(result.output, /SECURITY\.md:\d+: unterstützte Version nennt 0\.9 statt/);
-    assert.match(result.output, /README\.md:\d+: Beispiel für MOECLOUD_VERSION nennt 0\.9\.0 statt/);
+    assert.match(result.output, /README\.md:\d+: version im Beispiel der version\.json nennt 0\.9\.0 statt/);
     assert.match(result.output, /package-lock\.json:\d+: version nennt 0\.9\.0 statt/);
     assert.match(result.output, /3 Probleme/);
   });
@@ -96,7 +96,7 @@ describe('Versionsangaben', () => {
     assert.equal(lock.version, '9.8.7');
     assert.equal(lock.packages[''].version, '9.8.7');
     assert.match(readFileSync(join(dir, 'SECURITY.md'), 'utf8'), /^\| 9\.8\.x +\| Ja/m);
-    assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /eigene Tags wie `9\.8\.7`, `9\.8` und `9`/);
+    assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /changelog\.html#v9\.8\.7"/);
     const today = new Date();
     const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     change(dir, 'CHANGELOG.md', (text) =>

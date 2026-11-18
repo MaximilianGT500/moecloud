@@ -7,16 +7,14 @@ IMAGE="ghcr.io/maximiliangt500/moecloud"
 DIR="${MOECLOUD_DIR:-/opt/moecloud}"
 BIN="${MOECLOUD_BIN:-/usr/local/bin/moecloud}"
 LOG="${MOECLOUD_LOG:-/var/log/moecloud-install.log}"
-REF="${MOECLOUD_REF:-}"
+REF="${MOECLOUD_REF:-main}"
 DOMAIN=""
 CLAMAV=""
 DATABASE=""
 PORT=""
-VERSION=""
 AUTO_UPDATE=""
 YES=0
 MODE="install"
-PIN=0
 WARNINGS=0
 MEMORY=0
 
@@ -86,7 +84,6 @@ Optionen:
   --no-clamav         ClamAV nicht einrichten
   --postgres          PostgreSQL als Datenbank mitstarten statt SQLite
   --sqlite            SQLite als Datenbank nehmen (Standard)
-  --version <x.y.z>   Diese Version installieren und festhalten, latest hebt das wieder auf
   --auto-update       Updates jede Nacht automatisch einspielen
   --no-auto-update    Automatische Updates ausschalten
   --dir <ordner>      Installationsordner (Standard /opt/moecloud)
@@ -121,7 +118,7 @@ while [ $# -gt 0 ]; do
     --sqlite) DATABASE="sqlite" ;;
     --version)
       value_of "$1" $#
-      VERSION="$2"
+      [ "$2" = "latest" ] || fail "Einzelne Versionen stehen nicht mehr zur Auswahl, MoeCloud läuft immer mit dem Image latest. Lass --version weg."
       shift
       ;;
     --auto-update) AUTO_UPDATE="yes" ;;
@@ -211,6 +208,22 @@ latest_version() {
   curl -fsSL --max-time 15 "$SITE/version.json" 2>/dev/null |
     tr -d '\n' |
     sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' || true
+}
+
+running_version() {
+  local port
+  port="$(env_get MOECLOUD_PORT)"
+  curl -fsS --max-time 5 "http://127.0.0.1:${port:-3000}/healthz" 2>/dev/null |
+    tr -d '\n' |
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' || true
+}
+
+image_tag() {
+  local tag
+  tag="$(env_get MOECLOUD_TAG)"
+  tag="${tag#[\"\']}"
+  tag="${tag%[\"\']}"
+  printf '%s' "${tag:-latest}"
 }
 
 existing_dir() {
@@ -356,37 +369,6 @@ ensure_docker() {
   ok "Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?') mit Compose $(docker compose version --short 2>/dev/null || echo '?')"
 }
 
-resolve_version() {
-  local current pinned
-  current="$(env_get MOECLOUD_VERSION)"
-  pinned="$(env_get MOECLOUD_PIN)"
-  VERSION="${VERSION#v}"
-  if [ -z "$VERSION" ] && [ "$pinned" = "1" ] && [ -n "$current" ]; then
-    VERSION="$current"
-    say "Version $current ist festgehalten. Mit --version latest gehst du wieder auf die neueste."
-  fi
-  if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-    PIN=0
-    VERSION="$(latest_version)"
-    if [ -z "$VERSION" ]; then
-      warn "Die neueste Version ließ sich nicht abfragen, das Skript nimmt das Image latest."
-      VERSION="latest"
-    fi
-  else
-    semver "$VERSION" || fail "Die Version $VERSION ist ungültig, gib sie als x.y.z an."
-    PIN=1
-  fi
-  if semver "$VERSION" && semver "$current" && older "$VERSION" "$current"; then
-    fail "Installiert ist $current. Zurück auf $VERSION geht nicht, weil sich die Datenbank verändert haben kann. Spiel dafür eine Sicherung ein."
-  fi
-  if [ -z "$REF" ]; then
-    REF="main"
-    if semver "$VERSION" && curl -fsSIL --max-time 15 "https://raw.githubusercontent.com/${REPO}/v${VERSION}/docker-compose.yml" >/dev/null 2>&1; then
-      REF="v${VERSION}"
-    fi
-  fi
-}
-
 download() {
   local source="$1" target="$2"
   curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${REF}/${source}" -o "${target}.neu" ||
@@ -457,6 +439,25 @@ backup_before_update() {
   else
     warn "Die Sicherung vor dem Update hat nicht geklappt. MoeCloud sichert die Datenbank beim Start trotzdem selbst."
   fi
+}
+
+pull_images() {
+  local label="$1" note="${2:-}" tag
+  task "$label" compose pull && return 0
+  tail -n 8 "$LOG" 2>/dev/null | sed 's/^/  /' >&2 || true
+  tag="$(image_tag)"
+  if [ "$tag" != "latest" ]; then
+    fail "Das Image mit dem Tag $tag ließ sich nicht laden. Prüf MOECLOUD_TAG in $DIR/.env, ohne die Zeile nimmt MoeCloud latest.${note:+ $note}"
+  fi
+  fail "Die Images ließen sich nicht laden. Prüf die Verbindung zu ghcr.io und versuch es noch einmal.${note:+ $note}"
+}
+
+forget_version() {
+  if [ "$(env_get MOECLOUD_PIN)" = "1" ]; then
+    say "Die festgehaltene Version $(env_get MOECLOUD_VERSION) gilt nicht mehr, MoeCloud nimmt das Image latest."
+  fi
+  env_unset MOECLOUD_VERSION
+  env_unset MOECLOUD_PIN
 }
 
 prune_images() {
@@ -538,24 +539,32 @@ settings() {
 update() {
   [ -f "$DIR/docker-compose.yml" ] || fail "In $DIR liegt keine Installation. Ohne --update installierst du MoeCloud neu."
   ensure_docker
-  local previous
-  previous="$(env_get MOECLOUD_VERSION)"
-  resolve_version
+  local previous current newest tag
+  previous="$(running_version)"
   step "MoeCloud aktualisieren"
   backup_before_update
   fetch_files
   env_set MOECLOUD_INSTALL script
-  env_set MOECLOUD_VERSION "$VERSION"
-  env_set MOECLOUD_PIN "$PIN"
-  task "Images laden" compose pull
+  forget_version
+  tag="$(image_tag)"
+  [ "$tag" = "latest" ] || say "In $DIR/.env steht MOECLOUD_TAG=$tag, MoeCloud bleibt bei diesem Image."
+  pull_images "Images laden" "MoeCloud läuft unverändert weiter."
   task "Container neu starten" compose up -d --remove-orphans
   wait_healthy
   prune_images
   [ -n "$AUTO_UPDATE" ] && auto_update "$AUTO_UPDATE"
-  if [ -n "$previous" ] && [ "$previous" != "$VERSION" ]; then
-    ok "MoeCloud ist jetzt auf $VERSION, vorher $previous"
+  current="$(running_version)"
+  if [ -z "$current" ]; then
+    ok "MoeCloud ist aktualisiert"
+  elif [ -n "$previous" ] && [ "$previous" != "$current" ]; then
+    ok "MoeCloud ist jetzt auf $current, vorher $previous"
   else
-    ok "MoeCloud $VERSION ist aktuell"
+    ok "MoeCloud $current ist aktuell"
+  fi
+  [ "$tag" = "latest" ] || return 0
+  newest="$(latest_version)"
+  if semver "$current" && semver "$newest" && older "$current" "$newest"; then
+    warn "Die Website nennt schon $newest, das Image latest enthält noch $current. Nach einer Veröffentlichung baut GitHub das Image ein paar Minuten lang, starte das Update danach noch einmal."
   fi
 }
 
@@ -566,7 +575,6 @@ install() {
   settings
   check_ports
   check_dns
-  resolve_version
 
   step "Dateien anlegen"
   mkdir -p "$DIR/data"
@@ -575,8 +583,7 @@ install() {
   timezone="$(cat /etc/timezone 2>/dev/null || timedatectl show -p Timezone --value 2>/dev/null || echo Europe/Berlin)"
   env_set TZ "$timezone"
   env_set MOECLOUD_INSTALL script
-  env_set MOECLOUD_VERSION "$VERSION"
-  env_set MOECLOUD_PIN "$PIN"
+  forget_version
   env_set MOECLOUD_PORT "$PORT"
   if [ -n "$DOMAIN" ]; then
     env_set DOMAIN "$DOMAIN"
@@ -597,7 +604,7 @@ install() {
   ok "Einstellungen in $DIR/.env"
 
   step "MoeCloud starten"
-  task "Images laden (das dauert beim ersten Mal ein paar Minuten)" compose pull
+  pull_images "Images laden (das dauert beim ersten Mal ein paar Minuten)"
   task "Container starten" compose up -d
   wait_healthy
   auto_update "$AUTO_UPDATE"

@@ -105,15 +105,13 @@ jobs:
         run: |
           bash -n install.sh
           bash install.sh --help
-          shellcheck install.sh docker/entrypoint.sh docker/moecloud docker/moecloud-host
+          shellcheck install.sh docker/entrypoint.sh docker/moecloud docker/moecloud-host test/fixtures/host/*
 
       - name: Server-Prüfung des Installationsskripts
         run: sudo MOECLOUD_LOG="$RUNNER_TEMP/install.log" bash install.sh --check --yes
 
       - name: Compose-Dateien prüfen
         run: |
-          MOECLOUD_VERSION="$(node -p "require('./package.json').version")"
-          export MOECLOUD_VERSION
           docker compose -f docker-compose.yml config --quiet
           COMPOSE_PROFILES=caddy docker compose -f docker-compose.yml -f docker/clamav.yml config --quiet
           POSTGRES_PASSWORD=geheim docker compose -f docker-compose.yml -f docker/clamav.yml -f docker/postgres.yml config --quiet

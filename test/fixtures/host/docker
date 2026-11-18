@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state="$STUB_STATE"
+
+image() {
+  local line name fallback value
+  line="$(sed -n 's/^[[:space:]]*image:[[:space:]]*\(ghcr\.io\/maximiliangt500\/moecloud:.*\)$/\1/p' docker-compose.yml | head -n 1)"
+  if [[ $line =~ ^(.*)\$\{([A-Z_]+):-([^}]*)\}$ ]]; then
+    name="${BASH_REMATCH[2]}"
+    fallback="${BASH_REMATCH[3]}"
+    value="$(sed -n "s/^${name}=//p" .env 2>/dev/null | tail -n 1 || true)"
+    value="${value#[\"\']}"
+    value="${value%[\"\']}"
+    line="${BASH_REMATCH[1]}${value:-$fallback}"
+  fi
+  printf '%s' "$line"
+}
+
+pull() {
+  local name tag
+  name="$(image)"
+  tag="${name##*:}"
+  printf 'pull %s\n' "$name" >>"$state/events"
+  if [ ! -f "$state/registry/$tag" ]; then
+    printf 'Error response from daemon: manifest for %s not found: manifest unknown\n' "$name" >&2
+    return 1
+  fi
+  mkdir -p "$state/local"
+  cp "$state/registry/$tag" "$state/local/$tag"
+}
+
+up() {
+  local name tag
+  name="$(image)"
+  tag="${name##*:}"
+  if [ ! -f "$state/local/$tag" ]; then pull; fi
+  printf 'up %s\n' "$name" >>"$state/events"
+  cp "$state/local/$tag" "$state/running"
+}
+
+printf '%s\n' "$*" >>"$state/calls"
+case "$*" in
+  "version --format"*) printf '29.1.0\n' ;;
+  "compose version --short") printf '5.7.0\n' ;;
+  "compose version") printf 'Docker Compose version v5.7.0\n' ;;
+  "compose pull"*) pull ;;
+  "compose up -d"*) up ;;
+  "compose down"*) rm -f "$state/running" ;;
+  "compose ps -q moecloud") if [ -f "$state/running" ]; then printf 'c0ffee\n'; fi ;;
+  "inspect -f"*) printf 'healthy\n' ;;
+  "compose exec -T moecloud moecloud backup") printf 'backup\n' >>"$state/events" ;;
+  "compose exec -T moecloud moecloud setup-link") printf 'http://localhost:3000/setup?code=abc123\n' ;;
+  *) ;;
+esac

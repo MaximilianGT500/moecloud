@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state="$STUB_STATE"
+url=""
+target=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o)
+      target="$2"
+      shift
+      ;;
+    -w | --retry | --max-time) shift ;;
+    http://* | https://*) url="$1" ;;
+  esac
+  shift
+done
+printf 'curl %s\n' "$url" >>"$state/calls"
+
+send() {
+  if [ -n "$target" ]; then cat >"$target"; else cat; fi
+}
+
+case "$url" in
+  https://raw.githubusercontent.com/*)
+    rest="${url#https://raw.githubusercontent.com/*/*/}"
+    file="$STUB_REPO/${rest#*/}"
+    if [ "${rest%%/*}" != "main" ] || [ ! -f "$file" ]; then exit 22; fi
+    send <"$file"
+    ;;
+  */install.sh) send <"$STUB_REPO/install.sh" ;;
+  */version.json)
+    [ -f "$state/site" ] || exit 6
+    printf '{\n  "version": "%s",\n  "date": "2026-11-18"\n}\n' "$(cat "$state/site")" | send
+    ;;
+  https://ghcr.io/v2/) printf '401' ;;
+  http://127.0.0.1:*/healthz)
+    [ -f "$state/running" ] || exit 7
+    printf '{"ok":true,"version":"%s"}' "$(cat "$state/running")" | send
+    ;;
+  *) exit 6 ;;
+esac

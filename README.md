@@ -125,21 +125,20 @@ Vorher prüft das Skript den Server: Architektur, Arbeitsspeicher, freien Platz,
 curl -fsSL https://moecloud.moestudio.net/install.sh | sudo bash -s -- --domain cloud.example.com --clamav --auto-update --yes
 ```
 
-| Option             | Bedeutung                                                                        |
-| ------------------ | -------------------------------------------------------------------------------- |
-| `--domain NAME`    | Domain für HTTPS über Caddy                                                      |
-| `--port ZAHL`      | Port auf dem Server ohne Domain, Standard `3000`                                 |
-| `--clamav`         | ClamAV als Virenscan mitstarten                                                  |
-| `--no-clamav`      | ClamAV nicht einrichten                                                          |
-| `--postgres`       | PostgreSQL als eigenen Dienst mitstarten, siehe [Datenbank](#datenbank)          |
-| `--sqlite`         | SQLite als Datenbank nehmen, das ist der Standard                                |
-| `--version X.Y.Z`  | Genau diese Version installieren und festhalten, `--version latest` hebt das auf |
-| `--auto-update`    | Updates jede Nacht zwischen 4 und 5 Uhr einspielen                               |
-| `--no-auto-update` | Automatische Updates ausschalten                                                 |
-| `--dir PFAD`       | Installationsordner, Standard `/opt/moecloud`                                    |
-| `--update`         | Eine bestehende Installation aktualisieren                                       |
-| `--check`          | Nur prüfen, ob der Server passt, ohne etwas zu verändern                         |
-| `--yes`            | Keine Rückfragen, Standardwerte nehmen                                           |
+| Option             | Bedeutung                                                               |
+| ------------------ | ----------------------------------------------------------------------- |
+| `--domain NAME`    | Domain für HTTPS über Caddy                                             |
+| `--port ZAHL`      | Port auf dem Server ohne Domain, Standard `3000`                        |
+| `--clamav`         | ClamAV als Virenscan mitstarten                                         |
+| `--no-clamav`      | ClamAV nicht einrichten                                                 |
+| `--postgres`       | PostgreSQL als eigenen Dienst mitstarten, siehe [Datenbank](#datenbank) |
+| `--sqlite`         | SQLite als Datenbank nehmen, das ist der Standard                       |
+| `--auto-update`    | Updates jede Nacht zwischen 4 und 5 Uhr einspielen                      |
+| `--no-auto-update` | Automatische Updates ausschalten                                        |
+| `--dir PFAD`       | Installationsordner, Standard `/opt/moecloud`                           |
+| `--update`         | Eine bestehende Installation aktualisieren                              |
+| `--check`          | Nur prüfen, ob der Server passt, ohne etwas zu verändern                |
+| `--yes`            | Keine Rückfragen, Standardwerte nehmen                                  |
 
 Mit Domain bindet das Skript MoeCloud nur an `127.0.0.1`, erreichbar ist es dann ausschließlich über Caddy. Ist Port 3000 dafür schon belegt, nimmt es den nächsten freien. Alles, was das Skript tut, steht in `/var/log/moecloud-install.log`, bei einem Fehler zeigt es die letzten Zeilen daraus. Außerdem legt es den Befehl `moecloud` an:
 
@@ -147,7 +146,7 @@ Mit Domain bindet das Skript MoeCloud nur an `127.0.0.1`, erreichbar ist es dann
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `sudo moecloud status`                        | Zustand, Version, Adresse, freier Platz, Virenscan und Updates auf einen Blick                                          |
 | `sudo moecloud doctor`                        | Typische Probleme finden: Container, Ports, Zertifikat, Platz, Sicherungen und ClamAV                                   |
-| `sudo moecloud update [--version X.Y.Z]`      | Datenbank sichern, auf die neueste oder eine bestimmte Version aktualisieren                                            |
+| `sudo moecloud update`                        | Datenbank sichern und auf die neueste Version aktualisieren                                                             |
 | `sudo moecloud auto-update [on \| off]`       | Automatische Updates jede Nacht ein- oder ausschalten, ohne Angabe den Stand zeigen                                     |
 | `sudo moecloud logs [dienst]`                 | Logs ansehen, ohne Angabe von MoeCloud, sonst etwa von `caddy` oder `clamav`                                            |
 | `sudo moecloud restart [dienst]`              | MoeCloud oder einen anderen Dienst neu starten                                                                          |
@@ -157,7 +156,7 @@ Mit Domain bindet das Skript MoeCloud nur an `127.0.0.1`, erreichbar ist es dann
 | `sudo moecloud uninstall`                     | Container, Images, Befehl und Zeitplan entfernen, deine Daten in `/opt/moecloud` bleiben                                |
 | `sudo moecloud …`                             | Alle anderen Befehle der [Kommandozeile](#kommandozeile), etwa `backup` oder `users`                                    |
 
-Festgehaltene Versionen bleiben auch bei `update` und den automatischen Updates gleich. Auf eine ältere Version geht das Skript nicht zurück, weil sich die Datenbank verändert haben kann, dafür spielst du eine [Sicherung](#datensicherung) ein.
+Das Skript und `update` laden das Image `latest`, also den neuesten Stand, einzelne Versionen stehen nicht zur Auswahl. Zurück auf einen älteren Stand geht es nicht, weil sich die Datenbank verändert haben kann, dafür spielst du eine [Sicherung](#datensicherung) ein. Wer bei einem bestimmten Image bleiben möchte, trägt dessen Tag als `MOECLOUD_TAG` in die `.env` ein, siehe [Mit Docker](#mit-docker).
 
 Das Skript liegt auch im Repository als [`install.sh`](install.sh). Wer es vorher lesen möchte, lädt es erst herunter und startet es dann mit `sudo bash install.sh`. Mit `--check` siehst du gefahrlos, ob dein Server passt.
 
@@ -172,7 +171,7 @@ docker compose up -d
 docker compose logs -f moecloud
 ```
 
-In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` mit allen Variablen liegt als [`.env.example`](.env.example) im Repository. Mit `MOECLOUD_VERSION=1.5.0` in der `.env` hältst du eine Version fest, ohne Angabe nimmt Compose `latest`.
+In den Logs erscheint der Link zur Einrichtung. Alle Daten landen im Ordner `data/` neben der `docker-compose.yml`. Eine Vorlage für die `.env` liegt als [`.env.example`](.env.example) im Repository. Sie erklärt jede Variable mit Standard, möglichen Werten und Beispiel. Compose nimmt das Image `latest`. Mit `MOECLOUD_TAG` in der `.env` bleibst du bei einem bestimmten Image, etwa mit `MOECLOUD_TAG=sha-1a2b3c4`.
 
 Was der Stack mitbringt:
 
@@ -184,7 +183,7 @@ Was der Stack mitbringt:
 - **Logs** mit Rotation (3 × 10 MB) und Zeitzone aus `TZ`.
 - **Sauberes Beenden**: laufende Anfragen dürfen bis zu 20 Sekunden fertig werden.
 
-Zu jeder veröffentlichten Version gibt es neben `latest` eigene Tags wie `1.5.0`, `1.5` und `1`, jeweils mit SBOM und Herkunftsnachweis. Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
+GitHub baut das Image bei jeder Änderung am Hauptzweig und veröffentlicht es als `latest`, dazu unter einem Tag mit dem Commit wie `sha-1a2b3c4`, jeweils mit SBOM und Herkunftsnachweis. Welche Tags es gibt, zeigt die [Seite des Images](https://github.com/MaximilianGT500/moecloud/pkgs/container/moecloud). Selbst bauen geht mit `docker build -t ghcr.io/maximiliangt500/moecloud:latest .` im geklonten Repository, `docker compose up -d` nimmt dann dieses Image.
 
 ### ClamAV dazunehmen
 
@@ -792,7 +791,7 @@ Alle Einstellungen stehen in der Datenbank und werden unter **Admin › Einstell
 | Aufbewahrung und Updates | Wie lange Protokoll und Aktivität bleiben, Versionsprüfung                                                                                                                               |
 | Rechtliches              | Impressum und Datenschutz, als Adresse einer anderen Seite oder als Text                                                                                                                 |
 
-Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie in eine `.env` neben der `docker-compose.yml` ein, ohne Docker setzt du sie beim Start:
+Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie in eine `.env` neben der `docker-compose.yml` ein, die [`.env.example`](.env.example) erklärt jede einzelne. Änderungen gelten nach `docker compose up -d`, mit dem Installationsskript nach `sudo moecloud start`, ein `restart` allein übernimmt sie nicht. Ohne Docker setzt du die Variablen beim Start:
 
 | Variable                                                                                                    | Standard                                      | Bedeutung                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -824,7 +823,7 @@ Umgebungsvariablen brauchst du nur für den Betrieb. Mit Docker trägst du sie i
 | `MOECLOUD_INSTALL`                                                                                          | `node`, im Docker-Image `docker`              | Wie MoeCloud installiert ist, damit die Verwaltung den passenden Befehl zum Aktualisieren zeigt. Das Installationsskript setzt `script`                     |
 | `PUID` / `PGID`                                                                                             | `1000`                                        | Nur Docker: Benutzer und Gruppe, denen `data/` gehört                                                                                                       |
 | `MOECLOUD_BIND` / `MOECLOUD_PORT`                                                                           | `0.0.0.0` / `3000`                            | Nur Docker: Adresse und Port auf dem Host                                                                                                                   |
-| `MOECLOUD_VERSION`                                                                                          | `latest`                                      | Nur Docker: Tag des Images, etwa `1.5.0`. Das Installationsskript trägt hier die installierte Version ein                                                   |
+| `MOECLOUD_TAG`                                                                                              | `latest`                                      | Nur Docker: Tag des Images. Das Installationsskript trägt hier nichts ein und nimmt ohne Angabe `latest`                                                    |
 | `DOMAIN`                                                                                                    |                                               | Nur Docker mit Caddy, siehe [Mit eigener Domain und HTTPS](#mit-eigener-domain-und-https)                                                                   |
 | `VITE_DEV_SERVER`                                                                                           |                                               | Nur für die Entwicklung, siehe [Entwicklung](#entwicklung)                                                                                                  |
 
@@ -850,9 +849,9 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 
 ```json
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "date": "2026-11-17",
-  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.5.0",
+  "changelog": "https://moecloud.moestudio.net/changelog.html#v1.5.1",
   "security": false,
   "notes": {
     "de": ["Öffentliche Links direkt per E-Mail verschicken"],
@@ -866,7 +865,7 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 Was neu ist und worauf du achten musst, steht im [Changelog](CHANGELOG.md).
 
 - **Mit dem Installationsskript**: `sudo moecloud update`, oder jede Nacht von selbst mit `sudo moecloud auto-update on`
-- **Mit Docker**: `docker compose pull` und `docker compose up -d`. Hast du `MOECLOUD_VERSION` gesetzt, trägst du dort vorher die neue Version ein
+- **Mit Docker**: `docker compose pull` und `docker compose up -d`. Hast du `MOECLOUD_TAG` gesetzt, trägst du dort vorher das neue Tag ein oder nimmst die Zeile heraus
 - **Mit Node.js**: `git pull`, `npm ci`, `npm run build` und MoeCloud neu starten
 
 Ändert sich mit einem Update die Datenbank, sichert MoeCloud sie beim ersten Start als `moecloud-update-…db` in `data/backups/` und bringt sie danach auf den neuen Stand. Beim Update auf 1.4.0 kommen die Tabelle für gespeicherte Suchen und eine Spalte samt Index für die Zeitleiste in Fotos dazu, die MoeCloud beim ersten Start für alle vorhandenen Fotos füllt. Beim Update von 1.0.0 auf 1.1.0 kommen die Tabellen für Gruppen und die Spalten für Grenze und Pause von Links dazu, beim Update von 0.1.0 auf 1.0.0 die Tabellen für Protokoll, Aktivität, Benachrichtigungen, Kommentare, Webhooks und den Suchindex. Version 1.2.0 ändert den Aufbau der Datenbank nicht. Beim ersten Start ordnet sie Rohdateien als Bilder ein und merkt Dateien, die jetzt eine Vorschau bekommen, für die Verarbeitung vor. Vorhandene Dateien liest MoeCloud danach im Hintergrund für Vorschaubilder, Fotos und Suche ein, das läuft nebenher und braucht nichts von dir. Den Fortschritt siehst du unter **Admin › System**.

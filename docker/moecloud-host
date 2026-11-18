@@ -145,20 +145,26 @@ restore_files() { if [ -n "$1" ]; then env_set COMPOSE_FILE "$1"; else env_unset
 
 timer_enabled() { command -v systemctl >/dev/null 2>&1 && systemctl is-enabled moecloud-update.timer >/dev/null 2>&1; }
 
-version_label() {
-  local version
-  version="$(env_get MOECLOUD_VERSION)"
-  if [ "$(env_get MOECLOUD_PIN)" = "1" ]; then
-    printf '%s (festgehalten)' "${version:-latest}"
-  else
-    printf '%s' "${version:-latest}"
-  fi
+running_version() {
+  curl -fsS --max-time 5 "http://127.0.0.1:$(port)/healthz" 2>/dev/null |
+    tr -d '\n' |
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' || true
+}
+
+image_tag() {
+  local tag
+  tag="$(env_get MOECLOUD_TAG)"
+  tag="${tag#[\"\']}"
+  tag="${tag%[\"\']}"
+  printf '%s' "${tag:-latest}"
 }
 
 status() {
-  local state
+  local state version tag
   state="$(state_of moecloud)"
-  printf '%sMoeCloud%s %s\n\n' "$bold" "$reset" "$(version_label)"
+  version="$(running_version)"
+  tag="$(image_tag)"
+  printf '%sMoeCloud%s%s\n\n' "$bold" "$reset" "${version:+ $version}"
   printf '  %-16s %s\n' "Zustand" "$state"
   printf '  %-16s %s\n' "Adresse" "$(address)"
   printf '  %-16s %s\n' "Ordner" "$DIR"
@@ -178,7 +184,9 @@ status() {
   else
     printf '  %-16s %s\n' "Office-Vorschau" "nicht eingerichtet"
   fi
-  if timer_enabled; then
+  if [ "$tag" != "latest" ]; then
+    printf '  %-16s %s\n' "Updates" "bleiben beim Image $tag, siehe MOECLOUD_TAG in $DIR/.env"
+  elif timer_enabled; then
     printf '  %-16s %s\n' "Updates" "jede Nacht automatisch"
   else
     printf '  %-16s %s\n' "Updates" "von Hand mit sudo moecloud update"
@@ -373,12 +381,9 @@ wait_ready() {
 }
 
 fetch_postgres() {
-  local version ref="main"
   [ -f "$DIR/docker/postgres.yml" ] && return 0
-  version="$(env_get MOECLOUD_VERSION)"
-  case "$version" in [0-9]*.[0-9]*.[0-9]*) ref="v$version" ;; esac
   mkdir -p "$DIR/docker"
-  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${ref}/docker/postgres.yml" -o "$DIR/docker/postgres.yml.neu" ||
+  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/main/docker/postgres.yml" -o "$DIR/docker/postgres.yml.neu" ||
     fail "docker/postgres.yml ließ sich nicht von GitHub laden."
   mv "$DIR/docker/postgres.yml.neu" "$DIR/docker/postgres.yml"
 }
@@ -439,13 +444,10 @@ to_sqlite() {
 }
 
 fetch_office() {
-  local version ref="main"
   [ -f "$DIR/docker/office.yml" ] && return 0
-  version="$(env_get MOECLOUD_VERSION)"
-  case "$version" in [0-9]*.[0-9]*.[0-9]*) ref="v$version" ;; esac
   mkdir -p "$DIR/docker"
-  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/${ref}/docker/office.yml" -o "$DIR/docker/office.yml.neu" ||
-    fail "docker/office.yml ließ sich nicht von GitHub laden. Die Office-Vorschau gibt es ab MoeCloud 1.5.0."
+  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/main/docker/office.yml" -o "$DIR/docker/office.yml.neu" ||
+    fail "docker/office.yml ließ sich nicht von GitHub laden."
   mv "$DIR/docker/office.yml.neu" "$DIR/docker/office.yml"
 }
 
@@ -508,7 +510,7 @@ help() {
     "moecloud status" "Zustand, Version und Adresse" \
     "moecloud doctor" "Typische Probleme finden" \
     "moecloud logs [dienst]" "Logs ansehen, zum Beispiel von caddy oder clamav" \
-    "moecloud update [--version x.y.z]" "Aktualisieren oder eine Version festhalten" \
+    "moecloud update" "Auf die neueste Version aktualisieren" \
     "moecloud auto-update [on|off]" "Automatische Updates jede Nacht" \
     "moecloud start | stop" "MoeCloud mit allen Diensten starten oder anhalten" \
     "moecloud restart [dienst]" "MoeCloud oder einen anderen Dienst neu starten" \
