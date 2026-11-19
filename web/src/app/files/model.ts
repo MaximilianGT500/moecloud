@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../lib/api';
+import { boot } from '../../lib/boot';
 import { compareNames, formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import type { Prefs } from '../../lib/prefs';
@@ -8,6 +9,8 @@ import type { Item } from './kinds';
 
 export type View =
   | { kind: 'folder'; id: string }
+  | { kind: 'home' }
+  | { kind: 'teams' }
   | { kind: 'photos' }
   | { kind: 'recent' }
   | { kind: 'activity' }
@@ -18,6 +21,8 @@ export type View =
   | { kind: 'tags' }
   | { kind: 'tag'; id: string }
   | { kind: 'albums' }
+  | { kind: 'notes'; id: string | null }
+  | { kind: 'music'; tab: 'tracks' | 'albums' | 'artists' | 'playlists'; id: string | null; name: string | null }
   | { kind: 'album'; id: string }
   | { kind: 'plugin'; plugin: string; page: string }
   | { kind: 'search'; q: string; filter: string; date: string; size: string; tag: string };
@@ -57,9 +62,17 @@ export interface SharedGrant {
   permission: 'view' | 'edit';
   createdAt: number;
   expiresAt?: number | null;
-  user: { id: number; name: string; username: string; initials: string } | null;
+  note?: string | null;
+  user: { id: number; name: string; username: string; initials: string; avatar?: string | null } | null;
   group?: { id: number; name: string; members: number } | null;
   node?: Item;
+}
+
+export interface TeamInfo {
+  id: number;
+  name: string;
+  role: 'view' | 'edit' | 'manage' | null;
+  canManage: boolean;
 }
 
 export interface Listing {
@@ -71,6 +84,7 @@ export interface Listing {
   links?: SharedLink[];
   grants?: SharedGrant[];
   trashDays?: number;
+  team?: TeamInfo | null;
   tag?: { id: string; name: string; color: string };
   album?: Album;
 }
@@ -78,10 +92,25 @@ export interface Listing {
 export function parseView(path: string, query: URLSearchParams, rootId: string): View {
   const folder = /^\/files\/folder\/([0-9A-Za-z]+)$/.exec(path);
   if (folder) return { kind: 'folder', id: folder[1] };
+  if (path === '/files/home') return { kind: 'home' };
+  if (path === '/files/teams') return { kind: 'teams' };
   if (path === '/files/photos') return { kind: 'photos' };
   if (path === '/files/photos/albums') return { kind: 'albums' };
   const album = /^\/files\/photos\/albums\/([0-9A-Za-z]+)$/.exec(path);
   if (album) return { kind: 'album', id: album[1] };
+  const music = /^\/files\/music(?:\/(albums|artists|playlists)(?:\/([0-9A-Za-z]+))?)?$/.exec(path);
+  if (music) {
+    const tab = (music[1] ?? 'tracks') as 'tracks' | 'albums' | 'artists' | 'playlists';
+    return {
+      kind: 'music',
+      tab,
+      id: tab === 'playlists' ? (music[2] ?? null) : null,
+      name: tab === 'playlists' ? null : query.get('name'),
+    };
+  }
+  if (path === '/files/notes') return { kind: 'notes', id: null };
+  const note = /^\/files\/notes\/([0-9A-Za-z]+)$/.exec(path);
+  if (note) return { kind: 'notes', id: note[1] };
   if (path === '/files/recent') return { kind: 'recent' };
   if (path === '/files/activity') return { kind: 'activity' };
   if (path === '/files/storage') return { kind: 'storage' };
@@ -103,6 +132,7 @@ export function parseView(path: string, query: URLSearchParams, rootId: string):
       tag: query.get('tag') ?? '',
     };
   }
+  if (boot().user?.role === 'guest') return { kind: 'home' };
   return { kind: 'folder', id: rootId };
 }
 
@@ -158,6 +188,7 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
         breadcrumbs: Crumb[];
         role: Listing['role'];
         shared: { rootId: string } | null;
+        team?: TeamInfo | null;
         items: Item[];
       }>(`/api/nodes/${view.id}/children`, signal);
       return {
@@ -166,13 +197,18 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
         breadcrumbs: data.breadcrumbs,
         role: data.role,
         sharedRoot: data.shared?.rootId ?? null,
+        team: data.team ?? null,
       };
     }
+    case 'home':
+    case 'teams':
     case 'photos':
     case 'activity':
     case 'storage':
     case 'tags':
     case 'albums':
+    case 'notes':
+    case 'music':
     case 'plugin':
       return { items: [], role: 'owner' };
     case 'album': {
@@ -193,7 +229,7 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
     }
     case 'shared': {
       const data = await api.get<{ withMe: Item[]; links: SharedLink[]; grants: SharedGrant[] }>('/api/shared', signal);
-      return { items: data.withMe, links: data.links, grants: data.grants, role: 'view' };
+      return { items: data.withMe.filter((item) => !item.team), links: data.links, grants: data.grants, role: 'view' };
     }
     case 'search': {
       const query = searchQuery(view);

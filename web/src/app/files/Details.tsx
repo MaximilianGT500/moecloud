@@ -8,7 +8,10 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import BookmarkBorderRounded from '@mui/icons-material/BookmarkBorderRounded';
+import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
 import DifferenceRounded from '@mui/icons-material/DifferenceRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import EditRounded from '@mui/icons-material/EditRounded';
@@ -25,6 +28,7 @@ import { formatBytes, formatDateTime } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { c, radius } from '../../theme/tokens';
+import { copyText } from '../common/bits';
 import { confirm, prompt } from '../common/dialogs';
 import { lazyNamed } from '../common/lazy';
 import { toast } from '../common/toast';
@@ -47,6 +51,7 @@ interface Version {
   modifiedAt: number;
   createdAt: number;
   author: string | null;
+  label: string | null;
 }
 
 function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => void; onUpload?: () => void }) {
@@ -88,11 +93,44 @@ function Versions({ item, onChanged, onUpload }: { item: Item; onChanged: () => 
         list.map((version) => (
           <Box key={version.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2">{formatDateTime(version.modifiedAt)}</Typography>
+              <Typography variant="body2" sx={{ overflowWrap: 'anywhere', fontWeight: version.label ? 500 : 400 }}>
+                {version.label ?? formatDateTime(version.modifiedAt)}
+              </Typography>
               <Typography variant="caption" sx={{ color: c.onSurfaceVariant }} component="p">
-                {[formatBytes(version.size), version.author].filter(Boolean).join(' · ')}
+                {[version.label ? formatDateTime(version.modifiedAt) : null, formatBytes(version.size), version.author]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Typography>
             </Box>
+            {editable && (
+              <Tooltip title={version.label ? t('Namen ändern') : t('Benennen und dauerhaft behalten')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('Version benennen')}
+                  onClick={async () => {
+                    const label = await prompt({
+                      title: t('Version benennen'),
+                      text: t('Benannte Versionen räumt MoeCloud nicht von selbst weg. Ohne Namen gilt wieder die übliche Frist.'),
+                      label: t('Name'),
+                      value: version.label ?? '',
+                      confirm: t('Speichern'),
+                      optional: true,
+                    });
+                    if (label === null) return;
+                    try {
+                      const result = await api.patch<{ items: Version[] }>(`/api/nodes/${item.id}/versions/${version.id}`, {
+                        label: label.trim() || null,
+                      });
+                      setVersions({ key, list: result.items });
+                    } catch (error) {
+                      toast(errorText(error));
+                    }
+                  }}
+                >
+                  {version.label ? <BookmarkRounded fontSize="small" /> : <BookmarkBorderRounded fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+            )}
             {canCompare(item, version) && (
               <Tooltip title={t('Mit der aktuellen Fassung vergleichen')}>
                 <IconButton size="small" aria-label={t('Version vergleichen')} onClick={() => setComparing(version)}>
@@ -346,6 +384,7 @@ function InfoTab({
         {item.createdAt && <Fact label={t('Erstellt')}>{formatDateTime(item.createdAt)}</Fact>}
         <Fact label={t('Gehört')}>{item.owner ? item.owner.name : t('Dir')}</Fact>
         {item.viaGroup && <Fact label={t('Geteilt über')}>{t('Gruppe {name}', { name: item.viaGroup })}</Fact>}
+        {item.shareNote && <Fact label={t('Notiz zur Freigabe')}>{item.shareNote}</Fact>}
         {item.role && item.role !== 'owner' && (
           <Fact label={t('Deine Rechte')}>{item.role === 'edit' ? t('Kann bearbeiten') : t('Kann ansehen')}</Fact>
         )}
@@ -357,6 +396,29 @@ function InfoTab({
           </Fact>
         )}
         {meta && <MetaFacts item={item} meta={meta} />}
+        {meta?.sha256 && (
+          <Fact label={t('Prüfsumme')}>
+            <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box
+                component="span"
+                title={meta.sha256}
+                sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem' }}
+              >
+                {`${meta.sha256.slice(0, 16)}…`}
+              </Box>
+              <Tooltip title={t('SHA-256 kopieren')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('SHA-256 kopieren')}
+                  onClick={() => void copyText(meta.sha256 ?? '', t('Prüfsumme kopiert'))}
+                  sx={{ my: -0.5 }}
+                >
+                  <ContentCopyRounded fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Fact>
+        )}
       </Box>
       {meta && <ScanState meta={meta} />}
       {onShare && item.role !== 'view' && (

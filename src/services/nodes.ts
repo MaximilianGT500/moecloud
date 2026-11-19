@@ -6,6 +6,7 @@ import { kindOf, mimeOf } from '../lib/mime.ts';
 import { cleanName, nameKey, uniqueName } from '../lib/names.ts';
 import { record } from './activity.ts';
 import { typeOf, type BlobRow } from './blobs.ts';
+import { assertAllowedName } from './filetypes.ts';
 import { canConvert } from './office.ts';
 import { previews } from './thumbs.ts';
 import { getUser, quotaOf, usageOf, type UserRow } from './users.ts';
@@ -211,7 +212,25 @@ export interface NewNode {
   modifiedAt?: number | null;
 }
 
+const guests = new Map<number, { guest: boolean; at: number }>();
+
+export const forgetOwners = () => guests.clear();
+
+export function assertOwner(ownerId: number) {
+  const known = guests.get(ownerId);
+  const now = Date.now();
+  let guest = known?.guest ?? false;
+  if (!known || now - known.at > 2000) {
+    guest = getUser(ownerId)?.role === 'guest';
+    guests.set(ownerId, { guest, at: now });
+    if (guests.size > 500) guests.clear();
+  }
+  if (guest) throw forbidden('Gastkonten haben keinen eigenen Speicher. Lege Dateien in einem geteilten Ordner oder einem Teamordner ab');
+}
+
 export function insertNode(input: NewNode): NodeRow {
+  assertOwner(input.ownerId);
+  if (input.type === 'file') assertAllowedName(input.name);
   const now = Date.now();
   const id = randomId();
   run(
@@ -270,12 +289,15 @@ export function remaining(ownerId: number): number {
 }
 
 export function assertSpace(ownerId: number, bytes: number, actorId: number | null) {
+  assertOwner(ownerId);
   if (bytes <= 0) return;
-  if (remaining(ownerId) < bytes) {
-    throw insufficientStorage(
-      ownerId === actorId ? 'Dein Speicher ist voll' : 'Der Speicher der Person, der dieser Ordner gehört, ist voll'
-    );
-  }
+  if (remaining(ownerId) < bytes) throw storageFull(ownerId, actorId);
+}
+
+export function storageFull(ownerId: number, actorId: number | null) {
+  if (ownerId === actorId) return insufficientStorage('Dein Speicher ist voll');
+  if (getUser(ownerId)?.role === 'team') return insufficientStorage('Der Speicher dieses Teamordners ist voll');
+  return insufficientStorage('Der Speicher der Person, der dieser Ordner gehört, ist voll');
 }
 
 export function createFolder(user: UserRow, parentId: string, rawName: unknown) {
@@ -306,6 +328,7 @@ export function rename(user: UserRow, id: string, rawName: unknown) {
   const { node } = requireMutable(user, id);
   const name = cleanName(rawName);
   if (name === node.name) return node;
+  if (node.type === 'file') assertAllowedName(name);
   const existing = findChild(node.parent_id!, name);
   if (existing && existing.id !== node.id) throw conflict('Hier gibt es schon etwas mit dem Namen „{name}“', { name });
   run(
@@ -327,6 +350,7 @@ export function renameMany(user: UserRow, changes: { id: string; name: unknown }
   const planned = changes
     .map((change) => ({ node: requireMutable(user, change.id).node, name: cleanName(change.name) }))
     .filter((entry) => entry.name !== entry.node.name);
+  for (const entry of planned) if (entry.node.type === 'file') assertAllowedName(entry.name);
   const parents = new Map<string, typeof planned>();
   for (const entry of planned) parents.set(entry.node.parent_id!, [...(parents.get(entry.node.parent_id!) ?? []), entry]);
   for (const [parentId, entries] of parents) {
@@ -366,6 +390,26 @@ export function renameMany(user: UserRow, changes: { id: string; name: unknown }
   return changes.map((change) => getNode(change.id)!);
 }
 
+function relocate(user: UserRow, node: NodeRow, ownerId: number) {
+  if (node.owner_id !== user.id) throw badRequest('Aus geteilten Ordnern und Teamordnern heraus kannst du nur kopieren');
+  const shared = one(
+    `${TREE('')} SELECT 1 AS found FROM tree t
+     WHERE EXISTS (SELECT 1 FROM grants g WHERE g.node_id = t.id)
+        OR EXISTS (SELECT 1 FROM group_grants g WHERE g.node_id = t.id)
+        OR EXISTS (SELECT 1 FROM links l WHERE l.node_id = t.id)
+     LIMIT 1`,
+    node.id
+  );
+  if (shared) throw badRequest('Darin ist noch etwas geteilt. Beende zuerst die Freigaben und Links oder kopier es stattdessen');
+  assertSpace(
+    ownerId,
+    subtree(node.id, true).reduce((total, entry) => total + entry.size, 0),
+    user.id
+  );
+  run(`${TREE('')} UPDATE nodes SET owner_id = ? WHERE id IN (SELECT id FROM tree)`, node.id, ownerId);
+  run(`${TREE('')} DELETE FROM rules WHERE node_id IN (SELECT id FROM tree)`, node.id);
+}
+
 export function move(user: UserRow, ids: string[], targetId: string) {
   const target = requireFolder(user, targetId, 'edit');
   const lineage = new Set(chain(targetId).map((node) => node.id));
@@ -376,7 +420,7 @@ export function move(user: UserRow, ids: string[], targetId: string) {
       const { node } = requireMutable(user, id);
       if (node.parent_id === targetId) continue;
       if (lineage.has(node.id)) throw badRequest('Einen Ordner kannst du nicht in sich selbst verschieben');
-      if (node.owner_id !== target.node.owner_id) throw badRequest('Zwischen deinen Dateien und geteilten Ordnern kannst du nur kopieren');
+      if (node.owner_id !== target.node.owner_id) relocate(user, node, target.node.owner_id);
       const name = uniqueName(node.name, node.type === 'folder', taken(targetId));
       run(
         'UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, updated_at = ?, updated_by = ?, etag = etag + 1 WHERE id = ?',
@@ -390,7 +434,7 @@ export function move(user: UserRow, ids: string[], targetId: string) {
       folders.add(node.parent_id);
       moved.push(getNode(node.id)!);
       record({
-        owner: node.owner_id,
+        owner: target.node.owner_id,
         actor: user.id,
         node: node.id,
         parent: targetId,
@@ -408,22 +452,25 @@ export function moveTo(user: UserRow, id: string, targetId: string, rawName: str
   const { node } = requireMutable(user, id);
   const target = requireFolder(user, targetId, 'edit');
   const name = cleanName(rawName);
+  if (node.type === 'file' && name !== node.name) assertAllowedName(name);
   if (chain(targetId).some((entry) => entry.id === node.id)) throw badRequest('Einen Ordner kannst du nicht in sich selbst verschieben');
-  if (node.owner_id !== target.node.owner_id) throw badRequest('Zwischen deinen Dateien und geteilten Ordnern kannst du nur kopieren');
   const existing = findChild(targetId, name);
   if (existing && existing.id !== node.id) throw conflict('Hier gibt es schon etwas mit dem Namen „{name}“', { name });
-  run(
-    `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, mime = CASE WHEN type = 'file' THEN ? ELSE mime END, updated_at = ?, updated_by = ?, etag = etag + 1 WHERE id = ?`,
-    targetId,
-    name,
-    nameKey(name),
-    mimeOf(name),
-    Date.now(),
-    user.id,
-    id
-  );
+  tx(() => {
+    if (node.owner_id !== target.node.owner_id) relocate(user, node, target.node.owner_id);
+    run(
+      `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, mime = CASE WHEN type = 'file' THEN ? ELSE mime END, updated_at = ?, updated_by = ?, etag = etag + 1 WHERE id = ?`,
+      targetId,
+      name,
+      nameKey(name),
+      mimeOf(name),
+      Date.now(),
+      user.id,
+      id
+    );
+  });
   record({
-    owner: node.owner_id,
+    owner: target.node.owner_id,
     actor: user.id,
     node: id,
     parent: targetId,
@@ -475,6 +522,35 @@ function copyTree(source: NodeRow, parentId: string, name: string, ownerId: numb
   return first!;
 }
 
+export const STARTER_LIMIT = 500;
+
+export function measureChildren(folderId: string) {
+  const children = all<NodeRow>('SELECT * FROM nodes WHERE parent_id = ? AND trashed_at IS NULL ORDER BY name_key', folderId);
+  let items = 0;
+  let bytes = 0;
+  for (const child of children) {
+    for (const node of subtree(child.id)) {
+      items++;
+      bytes += node.size;
+    }
+  }
+  return { children, items, bytes };
+}
+
+export function seedFrom(folderId: string, user: UserRow) {
+  const { children, items, bytes } = measureChildren(folderId);
+  if (items === 0) return 0;
+  if (items > STARTER_LIMIT) throw new Error(`Mehr als ${STARTER_LIMIT} Einträge`);
+  assertSpace(user.id, bytes, user.id);
+  tx(() => {
+    for (const child of children) {
+      copyTree(child, user.root_id, uniqueName(child.name, child.type === 'folder', taken(user.root_id)), user.id, user.id);
+    }
+  });
+  changed([user.root_id]);
+  return items;
+}
+
 export function copy(user: UserRow, ids: string[], targetId: string) {
   const target = requireFolder(user, targetId, 'edit');
   const sources = ids.map((id) => requireAccess(user, id, 'view').node);
@@ -508,7 +584,7 @@ export function trash(user: UserRow, ids: string[]) {
   changed(folders);
 }
 
-export function restore(user: UserRow, ids: string[]) {
+export function restore(user: UserRow, ids: string[], actorId: number = user.id) {
   const folders = new Set<string | null>();
   const restored: NodeRow[] = [];
   tx(() => {
@@ -527,7 +603,7 @@ export function restore(user: UserRow, ids: string[]) {
       );
       folders.add(parentId);
       restored.push(getNode(id)!);
-      record({ owner: node.owner_id, actor: user.id, node: id, parent: parentId, action: 'restore', name });
+      record({ owner: node.owner_id, actor: actorId, node: id, parent: parentId, action: 'restore', name });
     }
   });
   changed(folders);
@@ -538,13 +614,13 @@ function destroyTree(id: string) {
   run(`${TREE('')} DELETE FROM nodes WHERE id IN (SELECT id FROM tree)`, id);
 }
 
-export function destroy(user: UserRow, ids: string[]) {
+export function destroy(user: UserRow, ids: string[], actorId: number = user.id) {
   tx(() => {
     for (const id of ids) {
       const node = getNode(id);
       if (!node || node.owner_id !== user.id || !node.trashed_at) throw notFound('Das liegt nicht im Papierkorb');
       destroyTree(id);
-      record({ owner: user.id, actor: user.id, node: id, parent: node.parent_id, action: 'delete', name: node.name });
+      record({ owner: user.id, actor: actorId, node: id, parent: node.parent_id, action: 'delete', name: node.name });
     }
   });
   publish([user.id], 'change', { folders: [], trash: true });
@@ -652,7 +728,35 @@ function postgresQuery(text: string) {
   return words.map((word, index) => `'${word}'${index === words.length - 1 && word.length >= 2 ? ':*' : ''}`).join(' & ');
 }
 
-function searchContent(user: UserRow, text: string, filter: { sql: string; params: Param[] }): Found[] {
+export function teamOwners(user: UserRow): number[] {
+  const now = Date.now();
+  return all<{ owner_id: number }>(
+    `SELECT DISTINCT n.owner_id FROM nodes n JOIN teams t ON t.user_id = n.owner_id
+     WHERE n.parent_id IS NULL AND (
+       EXISTS (SELECT 1 FROM grants g WHERE g.node_id = n.id AND g.user_id = ? AND (g.expires_at IS NULL OR g.expires_at > ?))
+       OR EXISTS (
+         SELECT 1 FROM group_grants gg JOIN group_members m ON m.group_id = gg.group_id
+         WHERE gg.node_id = n.id AND m.user_id = ? AND (gg.expires_at IS NULL OR gg.expires_at > ?)
+       )
+     )`,
+    user.id,
+    now,
+    user.id,
+    now
+  ).map((row) => Number(row.owner_id));
+}
+
+interface OwnerScope {
+  sql: string;
+  params: number[];
+}
+
+function ownerScope(user: UserRow): OwnerScope {
+  const owners = [user.id, ...teamOwners(user)];
+  return { sql: `n.owner_id IN (${owners.map(() => '?').join(', ')})`, params: owners };
+}
+
+function searchContent(owners: OwnerScope, text: string, filter: { sql: string; params: Param[] }): Found[] {
   if (dialect() === 'postgres') {
     const match = postgresQuery(text);
     if (!match) return [];
@@ -663,10 +767,10 @@ function searchContent(user: UserRow, text: string, filter: { sql: string; param
        CROSS JOIN to_tsquery('moecloud', ?) AS q
        JOIN nodes n ON n.sha256 = b.sha256
        LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE b.search @@ q AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+       WHERE b.search @@ q AND ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
        ORDER BY ts_rank(b.search, q) DESC LIMIT 60`,
       match,
-      user.id,
+      ...owners.params,
       ...filter.params
     );
   }
@@ -678,10 +782,10 @@ function searchContent(user: UserRow, text: string, filter: { sql: string; param
      JOIN blob_text b ON b.id = f.rowid
      JOIN nodes n ON n.sha256 = b.sha256
      LEFT JOIN nodes p ON p.id = n.parent_id
-     WHERE blob_text_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+     WHERE blob_text_fts MATCH ? AND ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
      ORDER BY rank LIMIT 60`,
     match,
-    user.id,
+    ...owners.params,
     ...filter.params
   );
 }
@@ -725,13 +829,14 @@ function searchFilter(user: UserRow, filters: SearchFilters) {
 export function search(user: UserRow, query: string, filters: SearchFilters = {}, content = true): Found[] {
   const text = query.trim().slice(0, 200);
   const filter = searchFilter(user, filters);
+  const owners = ownerScope(user);
   if (!text) {
     if (!filter.active) return [];
     return all<Found>(
       `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+       WHERE ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
        ORDER BY n.modified_at DESC LIMIT 200`,
-      user.id,
+      ...owners.params,
       ...filter.params
     );
   }
@@ -741,29 +846,29 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
       `SELECT n.*, p.name AS parent_name FROM nodes_fts f
        JOIN nodes n ON n.seq = f.rowid
        LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE nodes_fts MATCH ? AND n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
+       WHERE nodes_fts MATCH ? AND ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL ${filter.sql}
        ORDER BY rank LIMIT 100`,
       `"${text.replace(/"/g, '""')}"`,
-      user.id,
+      ...owners.params,
       ...filter.params
     );
   } else {
     const like = `%${text.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
     byName = all<Found>(
       `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-       WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.name LIKE ? ESCAPE '\\' ${filter.sql}
+       WHERE ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.name LIKE ? ESCAPE '\\' ${filter.sql}
        ORDER BY n.updated_at DESC LIMIT 100`,
-      user.id,
+      ...owners.params,
       like,
       ...filter.params
     );
   }
   const described = all<Found>(
     `SELECT n.*, p.name AS parent_name FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-     WHERE n.owner_id = ? AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.description IS NOT NULL
+     WHERE ${owners.sql} AND n.trashed_at IS NULL AND n.parent_id IS NOT NULL AND n.description IS NOT NULL
        AND LOWER(n.description) LIKE ? ESCAPE '\\' ${filter.sql}
      ORDER BY n.updated_at DESC LIMIT 50`,
-    user.id,
+    ...owners.params,
     `%${text.toLowerCase().replace(/[%_\\]/g, (char) => `\\${char}`)}%`,
     ...filter.params
   );
@@ -772,7 +877,7 @@ export function search(user: UserRow, query: string, filters: SearchFilters = {}
   if (!content || filters.kind === 'folder') return byName;
   let inside: Found[] = [];
   try {
-    inside = searchContent(user, text, filter);
+    inside = searchContent(owners, text, filter);
   } catch {
     inside = [];
   }

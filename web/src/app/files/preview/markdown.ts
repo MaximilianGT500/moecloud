@@ -43,10 +43,26 @@ markdown.core.ruler.after('inline', 'tasks', (state) => {
     if (!first || !match) continue;
     first.content = first.content.slice(match[0].length);
     const box = new state.Token('html_inline', '', 0);
-    box.content = `<input type="checkbox" disabled${match[1] === ' ' ? '' : ' checked'}>`;
+    const line = tokens[index - 2].map?.[0];
+    const checked = match[1] === ' ' ? '' : ' checked';
+    box.content =
+      (state.env as { tasks?: boolean }).tasks && line !== undefined
+        ? `<input type="checkbox" data-line="${line}"${checked}>`
+        : `<input type="checkbox" disabled${checked}>`;
     inline.children!.unshift(box);
     tokens[index - 2].attrJoin('class', 'task');
   }
 });
 
-export const renderMarkdown = (text: string) => markdown.render(text);
+export const renderMarkdown = (text: string, options: { tasks?: boolean } = {}) => markdown.render(text, { tasks: Boolean(options.tasks) });
+
+export function toggleTask(text: string, line: number) {
+  const lines = text.split('\n');
+  const current = lines[line];
+  if (current === undefined) return text;
+  lines[line] = current.replace(
+    /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/,
+    (_all, lead: string, mark: string) => `${lead}[${mark === ' ' ? 'x' : ' '}]`
+  );
+  return lines.join('\n');
+}

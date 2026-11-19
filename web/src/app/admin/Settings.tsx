@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -6,14 +8,151 @@ import MenuItem from '@mui/material/MenuItem';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import { api, errorText } from '../../lib/api';
-import { dayValue, endOfDay } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { dayValue, endOfDay, formatBytes } from '../../lib/format';
+import { t, tn } from '../../lib/i18n';
+import { c } from '../../theme/tokens';
 import { Section } from '../common/bits';
+import { confirm } from '../common/dialogs';
 import { QuotaField } from '../common/QuotaField';
 import { toast } from '../common/toast';
 import { Loading, SaveBar, Toggle, loadSettings, saveSettings, useDraft, type Settings } from './shared';
 import { AppearanceSection } from './Appearance';
+
+interface OfficeInfo {
+  enabled: boolean;
+  ok: boolean;
+  error: string | null;
+  extensions: string[];
+}
+
+function OfficeState({ url, saved }: { url: string; saved: boolean }) {
+  const [state, setState] = useState<OfficeInfo | null>(null);
+
+  useEffect(() => {
+    if (!saved || !url.trim()) return;
+    let active = true;
+    api
+      .get<OfficeInfo>('/api/admin/office?refresh=1')
+      .then((result) => active && setState(result))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [saved, url]);
+
+  if (!saved || !url.trim() || !state?.enabled) return null;
+  return state.ok ? (
+    <Alert severity="success">
+      {t('Collabora antwortet. {count} Dateiformate lassen sich bearbeiten, darunter {examples}.', {
+        count: state.extensions.length,
+        examples:
+          ['docx', 'xlsx', 'pptx', 'odt'].filter((extension) => state.extensions.includes(extension)).join(', ') ||
+          state.extensions.slice(0, 3).join(', '),
+      })}
+    </Alert>
+  ) : (
+    <Alert severity="warning">{t('Collabora antwortet unter dieser Adresse nicht: {error}', { error: state.error ?? '?' })}</Alert>
+  );
+}
+
+interface Starter {
+  folder: { id: string; name: string; owner: string; items: number; bytes: number } | null;
+}
+
+function StarterState() {
+  const [state, setState] = useState<Starter | null>(null);
+
+  useEffect(() => {
+    api
+      .get<Starter>('/api/admin/starter')
+      .then(setState)
+      .catch(() => {});
+  }, []);
+
+  if (!state) return null;
+
+  const remove = async () => {
+    try {
+      setState(await api.put<Starter>('/api/admin/starter', { folderId: null }));
+      toast(t('Neue Konten starten wieder leer'));
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ flex: 1, minWidth: 220 }}>
+        <Typography variant="body1">{t('Startdateien für neue Konten')}</Typography>
+        <Typography variant="body2" sx={{ color: c.onSurfaceVariant, textWrap: 'pretty' }}>
+          {state.folder
+            ? t('Jedes neue Konto bekommt eine Kopie aus „{name}“ von {owner}: {items}, zusammen {size}.', {
+                name: state.folder.name,
+                owner: state.folder.owner,
+                items: tn(state.folder.items, 'ein Eintrag', '{count} Einträge'),
+                size: formatBytes(state.folder.bytes),
+              })
+            : t(
+                'Neue Konten starten leer. Öffne in deinen Dateien das Menü eines Ordners und wähl „Als Startdateien für neue Konten“, dann bekommt jedes neue Konto eine Kopie davon.'
+              )}
+        </Typography>
+      </Box>
+      {state.folder && (
+        <Button variant="tonal" onClick={() => void remove()}>
+          {t('Nicht mehr nutzen')}
+        </Button>
+      )}
+    </Box>
+  );
+}
+
+function TermsState({ required, saved }: { required: boolean; saved: boolean }) {
+  const [state, setState] = useState<{ active: boolean; version: number; people: number; accepted: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!saved) return;
+    api
+      .get<{ active: boolean; version: number; people: number; accepted: number }>('/api/admin/terms')
+      .then(setState)
+      .catch(() => {});
+  }, [saved, required]);
+
+  if (!state?.active || !required) return null;
+
+  const renew = async () => {
+    const ok = await confirm({
+      title: t('Alle neu zustimmen lassen?'),
+      text: t(
+        'Jede Person sieht die Nutzungsbedingungen bei der nächsten Anmeldung noch einmal und muss wieder zustimmen. Sinnvoll, wenn sich der Text geändert hat.'
+      ),
+      confirm: t('Neu zustimmen lassen'),
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      setState(await api.post('/api/admin/terms/renew'));
+      toast(t('Alle müssen neu zustimmen'));
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant, flex: 1, minWidth: 220 }}>
+        {t('{accepted} von {people} Personen haben der aktuellen Fassung zugestimmt.', { accepted: state.accepted, people: state.people })}
+      </Typography>
+      <Button variant="tonal" disabled={busy || !saved} onClick={() => void renew()}>
+        {t('Alle neu zustimmen lassen')}
+      </Button>
+    </Box>
+  );
+}
 
 export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings) => void }) {
   const form = useDraft<Settings>(loadSettings, async (changes) => {
@@ -113,6 +252,7 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
         >
           <FormControlLabel value="closed" control={<Radio />} label={t('Nur Admins legen Konten an')} />
           <FormControlLabel value="invite" control={<Radio />} label={t('Mit Einladungslink')} />
+          <FormControlLabel value="approval" control={<Radio />} label={t('Jeder darf sich registrieren, du gibst die Konten frei')} />
           <FormControlLabel value="open" control={<Radio />} label={t('Jeder darf sich registrieren')} />
         </RadioGroup>
         <Toggle
@@ -133,6 +273,20 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           helperText={t('Gilt für neue und geänderte Passwörter, zwischen 10 und 64.')}
           sx={{ maxWidth: 320 }}
         />
+        <TextField
+          label={t('Unbenutzte Konten sperren nach')}
+          type="number"
+          value={draft['accounts.inactiveDays'] ?? 0}
+          onChange={(event) => set('accounts.inactiveDays', Math.min(3650, Math.max(0, Math.round(Number(event.target.value)))))}
+          slotProps={{
+            htmlInput: { min: 0, max: 3650 },
+            input: { endAdornment: <InputAdornment position="end">{t('Tagen')}</InputAdornment> },
+          }}
+          helperText={t(
+            '0 heißt nie, sonst 30 bis 3650. Es zählen Anmeldungen, offene Sitzungen und App-Passwörter. Admins sperrt MoeCloud nie von selbst, und du hebst jede Sperre unter Personen wieder auf.'
+          )}
+          sx={{ maxWidth: 320 }}
+        />
         <Toggle
           checked={Boolean(draft['auth.passwordBreach'])}
           onChange={(value) => set('auth.passwordBreach', value)}
@@ -147,6 +301,7 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           label={t('Eigenes Konto löschen erlauben')}
           hint={t('Jede Person kann ihr Konto samt aller Dateien unter Konto selbst löschen. Den letzten Admin schützt MoeCloud.')}
         />
+        <StarterState />
         <TextField
           select
           label={t('Zwei-Faktor-Anmeldung vorschreiben')}
@@ -199,6 +354,16 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
             helperText={t('In Tagen. Bei 0 bleiben Versionen, bis die Zahl pro Datei erreicht ist.')}
           />
         </Box>
+        <TextField
+          label={t('Gesperrte Dateiendungen')}
+          placeholder="exe, bat, scr"
+          value={draft['storage.blockedTypes'] ?? ''}
+          onChange={(event) => set('storage.blockedTypes', event.target.value)}
+          helperText={t(
+            'Durch Komma getrennt. Solche Dateien lassen sich weder hochladen noch so umbenennen, auch nicht über WebDAV oder einen Link. Was schon da ist, bleibt.'
+          )}
+          slotProps={{ htmlInput: { maxLength: 1500 } }}
+        />
         <Toggle
           checked={Boolean(draft['search.content'])}
           onChange={(value) => set('search.content', value)}
@@ -344,6 +509,31 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
       </Section>
 
       <Section
+        title={t('Office')}
+        description={t(
+          'Mit Collabora Online bearbeitest du Word, Excel, PowerPoint und OpenDocument direkt im Browser, auch mit mehreren zugleich. Collabora läuft als eigener Dienst unter einer eigenen Adresse.'
+        )}
+      >
+        <TextField
+          label={t('Adresse von Collabora Online')}
+          placeholder="https://office.example.com"
+          value={draft['collabora.url'] ?? ''}
+          onChange={(event) => set('collabora.url', event.target.value)}
+          helperText={t('Leer ist die Bearbeitung aus. In Collabora muss die Adresse deiner Cloud als erlaubter Host eingetragen sein.')}
+        />
+        <TextField
+          label={t('Adresse von MoeCloud für Collabora')}
+          placeholder={String(draft['site.url'] ?? '')}
+          value={draft['collabora.host'] ?? ''}
+          onChange={(event) => set('collabora.host', event.target.value)}
+          helperText={t(
+            'Nur nötig, wenn Collabora deine Cloud unter einer anderen Adresse erreicht als dein Browser, etwa im selben Docker-Netz.'
+          )}
+        />
+        <OfficeState url={String(draft['collabora.url'] ?? '')} saved={form.changed.length === 0} />
+      </Section>
+
+      <Section
         title={t('Rechtliches')}
         description={t(
           'Eine Adresse wie https://example.com/impressum verlinkt eine fremde Seite. Text erscheint auf einer eigenen Seite. „## “ am Zeilenanfang macht eine Überschrift.'
@@ -363,6 +553,22 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           multiline
           minRows={3}
         />
+        <TextField
+          label={t('Nutzungsbedingungen')}
+          value={draft['site.terms']}
+          onChange={(event) => set('site.terms', event.target.value)}
+          multiline
+          minRows={3}
+        />
+        <Toggle
+          checked={Boolean(draft['terms.required'])}
+          onChange={(value) => set('terms.required', value)}
+          label={t('Zustimmung zu den Nutzungsbedingungen verlangen')}
+          hint={t(
+            'Wer sich anmeldet, muss dem Text einmal zustimmen, bevor es weitergeht. Das geht nur mit Text, nicht mit einer fremden Adresse. App-Passwörter und WebDAV laufen weiter.'
+          )}
+        />
+        <TermsState required={Boolean(draft['terms.required'])} saved={form.changed.length === 0} />
       </Section>
 
       <SaveBar count={form.changed.length} busy={form.busy} onSave={() => void form.save()} onReset={() => form.reset()} />

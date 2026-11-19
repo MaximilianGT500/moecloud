@@ -40,9 +40,12 @@ export async function metricsRoutes(app: FastifyInstance) {
         [{ kind: database.dialect, version: database.version }, database.size],
       ]),
       line('moecloud_users', 'Konten', 'gauge', [
-        [{ state: 'active' }, count('SELECT COUNT(*) FROM users WHERE disabled = 0 AND (expires_at IS NULL OR expires_at > ?)', now)],
-        [{ state: 'disabled' }, count('SELECT COUNT(*) FROM users WHERE disabled = 1')],
-        [{ state: 'expired' }, count('SELECT COUNT(*) FROM users WHERE disabled = 0 AND expires_at <= ?', now)],
+        [
+          { state: 'active' },
+          count("SELECT COUNT(*) FROM users WHERE role != 'team' AND disabled = 0 AND (expires_at IS NULL OR expires_at > ?)", now),
+        ],
+        [{ state: 'disabled' }, count("SELECT COUNT(*) FROM users WHERE role != 'team' AND disabled = 1")],
+        [{ state: 'expired' }, count("SELECT COUNT(*) FROM users WHERE role != 'team' AND disabled = 0 AND expires_at <= ?", now)],
       ]),
       line('moecloud_files', 'Dateien', 'gauge', [
         [{ state: 'active' }, count("SELECT COUNT(*) FROM nodes WHERE type = 'file' AND trashed_at IS NULL")],

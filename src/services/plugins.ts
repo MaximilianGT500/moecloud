@@ -152,7 +152,7 @@ export interface PluginUser {
   username: string;
   name: string;
   email: string | null;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   language: Lang | null;
 }
 
@@ -244,7 +244,7 @@ const pluginUser = (user: UserRow): PluginUser => ({
   username: user.username,
   name: user.name,
   email: user.email,
-  role: user.role,
+  role: user.role === 'team' ? 'user' : user.role,
   language: user.language,
 });
 

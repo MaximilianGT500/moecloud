@@ -3,9 +3,9 @@ import { Readable } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { HttpError, badRequest, forbidden, notFound, tooLarge } from '../lib/errors.ts';
 import { sendFile } from '../lib/http.ts';
-import { cleanName } from '../lib/names.ts';
+import { cleanName, nameKey } from '../lib/names.ts';
 import { t } from '../lib/i18n.ts';
-import { basicAuth } from '../services/apppasswords.ts';
+import { basicAuth, type AppAuth } from '../services/apppasswords.ts';
 import { needsSecondFactor } from '../services/auth.ts';
 import { record } from '../services/activity.ts';
 import { blobPath, receive, store } from '../services/blobs.ts';
@@ -28,11 +28,15 @@ import {
 } from '../services/nodes.ts';
 import * as settings from '../services/settings.ts';
 import { formatBytes } from '../services/uploads.ts';
-import { quotaOf, usageOf, type UserRow } from '../services/users.ts';
+import { sharedWithMe } from '../services/grants.ts';
+import { sharedWithMeViaGroups } from '../services/groups.ts';
+import { teamsFor } from '../services/teams.ts';
+import { getUser, quotaOf, usageOf, type UserRow } from '../services/users.ts';
 import { writeContent } from '../services/versions.ts';
 
 const PREFIX = '/dav';
 const ALLOW = 'OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK';
+const READ_METHODS = new Set(['OPTIONS', 'GET', 'HEAD', 'PROPFIND']);
 
 const xml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -58,11 +62,43 @@ interface Resolved {
   segments: string[];
 }
 
-function resolve(user: UserRow, segments: string[]): Resolved {
+interface Mount {
+  name: string;
+  node: NodeRow;
+}
+
+function mountsOf(user: UserRow, shared: boolean): Mount[] {
+  if (!shared) return [];
+  const taken = new Set(children(user.root_id, true).map((node) => node.name_key));
+  const seen = new Set<string>();
+  const mounts: Mount[] = [];
+  const add = (node: NodeRow | undefined, label: string) => {
+    if (!node || node.trashed_at || seen.has(node.id)) return;
+    seen.add(node.id);
+    const owner = getUser(node.owner_id);
+    const candidates = [label, owner && owner.role !== 'team' ? cleanName(`${label} (${owner.name})`) : null];
+    for (let counter = 2; counter < 50; counter++) candidates.push(cleanName(`${label} (${counter})`));
+    const name = candidates.find((candidate): candidate is string => Boolean(candidate) && !taken.has(nameKey(candidate!)));
+    if (!name) return;
+    taken.add(nameKey(name));
+    mounts.push({ name, node });
+  };
+  for (const team of teamsFor(user)) {
+    const root = getNode(getUser(team.user_id)?.root_id ?? '');
+    add(root, root?.name ?? '');
+  }
+  const direct = sharedWithMe(user).map((entry) => entry.node);
+  const viaGroups = sharedWithMeViaGroups(user).map((entry) => entry.node);
+  for (const node of [...direct, ...viaGroups].sort((a, b) => (a.id < b.id ? -1 : 1))) add(node, node.name);
+  return mounts;
+}
+
+function resolve(user: UserRow, segments: string[], mounts: Mount[]): Resolved {
   let current = getNode(user.root_id)!;
   let parent: NodeRow | null = null;
   for (let index = 0; index < segments.length; index++) {
-    const child = current.type === 'folder' ? findChild(current.id, segments[index]) : undefined;
+    let child = current.type === 'folder' ? findChild(current.id, segments[index]) : undefined;
+    if (!child && index === 0) child = mounts.find((mount) => nameKey(mount.name) === nameKey(segments[0]))?.node;
     if (!child) {
       return {
         node: null,
@@ -77,10 +113,10 @@ function resolve(user: UserRow, segments: string[]): Resolved {
   return { node: current, parent, name: current.name, segments };
 }
 
-function authenticate(request: FastifyRequest, reply: FastifyReply): UserRow | null {
+function authenticate(request: FastifyRequest, reply: FastifyReply): AppAuth | null {
   const result = basicAuth(request.headers.authorization, request.ip);
   if (result && result !== 'blocked') {
-    if (!needsSecondFactor(result)) return result;
+    if (!needsSecondFactor(result.user)) return result;
     reply
       .code(403)
       .type('text/plain; charset=utf-8')
@@ -104,7 +140,7 @@ function props(user: UserRow, node: NodeRow, segments: string[]) {
   const modified = new Date(node.type === 'file' ? node.modified_at : node.updated_at).toUTCString();
   const created = new Date(node.created_at).toISOString();
   const parts = [
-    `<d:displayname>${xml(node.parent_id ? node.name : settings.get('site.name'))}</d:displayname>`,
+    `<d:displayname>${xml(node.name || settings.get('site.name'))}</d:displayname>`,
     `<d:getlastmodified>${modified}</d:getlastmodified>`,
     `<d:creationdate>${created}</d:creationdate>`,
     folder ? '<d:resourcetype><d:collection/></d:resourcetype>' : '<d:resourcetype/>',
@@ -114,7 +150,8 @@ function props(user: UserRow, node: NodeRow, segments: string[]) {
   ];
   if (folder) {
     const used = usageOf(node.owner_id);
-    const quota = node.owner_id === user.id ? quotaOf(user) : null;
+    const owner = node.owner_id === user.id ? user : getUser(node.owner_id);
+    const quota = owner && (owner.id === user.id || owner.role === 'team') ? quotaOf(owner) : null;
     parts.push(`<d:quota-used-bytes>${used}</d:quota-used-bytes>`);
     if (quota !== null) parts.push(`<d:quota-available-bytes>${Math.max(0, quota - used)}</d:quota-available-bytes>`);
   } else {
@@ -187,10 +224,15 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
   reply.header('DAV', '1, 2');
   reply.header('MS-Author-Via', 'DAV');
   if (request.method === 'OPTIONS') return reply.header('Allow', ALLOW).header('Content-Length', '0').code(200).send();
-  const user = authenticate(request, reply);
-  if (!user) return reply;
+  const auth = authenticate(request, reply);
+  if (!auth) return reply;
+  const { user } = auth;
+  if (auth.readOnly && !READ_METHODS.has(request.method)) {
+    return reply.code(403).type('text/plain; charset=utf-8').send(t(request.lang, 'Dieses App-Passwort darf nur lesen'));
+  }
   const segments = segmentsOf(request.url);
-  const target = resolve(user, segments);
+  const mounts = mountsOf(user, auth.shared);
+  const target = resolve(user, segments, mounts);
 
   switch (request.method) {
     case 'PROPFIND': {
@@ -199,6 +241,7 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
       const parts = [props(user, target.node, segments)];
       if (depth === 1 && target.node.type === 'folder') {
         for (const child of children(target.node.id)) parts.push(props(user, child, [...segments, child.name]));
+        if (segments.length === 0) for (const mount of mounts) parts.push(props(user, mount.node, [mount.name]));
       }
       return reply
         .code(207)
@@ -210,8 +253,11 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
     case 'HEAD': {
       if (!target.node) throw notFound();
       if (target.node.type === 'folder') {
-        const list = children(target.node.id)
-          .map((child) => `${child.name}${child.type === 'folder' ? '/' : ''}`)
+        const list = [
+          ...children(target.node.id).map((child) => ({ name: child.name, folder: child.type === 'folder' })),
+          ...(segments.length === 0 ? mounts.map((mount) => ({ name: mount.name, folder: mount.node.type === 'folder' })) : []),
+        ]
+          .map((entry) => `${entry.name}${entry.folder ? '/' : ''}`)
           .join('\n');
         return reply.type('text/plain; charset=utf-8').send(list);
       }
@@ -292,7 +338,7 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
     case 'COPY':
     case 'MOVE': {
       if (!target.node) throw notFound();
-      const destination = resolve(user, destinationOf(request));
+      const destination = resolve(user, destinationOf(request), mounts);
       if (!destination.parent) throw new HttpError(409, 'Der Zielordner fehlt', 'conflict');
       const overwrite = String(request.headers.overwrite ?? 'T').toUpperCase() !== 'F';
       if (destination.node?.id === target.node.id) return reply.code(204).send();

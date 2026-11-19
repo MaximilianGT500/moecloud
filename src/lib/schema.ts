@@ -556,6 +556,84 @@ const MIGRATIONS = [
     PRIMARY KEY (plugin, key)
   );
   `,
+  `
+  CREATE TABLE teams (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL UNIQUE,
+    description TEXT,
+    color TEXT,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE team_managers (
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (team_id, user_id)
+  );
+  CREATE INDEX team_managers_user ON team_managers(user_id);
+  CREATE TABLE automations (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    deep INTEGER NOT NULL DEFAULT 0,
+    conditions TEXT NOT NULL,
+    actions TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    runs INTEGER NOT NULL DEFAULT 0,
+    run_at INTEGER,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX automations_node ON automations(node_id);
+  CREATE INDEX automations_user ON automations(user_id);
+  ALTER TABLE users ADD COLUMN terms_version INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN terms_at INTEGER;
+  ALTER TABLE users ADD COLUMN avatar TEXT;
+  ALTER TABLE versions ADD COLUMN label TEXT;
+  ALTER TABLE invites ADD COLUMN role TEXT NOT NULL DEFAULT 'user';
+  ALTER TABLE invites ADD COLUMN team_id INTEGER;
+  ALTER TABLE invites ADD COLUMN team_role TEXT;
+  `,
+  `
+  CREATE TABLE office_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    origin TEXT NOT NULL DEFAULT '',
+    expires_at INTEGER NOT NULL,
+    saved_at INTEGER
+  );
+  CREATE INDEX office_tokens_expires ON office_tokens(expires_at);
+  CREATE INDEX office_tokens_node ON office_tokens(node_id);
+  CREATE INDEX office_tokens_user ON office_tokens(user_id);
+  ALTER TABLE app_passwords ADD COLUMN scope TEXT NOT NULL DEFAULT 'full';
+  ALTER TABLE app_passwords ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE app_passwords ADD COLUMN expires_at INTEGER;
+  ALTER TABLE grants ADD COLUMN note TEXT;
+  ALTER TABLE group_grants ADD COLUMN note TEXT;
+  ALTER TABLE users ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN seen_at INTEGER;
+  CREATE TABLE playlists (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX playlists_owner ON playlists(owner_id);
+  CREATE TABLE playlist_items (
+    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (playlist_id, node_id)
+  );
+  CREATE INDEX playlist_items_node ON playlist_items(node_id);
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

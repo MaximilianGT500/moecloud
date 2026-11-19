@@ -30,6 +30,7 @@ interface Member {
   name: string;
   username: string;
   initials: string;
+  avatar?: string | null;
 }
 
 interface Group {
@@ -45,6 +46,7 @@ interface Person {
   name: string;
   username: string;
   initials?: string;
+  avatar?: string | null;
   disabled?: boolean;
 }
 
@@ -79,7 +81,13 @@ export function GroupsSection() {
         setPeople(
           result.items
             .filter((person) => !person.disabled)
-            .map((person) => ({ id: person.id, name: person.name, username: person.username, initials: initialsOf(person.name) }))
+            .map((person) => ({
+              id: person.id,
+              name: person.name,
+              username: person.username,
+              initials: initialsOf(person.name),
+              avatar: person.avatar,
+            }))
         )
       )
       .catch(() => {});
@@ -215,7 +223,7 @@ export function GroupsSection() {
               const { key, ...rest } = props as typeof props & { key: string };
               return (
                 <Box component="li" key={key} {...rest} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                  <UserAvatar initials={option.initials} size={32} />
+                  <UserAvatar initials={option.initials} size={32} avatar={option.avatar} userId={option.id} />
                   <Box>
                     <Typography variant="body2">{option.name}</Typography>
                     <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>

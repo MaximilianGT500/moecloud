@@ -337,6 +337,14 @@ describe('Teilen', () => {
     const ownRoot = (await mia.get('/api/session')).json().user.rootId;
     const crossMove = await mia.json('POST', '/api/nodes/move', { ids: [allowed.json().node.id], target: ownRoot });
     assert.equal(crossMove.statusCode, 400);
+    assert.equal(crossMove.json().error.message, 'Aus geteilten Ordnern und Teamordnern heraus kannst du nur kopieren');
+    assert.equal(value<number>('SELECT owner_id FROM nodes WHERE id = ?', allowed.json().node.id), owner);
+    const own = (await mia.upload(ownRoot, 'von-mia.txt', Buffer.from('hallo'))).json().node.id;
+    const given = await mia.json('POST', '/api/nodes/move', { ids: [own], target: shared });
+    assert.equal(given.statusCode, 200, given.body);
+    assert.equal(value<number>('SELECT owner_id FROM nodes WHERE id = ?', own), owner);
+    assert.equal((await emi.json('POST', '/api/nodes/trash', { ids: [own] })).statusCode, 200);
+    assert.equal((await emi.json('POST', '/api/nodes/delete', { ids: [own] })).statusCode, 200);
     const crossCopy = await mia.json('POST', '/api/nodes/copy', { ids: [allowed.json().node.id], target: ownRoot });
     assert.equal(crossCopy.statusCode, 200);
   });

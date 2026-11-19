@@ -127,24 +127,35 @@ export async function shareRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/nodes/:id/grants', async (request) => {
     const expiresAt = z.number().int().positive().nullable().optional();
+    const note = z.string().max(300).nullable().optional();
     const input = parse(
       z.union([
-        z.object({ userId: z.number().int().positive(), permission, expiresAt }),
-        z.object({ groupId: z.number().int().positive(), permission, expiresAt }),
+        z.object({ userId: z.number().int().positive(), permission, expiresAt, note }),
+        z.object({ groupId: z.number().int().positive(), permission, expiresAt, note }),
       ]),
       request.body
     );
     if ('groupId' in input) {
       return {
-        grant: presentGroupGrant(shareWithGroup(me(request), request.params.id, input.groupId, input.permission, input.expiresAt ?? null)),
+        grant: presentGroupGrant(
+          shareWithGroup(me(request), request.params.id, input.groupId, input.permission, input.expiresAt ?? null, input.note ?? null)
+        ),
       };
     }
-    return { grant: presentGrant(shareWith(me(request), request.params.id, input.userId, input.permission, input.expiresAt ?? null)) };
+    return {
+      grant: presentGrant(
+        shareWith(me(request), request.params.id, input.userId, input.permission, input.expiresAt ?? null, input.note ?? null)
+      ),
+    };
   });
 
   app.patch<{ Params: { id: string } }>('/api/grants/:id', async (request) => {
     const input = parse(
-      z.object({ permission: permission.optional(), expiresAt: z.number().int().positive().nullable().optional() }),
+      z.object({
+        permission: permission.optional(),
+        expiresAt: z.number().int().positive().nullable().optional(),
+        note: z.string().max(300).nullable().optional(),
+      }),
       request.body
     );
     if (!getGrant(request.params.id) && getGroupGrant(request.params.id)) {
@@ -182,8 +193,10 @@ export async function shareRoutes(app: FastifyInstance) {
       return {
         ...node,
         grantId: direct?.id,
+        team: node.parentId === null,
         viaGroup: group?.group_name,
         shareEnds: direct?.expires_at ?? group?.expires_at ?? null,
+        shareNote: direct?.note ?? group?.note ?? null,
       };
     });
     const links = linksBy(user)

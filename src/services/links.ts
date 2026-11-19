@@ -214,6 +214,7 @@ export function activeLink(user: UserRow, id: string) {
 
 export async function createLink(user: UserRow, nodeId: string, input: LinkInput) {
   if (!settings.get('share.links')) throw forbidden('Öffentliche Links sind auf diesem Server ausgeschaltet');
+  if (user.role === 'guest') throw forbidden('Mit einem Gastkonto kannst du nichts weiterteilen');
   const { node } = requireAccess(user, nodeId, 'edit');
   if (!node.parent_id) throw badRequest('Den Hauptordner kannst du nicht teilen');
   const password = input.password?.trim() ? input.password : null;

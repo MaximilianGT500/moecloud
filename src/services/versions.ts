@@ -1,6 +1,6 @@
-import { all, one, run, tx } from '../lib/db.ts';
+import { all, one, run, tx, value } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
-import { notFound } from '../lib/errors.ts';
+import { badRequest, notFound } from '../lib/errors.ts';
 import { mimeOf } from '../lib/mime.ts';
 import { record } from './activity.ts';
 import { assertUnlocked, changed, getNode, requireAccess, type NodeRow } from './nodes.ts';
@@ -16,7 +16,10 @@ export interface VersionRow {
   author_id: number | null;
   modified_at: number;
   created_at: number;
+  label: string | null;
 }
+
+export const NAMED_VERSIONS = 20;
 
 export interface Content {
   sha256: string;
@@ -25,22 +28,26 @@ export interface Content {
 }
 
 export function prune(nodeId: string, keep = settings.get('storage.versions')) {
-  const rows = all<{ id: string }>('SELECT id FROM versions WHERE node_id = ? ORDER BY created_at DESC', nodeId);
+  const rows = all<{ id: string }>('SELECT id FROM versions WHERE node_id = ? AND label IS NULL ORDER BY created_at DESC', nodeId);
   for (const row of rows.slice(Math.max(0, keep))) run('DELETE FROM versions WHERE id = ?', row.id);
 }
 
 export function purgeVersions(days: number) {
   if (days <= 0) return 0;
-  return run('DELETE FROM versions WHERE created_at < ?', Date.now() - days * 24 * 60 * 60 * 1000).changes;
+  return run('DELETE FROM versions WHERE label IS NULL AND created_at < ?', Date.now() - days * 24 * 60 * 60 * 1000).changes;
 }
 
-export function writeContent(node: NodeRow, content: Content, actorId: number | null): NodeRow {
+export const SESSION_GAP = 10 * 60 * 1000;
+
+export const lastVersionAt = (nodeId: string) => value<number>('SELECT MAX(created_at) FROM versions WHERE node_id = ?', nodeId) ?? null;
+
+export function writeContent(node: NodeRow, content: Content, actorId: number | null, options: { version?: boolean } = {}): NodeRow {
   assertUnlocked(node, actorId);
   const now = Date.now();
   const modified = content.modifiedAt && content.modifiedAt > 0 ? Math.min(content.modifiedAt, now + 60_000) : now;
   tx(() => {
     const keep = settings.get('storage.versions');
-    if (node.sha256 && node.sha256 !== content.sha256 && node.size > 0 && keep > 0) {
+    if (options.version !== false && node.sha256 && node.sha256 !== content.sha256 && node.size > 0 && keep > 0) {
       run(
         `INSERT INTO versions (id, node_id, sha256, size, mime, author_id, modified_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         randomId(),
@@ -77,6 +84,7 @@ export function listVersions(user: UserRow, nodeId: string) {
     size: row.size,
     modifiedAt: row.modified_at,
     createdAt: row.created_at,
+    label: row.label,
     author: row.author_id ? (getUser(row.author_id)?.name ?? null) : null,
   }));
 }
@@ -97,6 +105,20 @@ export function restoreVersion(user: UserRow, nodeId: string, versionId: string)
     record({ owner: node.owner_id, actor: user.id, node: node.id, parent: node.parent_id, action: 'version_restore', name: node.name });
     return restored;
   });
+}
+
+export function labelVersion(user: UserRow, nodeId: string, versionId: string, label: string | null) {
+  getVersion(user, nodeId, versionId);
+  requireAccess(user, nodeId, 'edit');
+  const text = label?.replace(/\s+/g, ' ').trim() || null;
+  if (text) {
+    const named =
+      value<number>('SELECT COUNT(*) FROM versions WHERE node_id = ? AND label IS NOT NULL AND id != ?', nodeId, versionId) ?? 0;
+    if (named >= NAMED_VERSIONS) throw badRequest('Mehr als {count} benannte Versionen pro Datei gehen nicht', { count: NAMED_VERSIONS });
+  }
+  run('UPDATE versions SET label = ? WHERE id = ?', text, versionId);
+  if (!text) prune(nodeId);
+  return listVersions(user, nodeId);
 }
 
 export function deleteVersion(user: UserRow, nodeId: string, versionId: string) {

@@ -48,7 +48,7 @@ export interface PlannedUser {
   username: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   quota: number | null;
   password: string | null;
   language: Lang | null;
@@ -60,7 +60,7 @@ export interface ImportLine {
   username: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   quota: number | null;
   expiresAt: number | null;
   status: 'ready' | 'created' | 'skipped' | 'error';
@@ -126,6 +126,7 @@ const roleOf = (value: string) => {
   const key = value.toLowerCase();
   if (!key || ['user', 'mitglied', 'member', 'benutzer'].includes(key)) return 'user';
   if (['admin', 'administrator', 'verwaltung'].includes(key)) return 'admin';
+  if (['guest', 'gast'].includes(key)) return 'guest';
   return null;
 };
 
@@ -184,7 +185,7 @@ export function planImport(text: string, sendLinks: boolean, lang: Lang) {
     const language = value('language').toLowerCase();
     if (language && !isLang(language)) return fail(t(lang, 'Als Sprache gehen de und en'));
     planned.language = language ? (language as Lang) : null;
-    if (!roleOf(value('role'))) return fail(t(lang, 'Als Rolle gehen user und admin'));
+    if (!roleOf(value('role'))) return fail(t(lang, 'Als Rolle gehen user, admin und guest'));
     if (planned.password && [...planned.password].length < passwordMin()) {
       return fail(t(lang, 'Das Passwort braucht mindestens {count} Zeichen', { count: passwordMin() }));
     }

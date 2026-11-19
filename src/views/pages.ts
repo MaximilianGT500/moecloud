@@ -251,7 +251,7 @@ export function messagePage(
   );
 }
 
-export function legalPage(request: FastifyRequest, title: string, text: string) {
+export function legalPage(request: FastifyRequest, title: string, text: string, consent?: { csrf: string; error?: string | null }) {
   const paragraphs = text
     .split(/\n{2,}/)
     .map((block) => block.trim())
@@ -266,7 +266,20 @@ export function legalPage(request: FastifyRequest, title: string, text: string) 
             : html`<p>${block.split('\n').map((line, index) => (index ? [html`<br />`, line] : line))}</p>`
         )}
       </div>
-      <p class="auth__alt"><a href="/">${icon('arrowBack', 'icon icon--small')} ${t(request.lang, 'Zur Startseite')}</a></p>`,
+      ${
+        consent
+          ? html`${alert('error', consent.error)}
+              <p>${t(request.lang, 'Bevor es weitergeht, brauchen wir deine Zustimmung zu diesen Nutzungsbedingungen.')}</p>
+              <form class="form" method="post" action="/nutzungsbedingungen">
+                ${hidden('_csrf', consent.csrf)}
+                <button class="button button--filled" type="submit">${t(request.lang, 'Ich stimme zu')}</button>
+              </form>
+              <form class="form" method="post" action="/logout">
+                ${hidden('_csrf', consent.csrf)}
+                <button class="button button--tonal" type="submit">${t(request.lang, 'Abmelden')}</button>
+              </form>`
+          : html`<p class="auth__alt"><a href="/">${icon('arrowBack', 'icon icon--small')} ${t(request.lang, 'Zur Startseite')}</a></p>`
+      }`,
     { wide: true }
   );
 }

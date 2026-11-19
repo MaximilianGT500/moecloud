@@ -8,6 +8,7 @@ import DashboardRounded from '@mui/icons-material/DashboardRounded';
 import DnsRounded from '@mui/icons-material/DnsRounded';
 import ExtensionRounded from '@mui/icons-material/ExtensionRounded';
 import GppGoodRounded from '@mui/icons-material/GppGoodRounded';
+import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import LoginRounded from '@mui/icons-material/LoginRounded';
@@ -36,12 +37,14 @@ import { SettingsSection } from './Settings';
 import { SsoSection } from './Sso';
 import { loadSettings } from './shared';
 import { SystemSection } from './System';
+import { TeamsSection } from './Teams';
 import { WebhooksSection } from './Webhooks';
 
 type SectionKey =
   | 'overview'
   | 'people'
   | 'groups'
+  | 'teams'
   | 'invites'
   | 'links'
   | 'audit'
@@ -61,6 +64,7 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
     { key: 'overview', label: t('Übersicht'), icon: <DashboardRounded />, group: 0 },
     { key: 'people', label: t('Personen'), icon: <PeopleRounded />, group: 1 },
     { key: 'groups', label: t('Gruppen'), icon: <GroupsRounded />, group: 1 },
+    { key: 'teams', label: t('Teamordner'), icon: <FolderSharedRounded />, group: 1 },
     { key: 'invites', label: t('Einladungen'), icon: <MarkEmailUnreadRounded />, group: 1 },
     { key: 'links', label: t('Links'), icon: <LinkRounded />, group: 1 },
     { key: 'audit', label: t('Protokoll'), icon: <ReceiptLongRounded />, group: 1 },
@@ -211,6 +215,7 @@ export function AdminPage() {
           {section === 'overview' && <OverviewSection />}
           {section === 'people' && <PeopleSection />}
           {section === 'groups' && <GroupsSection />}
+          {section === 'teams' && <TeamsSection />}
           {section === 'invites' && <InvitesSection registration={registration} />}
           {section === 'links' && <LinksSection />}
           {section === 'audit' && <AuditSection />}

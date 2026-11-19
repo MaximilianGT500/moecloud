@@ -38,9 +38,11 @@ export interface AdminUser {
   username: string;
   name: string;
   email: string | null;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   initials: string;
+  avatar?: string | null;
   disabled: boolean;
+  pending?: boolean;
   quota: number | null;
   effectiveQuota: number | null;
   used: number;
@@ -177,7 +179,7 @@ function UserDialog({
     username: '',
     email: '',
     password: '',
-    role: 'user' as 'admin' | 'user',
+    role: 'user' as 'admin' | 'user' | 'guest',
     quota: null as number | null,
     disabled: false,
     sendLink: false,
@@ -280,18 +282,22 @@ function UserDialog({
             label={t('Rolle')}
             value={form.role}
             onChange={(event) => {
-              const role = event.target.value as 'admin' | 'user';
+              const role = event.target.value as 'admin' | 'user' | 'guest';
               set({ role, expires: role === 'admin' ? '' : form.expires });
             }}
             disabled={self}
+            helperText={form.role === 'guest' ? t('Ohne eigenen Speicher. Sieht nur Geteiltes und Teamordner.') : undefined}
           >
             <MenuItem value="user">{t('Mitglied')}</MenuItem>
+            <MenuItem value="guest">{t('Gast')}</MenuItem>
             <MenuItem value="admin">{t('Admin')}</MenuItem>
           </TextField>
-          <Box sx={{ gridColumn: '1 / -1' }}>
-            <QuotaField label={t('Speicher')} value={form.quota} allowDefault onChange={(quota) => set({ quota })} />
-          </Box>
-          {form.role === 'user' && (
+          {form.role !== 'guest' && (
+            <Box sx={{ gridColumn: '1 / -1' }}>
+              <QuotaField label={t('Speicher')} value={form.quota} allowDefault onChange={(quota) => set({ quota })} />
+            </Box>
+          )}
+          {form.role !== 'admin' && (
             <TextField
               sx={{ gridColumn: '1 / -1' }}
               label={t('Konto gültig bis')}
@@ -443,7 +449,7 @@ interface ImportLine {
   username: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   quota: number | null;
   expiresAt: number | null;
   status: 'ready' | 'created' | 'skipped' | 'error';
@@ -584,7 +590,7 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
                       {line.message ??
                         [
                           line.email,
-                          line.role === 'admin' ? t('Admin') : null,
+                          line.role === 'admin' ? t('Admin') : line.role === 'guest' ? t('Gast') : null,
                           line.quota ? formatBytes(line.quota) : null,
                           line.expiresAt ? t('Bis {date}', { date: formatDay(line.expiresAt) }) : null,
                           line.sent ? t('Link verschickt') : null,
@@ -658,6 +664,34 @@ export function PeopleSection() {
     void load();
   }, []);
 
+  const waiting = (users ?? []).filter((user) => user.pending);
+
+  const approve = async (user: AdminUser) => {
+    try {
+      await api.post(`/api/admin/users/${user.id}/approve`);
+      toast(t('{name} kann sich jetzt anmelden', { name: user.name }));
+      await load();
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+
+  const reject = async (user: AdminUser) => {
+    const ok = await confirm({
+      title: t('Anfrage von {name} ablehnen?', { name: user.name }),
+      text: t('Das Konto wird gelöscht. Die Person kann sich neu registrieren.'),
+      confirm: t('Ablehnen'),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/api/admin/users/${user.id}`);
+      await load();
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+
   const query = filter.trim().toLowerCase();
   const shown = (users ?? []).filter(
     (user) =>
@@ -689,6 +723,49 @@ export function PeopleSection() {
         <Loading />
       ) : (
         <>
+          {waiting.length > 0 && (
+            <Box
+              component="section"
+              aria-label={t('Wartet auf Freigabe')}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                p: 2,
+                borderRadius: `${radius.md}px`,
+                bgcolor: c.secondaryContainer,
+                color: c.onSecondaryContainer,
+              }}
+            >
+              <Typography variant="subtitle2" component="h3">
+                {tn(waiting.length, 'Ein Konto wartet auf deine Freigabe', '{count} Konten warten auf deine Freigabe')}
+              </Typography>
+              {waiting.map((user) => (
+                <Box key={user.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Box sx={{ flex: 1, minWidth: 180 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {user.name}
+                    </Typography>
+                    <Typography variant="caption" component="p">
+                      @{user.username}
+                      {user.email ? ` · ${user.email}` : ''} · {t('registriert {date}', { date: formatDate(user.createdAt) })}
+                    </Typography>
+                  </Box>
+                  <Button size="small" onClick={() => void reject(user)} aria-label={t('Anfrage von {name} ablehnen', { name: user.name })}>
+                    {t('Ablehnen')}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => void approve(user)}
+                    aria-label={t('{name} freigeben', { name: user.name })}
+                  >
+                    {t('Freigeben')}
+                  </Button>
+                </Box>
+              ))}
+            </Box>
+          )}
           {users.length > 6 && (
             <TextField
               size="small"
@@ -724,16 +801,18 @@ export function PeopleSection() {
                       borderRadius: `${radius.md}px`,
                       '&:hover': { bgcolor: c.surfaceContainer },
                       flexWrap: { xs: 'wrap', sm: 'nowrap' },
-                      opacity: user.disabled ? 0.7 : 1,
+                      opacity: user.disabled || user.pending ? 0.7 : 1,
                     }}
                   >
-                    <UserAvatar initials={user.initials} size={44} />
+                    <UserAvatar initials={user.initials} size={44} avatar={user.avatar} userId={user.id} />
                     <Box sx={{ flex: 1, minWidth: 160 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                         <Typography variant="subtitle2">{user.name}</Typography>
                         {user.role === 'admin' && (
                           <Chip size="small" label={t('Admin')} sx={{ bgcolor: c.tertiaryContainer, color: c.onTertiaryContainer }} />
                         )}
+                        {user.role === 'guest' && <Chip size="small" variant="outlined" label={t('Gast')} />}
+                        {user.pending && <Chip size="small" label={t('Wartet auf Freigabe')} color="secondary" />}
                         {user.disabled && (
                           <Chip size="small" label={t('Gesperrt')} sx={{ bgcolor: c.errorContainer, color: c.onErrorContainer }} />
                         )}
@@ -767,10 +846,12 @@ export function PeopleSection() {
                         />
                       )}
                       <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
-                        {user.effectiveQuota
-                          ? t('{used} von {quota}', { used: formatBytes(user.used), quota: formatBytes(user.effectiveQuota) })
-                          : t('{used}, unbegrenzt', { used: formatBytes(user.used) })}
-                        {` · ${formatNumber(user.files)}`}
+                        {user.role === 'guest'
+                          ? t('Kein eigener Speicher')
+                          : user.effectiveQuota
+                            ? t('{used} von {quota}', { used: formatBytes(user.used), quota: formatBytes(user.effectiveQuota) })
+                            : t('{used}, unbegrenzt', { used: formatBytes(user.used) })}
+                        {user.role === 'guest' ? '' : ` · ${formatNumber(user.files)}`}
                       </Typography>
                     </Box>
                     <EditRounded sx={{ color: c.onSurfaceVariant, display: { xs: 'none', sm: 'block' } }} />

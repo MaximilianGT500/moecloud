@@ -9,6 +9,7 @@ import type { UserRow } from '../services/users.ts';
 export interface RequestAuth {
   user: UserRow;
   session: SessionRow | null;
+  readOnly?: boolean;
 }
 
 declare module 'fastify' {

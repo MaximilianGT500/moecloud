@@ -14,14 +14,31 @@ export interface InviteRow {
   used_at: number | null;
   used_by: number | null;
   email: string | null;
+  role: 'user' | 'guest';
+  team_id: number | null;
+  team_role: 'view' | 'edit' | null;
 }
 
-export function createInvite(admin: UserRow, note: string | null, days: number, quota: number | null, email: string | null = null) {
+export interface InviteTarget {
+  role?: 'user' | 'guest';
+  teamId?: number | null;
+  teamRole?: 'view' | 'edit' | null;
+}
+
+export function createInvite(
+  admin: UserRow,
+  note: string | null,
+  days: number,
+  quota: number | null,
+  email: string | null = null,
+  target: InviteTarget = {}
+) {
   const token = randomId(24);
   const id = randomId();
   const now = Date.now();
   run(
-    'INSERT INTO invites (id, token_hash, created_by, note, quota_bytes, created_at, expires_at, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO invites (id, token_hash, created_by, note, quota_bytes, created_at, expires_at, email, role, team_id, team_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     sha256(token),
     admin.id,
@@ -29,7 +46,10 @@ export function createInvite(admin: UserRow, note: string | null, days: number, 
     quota,
     now,
     now + Math.max(1, Math.min(90, days)) * 86_400_000,
-    email
+    email,
+    target.role ?? 'user',
+    target.teamId ?? null,
+    target.teamId ? (target.teamRole ?? 'view') : null
   );
   return { token, invite: one<InviteRow>('SELECT * FROM invites WHERE id = ?', id)! };
 }
@@ -55,6 +75,9 @@ export function presentInvite(invite: InviteRow) {
     id: invite.id,
     note: invite.note,
     email: invite.email,
+    role: invite.role,
+    team: invite.team_id ? (one<{ name: string }>('SELECT name FROM teams WHERE id = ?', invite.team_id)?.name ?? null) : null,
+    teamRole: invite.team_role,
     quota: invite.quota_bytes,
     createdAt: invite.created_at,
     expiresAt: invite.expires_at,

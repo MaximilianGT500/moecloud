@@ -57,6 +57,8 @@ export function auditLabel(action: string) {
       return t('Person angelegt');
     case 'user_updated':
       return t('Person geändert');
+    case 'user_approved':
+      return t('Konto freigegeben');
     case 'user_deleted':
       return t('Person gelöscht');
     case 'user_disabled':
@@ -131,6 +133,14 @@ export function auditLabel(action: string) {
       return t('Gruppe geändert');
     case 'group_deleted':
       return t('Gruppe gelöscht');
+    case 'terms_accepted':
+      return t('Nutzungsbedingungen zugestimmt');
+    case 'team_created':
+      return t('Teamordner angelegt');
+    case 'team_updated':
+      return t('Teamordner geändert');
+    case 'team_deleted':
+      return t('Teamordner gelöscht');
     default:
       return action;
   }
@@ -207,6 +217,11 @@ export function auditDetail(entry: AuditEntry) {
     case 'group_created':
     case 'group_deleted':
       return text('name');
+    case 'team_created':
+      return text('name');
+    case 'team_deleted':
+      return [text('name'), typeof d.files === 'number' ? tn(d.files, '{count} Datei', '{count} Dateien') : ''].filter(Boolean).join(' · ');
+    case 'team_updated':
     case 'group_updated':
       return [
         text('before') ? `${text('before')} → ${text('name')}` : text('name'),

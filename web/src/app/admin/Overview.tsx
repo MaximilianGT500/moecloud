@@ -50,7 +50,7 @@ interface Overview {
   versions: number;
   disk: { total: number; free: number } | null;
   groups: Record<Group, { size: number; count: number }>;
-  top: { id: number; name: string; initials: string; size: number; files: number }[];
+  top: { id: number; name: string; initials: string; avatar?: string | null; team?: boolean; size: number; files: number }[];
   health: {
     mail: boolean;
     scan: { clean: number; infected: number; unscanned: number; error: number; lastScan: number | null } | null;
@@ -379,7 +379,7 @@ export function OverviewSection() {
               </Typography>
               {data.top.map((person) => (
                 <Box key={person.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                  <UserAvatar initials={person.initials} size={32} />
+                  <UserAvatar initials={person.initials} size={32} avatar={person.avatar} userId={person.id} />
                   <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                     {person.name}
                   </Typography>

@@ -17,8 +17,12 @@ import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import AutoDeleteRounded from '@mui/icons-material/AutoDeleteRounded';
+import AutoModeRounded from '@mui/icons-material/AutoModeRounded';
+import RocketLaunchRounded from '@mui/icons-material/RocketLaunchRounded';
+import TransformRounded from '@mui/icons-material/TransformRounded';
 import CheckRounded from '@mui/icons-material/CheckRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
+import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import PaletteRounded from '@mui/icons-material/PaletteRounded';
 import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
@@ -46,6 +50,9 @@ import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import RestoreFromTrashRounded from '@mui/icons-material/RestoreFromTrashRounded';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
+import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
+import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
+import PlaylistAddRounded from '@mui/icons-material/PlaylistAddRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import SellRounded from '@mui/icons-material/SellRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
@@ -65,8 +72,9 @@ import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
 import StarRounded from '@mui/icons-material/StarRounded';
 import UploadRounded from '@mui/icons-material/UploadRounded';
 import ViewListRounded from '@mui/icons-material/ViewListRounded';
+import EditNoteRounded from '@mui/icons-material/EditNoteRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
-import { api } from '../../lib/api';
+import { api, errorText } from '../../lib/api';
 import { boot, type Boot, type Storage } from '../../lib/boot';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
@@ -105,15 +113,20 @@ import { DRAG_TYPE, Items } from './Items';
 import { canEditImage, canMakePdf, canMergePdfs, canOrganizePdf, FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
 import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
+import { loadOfficeExtensions, OfficeEditor, officeEditable, officeExtensions } from './OfficeEditor';
 import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewMenu } from './Panels';
 import { SearchBar } from './SearchBar';
 import { useTagSync } from './tags';
 
 const ActivityView = lazyNamed(() => import('./ActivityView'), 'ActivityView');
+const HomeView = lazyNamed(() => import('./Home'), 'HomeView');
+const TeamsView = lazyNamed(() => import('./Teams'), 'TeamsView');
+const TeamBar = lazyNamed(() => import('./Teams'), 'TeamBar');
 const AlbumContent = lazyNamed(() => import('./Albums'), 'AlbumContent');
 const AlbumList = lazyNamed(() => import('./Albums'), 'AlbumList');
 const AlbumMenu = lazyNamed(() => import('./Albums'), 'AlbumMenu');
 const AlbumPicker = lazyNamed(() => import('./Albums'), 'AlbumPicker');
+const AutomationsDialog = lazyNamed(() => import('./Automations'), 'AutomationsDialog');
 const CleanupDialog = lazyNamed(() => import('./Bulk'), 'CleanupDialog');
 const LockDialog = lazyNamed(() => import('./Bulk'), 'LockDialog');
 const DavImportDialog = lazyNamed(() => import('./DavImport'), 'DavImportDialog');
@@ -134,6 +147,9 @@ const StorageView = lazyNamed(() => import('./Storage'), 'StorageView');
 const TagDialog = lazyNamed(() => import('./TagViews'), 'TagDialog');
 const TagMenu = lazyNamed(() => import('./TagViews'), 'TagMenu');
 const TagsView = lazyNamed(() => import('./TagViews'), 'TagsView');
+const NotesView = lazyNamed(() => import('./Notes'), 'NotesView');
+const MusicView = lazyNamed(() => import('./Music'), 'MusicView');
+const PlaylistPicker = lazyNamed(() => import('./Music'), 'PlaylistPicker');
 const Viewer = lazyNamed(() => import('./Viewer'), 'Viewer');
 
 function Later({ children }: { children: ReactNode }) {
@@ -152,9 +168,12 @@ interface FilesBoot extends Boot {
   upload: { chunkSize: number; maxUpload: number };
   trashDays: number;
   versions: number;
+  starter?: string | null;
+  office?: string[] | null;
 }
 
-function destinationOf(view: View): Destination {
+function destinationOf(view: View, team = false): Destination {
+  if (view.kind === 'folder' && team) return 'teams';
   if (view.kind === 'folder' || view.kind === 'search') return 'files';
   if (view.kind === 'plugin') return pluginPageKey({ plugin: view.plugin, id: view.page });
   if (view.kind === 'activity') return 'recent';
@@ -163,10 +182,14 @@ function destinationOf(view: View): Destination {
   return view.kind;
 }
 
-const SPECIAL = new Set<View['kind']>(['photos', 'activity', 'storage', 'tags', 'albums', 'plugin']);
+const SPECIAL = new Set<View['kind']>(['home', 'teams', 'photos', 'activity', 'storage', 'tags', 'albums', 'notes', 'music', 'plugin']);
 
 function titleOf(view: View) {
   switch (view.kind) {
+    case 'home':
+      return t('Start');
+    case 'teams':
+      return t('Teamordner');
     case 'photos':
     case 'albums':
       return t('Fotos');
@@ -177,6 +200,10 @@ function titleOf(view: View) {
       return t('Zuletzt');
     case 'storage':
       return t('Speicher');
+    case 'notes':
+      return t('Notizen');
+    case 'music':
+      return t('Musik');
     case 'starred':
       return t('Favoriten');
     case 'shared':
@@ -226,13 +253,27 @@ export function FilesApp() {
   const [share, setShare] = useState<Item | null>(null);
   const [tagging, setTagging] = useState<Item[] | null>(null);
   const [albumPick, setAlbumPick] = useState<Item[] | null>(null);
+  const [playlistPick, setPlaylistPick] = useState<Item[] | null>(null);
   const [imageEdit, setImageEdit] = useState<Item | null>(null);
+  const [officeEdit, setOfficeEdit] = useState<Item | null>(null);
+  const [office, setOffice] = useState<string[]>(() => officeExtensions(data.office));
+
+  useEffect(() => {
+    if (!data.office || office.length > 0) return;
+    let active = true;
+    void loadOfficeExtensions().then((extensions) => active && extensions.length > 0 && setOffice(extensions));
+    return () => {
+      active = false;
+    };
+  }, []);
   const [pdfPages, setPdfPages] = useState<Item | null>(null);
   const [pdfMerge, setPdfMerge] = useState<Item[] | null>(null);
   const [pdfImages, setPdfImages] = useState<Item[] | null>(null);
   const [renaming, setRenaming] = useState<Item[] | null>(null);
   const [packing, setPacking] = useState<Item[] | null>(null);
   const [cleanupFor, setCleanupFor] = useState<Item | null>(null);
+  const [starter, setStarter] = useState<string | null>(data.starter ?? null);
+  const [automationsFor, setAutomationsFor] = useState<Item | null>(null);
   const [locking, setLocking] = useState<Item | null>(null);
   const [davImport, setDavImport] = useState<string | null>(null);
   const [reminding, setReminding] = useState<Item | null>(null);
@@ -260,6 +301,7 @@ export function FilesApp() {
   const chosen = items.filter((item) => selected.has(item.id));
   const folder = listing.data?.folder;
   const role = listing.data?.role ?? 'view';
+  const guestOutside = data.user?.role === 'guest' && (view.kind !== 'folder' || role === 'view');
   const readOnly = view.kind === 'folder' && Boolean(folder) && role === 'view';
   const uploadTarget = view.kind !== 'folder' || readOnly ? rootId : (folder?.id ?? view.id);
   const files = items.filter((item) => item.type === 'file');
@@ -332,6 +374,14 @@ export function FilesApp() {
 
   useTagSync();
 
+  useEffect(() => {
+    try {
+      const first = !sessionStorage.getItem('moe-start');
+      sessionStorage.setItem('moe-start', '1');
+      if (first && data.start === 'home' && window.location.pathname === '/files') navigate('/files/home', { replace: true });
+    } catch {}
+  }, []);
+
   useEffect(
     () =>
       whenIdle(() => {
@@ -360,6 +410,90 @@ export function FilesApp() {
     else refreshStorage();
   });
 
+  const toggleStarter = async (item: Item) => {
+    const active = starter === item.id;
+    if (!active) {
+      const ok = await confirm({
+        title: t('„{name}“ als Startdateien nutzen?', { name: item.name }),
+        text: t('Jedes neue Konto bekommt eine Kopie von allem, was in diesem Ordner liegt. Bestehende Konten ändern sich nicht.'),
+        confirm: t('Nutzen'),
+      });
+      if (!ok) return;
+    }
+    try {
+      const result = await api.put<{ folder: { id: string } | null }>('/api/admin/starter', { folderId: active ? null : item.id });
+      setStarter(result.folder?.id ?? null);
+      toast(active ? t('Neue Konten starten wieder leer') : t('Neue Konten bekommen jetzt diese Dateien'));
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+
+  const convert = async (item: Item) => {
+    try {
+      const { formats } = await api.get<{ formats: string[] }>(`/api/nodes/${item.id}/convert`);
+      if (formats.length === 0) {
+        toast(t('Diese Datei lässt sich nicht umwandeln'));
+        return;
+      }
+      const format = await choose({
+        title: t('„{name}“ umwandeln', { name: item.name }),
+        text: t('MoeCloud legt die neue Datei neben das Original. Das Original bleibt, wie es ist.'),
+        options: formats.map((entry) => ({
+          value: entry,
+          label: entry === 'jpeg' ? 'JPEG' : entry.toUpperCase(),
+          primary: formats.length === 1,
+        })),
+      });
+      if (!format) return;
+      toast(t('Wird umgewandelt …'));
+      const result = await api.post<{ node: Item }>(`/api/nodes/${item.id}/convert`, { format });
+      toast(t('„{name}“ gespeichert', { name: result.node.name }));
+      refresh();
+    } catch (error) {
+      toast(errorText(error));
+    }
+  };
+
+  const convertMany = async (list: Item[]) => {
+    try {
+      const options = await Promise.all(
+        list.map((item) =>
+          api
+            .get<{ formats: string[] }>(`/api/nodes/${item.id}/convert`)
+            .then((result) => result.formats)
+            .catch(() => [] as string[])
+        )
+      );
+      const formats = ['pdf', 'jpeg', 'png', 'webp', 'avif'].filter((format) => options.some((entry) => entry.includes(format)));
+      if (formats.length === 0) {
+        toast(t('Diese Dateien lassen sich nicht umwandeln'));
+        return;
+      }
+      const format = await choose({
+        title: t('{count} Dateien umwandeln', { count: list.length }),
+        text: t('MoeCloud legt jede neue Datei neben ihr Original. Dateien, zu denen das Format nicht passt, bleiben aus.'),
+        options: formats.map((entry) => ({
+          value: entry,
+          label: entry === 'jpeg' ? 'JPEG' : entry.toUpperCase(),
+          primary: formats.length === 1,
+        })),
+      });
+      if (!format) return;
+      toast(t('Wird umgewandelt …'));
+      let done = 0;
+      for (const [index, item] of list.entries()) {
+        if (!options[index].includes(format)) continue;
+        await api.post(`/api/nodes/${item.id}/convert`, { format });
+        done++;
+      }
+      toast(tn(done, 'Eine Datei umgewandelt', '{count} Dateien umgewandelt'));
+    } catch (error) {
+      toast(errorText(error));
+    }
+    refresh();
+  };
+
   const playable = (item: Item) => item.type === 'file' && item.kind === 'audio' && !item.infected && !item.trashedAt;
 
   const open = (item: Item) => {
@@ -370,6 +504,10 @@ export function FilesApp() {
     }
     if (playable(item)) {
       playItems(items, item);
+      return;
+    }
+    if (officeEditable(item, office) && canEdit(item)) {
+      setOfficeEdit(item);
       return;
     }
     setViewer({ id: item.id, editing: false });
@@ -458,8 +596,24 @@ export function FilesApp() {
     if (single) {
       list.push({
         key: 'open',
-        label: single.type === 'folder' ? t('Öffnen') : playable(single) ? t('Abspielen') : t('Vorschau'),
-        icon: single.type === 'folder' ? <FolderOpenRounded /> : playable(single) ? <PlayArrowRounded /> : <VisibilityRounded />,
+        label:
+          single.type === 'folder'
+            ? t('Öffnen')
+            : playable(single)
+              ? t('Abspielen')
+              : officeEditable(single, office) && canEdit(single)
+                ? t('In Office bearbeiten')
+                : t('Vorschau'),
+        icon:
+          single.type === 'folder' ? (
+            <FolderOpenRounded />
+          ) : playable(single) ? (
+            <PlayArrowRounded />
+          ) : officeEditable(single, office) && canEdit(single) ? (
+            <EditNoteRounded />
+          ) : (
+            <VisibilityRounded />
+          ),
         onClick: () => open(single),
       });
     } else if (targets.every(playable)) {
@@ -507,6 +661,29 @@ export function FilesApp() {
     }
     if (single && canEditImage(single)) {
       list.push({ key: 'edit-image', label: t('Bild bearbeiten'), icon: <TuneRounded />, onClick: () => setImageEdit(single) });
+    }
+    if (single && officeEditable(single, office)) {
+      list.push(
+        canEdit(single)
+          ? {
+              key: 'preview',
+              label: t('Vorschau'),
+              icon: <VisibilityRounded />,
+              onClick: () => setViewer({ id: single.id, editing: false }),
+            }
+          : { key: 'office', label: t('In Office öffnen'), icon: <EditNoteRounded />, onClick: () => setOfficeEdit(single) }
+      );
+    }
+    if (single && single.type === 'file' && !single.infected && (canEditImage(single) || single.office)) {
+      list.push({ key: 'convert', label: t('Umwandeln'), icon: <TransformRounded />, onClick: () => void convert(single) });
+    }
+    if (
+      !single &&
+      targets.length > 1 &&
+      targets.length <= 50 &&
+      targets.every((item) => item.type === 'file' && !item.infected && (canEditImage(item) || item.office))
+    ) {
+      list.push({ key: 'convert', label: t('Umwandeln'), icon: <TransformRounded />, onClick: () => void convertMany(targets) });
     }
     if (single && canOrganizePdf(single)) {
       list.push({ key: 'pdf-pages', label: t('Seiten bearbeiten'), icon: <AutoStoriesRounded />, onClick: () => setPdfPages(single) });
@@ -622,12 +799,56 @@ export function FilesApp() {
     if (single && single.type === 'folder' && single.parentId && single.role === 'owner') {
       list.push({ key: 'cleanup', label: t('Aufräumregel'), icon: <AutoDeleteRounded />, onClick: () => setCleanupFor(single) });
     }
+    if (single && single.type === 'folder' && (single.role === 'owner' || single.role === 'edit')) {
+      list.push({ key: 'automations', label: t('Abläufe'), icon: <AutoModeRounded />, onClick: () => setAutomationsFor(single) });
+    }
+    if (single && single.type === 'folder' && single.parentId && single.role === 'owner' && data.user?.role === 'admin') {
+      list.push({
+        key: 'starter',
+        label: starter === single.id ? t('Nicht mehr als Startdateien nutzen') : t('Als Startdateien für neue Konten'),
+        icon: <RocketLaunchRounded />,
+        onClick: () => void toggleStarter(single),
+      });
+    }
     if (view.kind !== 'album' && targets.every((item) => item.type === 'file' && (item.kind === 'image' || item.kind === 'video'))) {
       list.push({
         key: 'album',
         label: t('Zum Album hinzufügen'),
         icon: <AddPhotoAlternateRounded />,
         onClick: () => setAlbumPick(targets),
+      });
+    }
+    if (targets.every((item) => playable(item) || (item.type === 'folder' && !item.trashedAt))) {
+      list.push({
+        key: 'playlist',
+        label: t('Zur Wiedergabeliste hinzufügen'),
+        icon: <PlaylistAddRounded />,
+        onClick: () => setPlaylistPick(targets),
+      });
+    }
+    if (single && single.type === 'file' && !single.trashedAt && !single.infected && /\.m3u8?$/i.test(single.name)) {
+      list.push({
+        key: 'm3u',
+        label: t('Als Wiedergabeliste übernehmen'),
+        icon: <QueueMusicRounded />,
+        onClick: async () => {
+          try {
+            const result = await api.post<{ playlist: { id: string; name: string }; added: number; missing: number }>(
+              `/api/nodes/${single.id}/playlist`
+            );
+            toast(
+              result.missing > 0
+                ? t('„{name}“ angelegt, {missing} Einträge ließen sich nicht finden', {
+                    name: result.playlist.name,
+                    missing: result.missing,
+                  })
+                : t('Wiedergabeliste „{name}“ angelegt', { name: result.playlist.name }),
+              { action: { label: t('Öffnen'), onClick: () => navigate(`/files/music/playlists/${result.playlist.id}`) } }
+            );
+          } catch (error) {
+            toast(errorText(error));
+          }
+        },
       });
     }
     if (editable && targets.every((item) => item.type === 'folder')) {
@@ -751,6 +972,16 @@ export function FilesApp() {
       setTimeout(() => setViewer({ id: created.id, editing: true }), 350);
     },
     onTemplate: () => setTemplateFor(uploadTarget),
+    onOffice:
+      office.length > 0
+        ? async (kind) => {
+            const created = await attempt(() => api.post<{ node: Item }>(`/api/nodes/${uploadTarget}/office/new`, { kind }));
+            if (!created) return;
+            if (uploadTarget !== folder?.id) navigate(folderHref(uploadTarget, rootId));
+            refresh();
+            setOfficeEdit(created.node);
+          }
+        : undefined,
     onImport: data.import ? () => void importFromUrl(uploadTarget) : undefined,
     onDavImport: data.import ? () => setDavImport(uploadTarget) : undefined,
   });
@@ -1133,10 +1364,14 @@ export function FilesApp() {
         />
       );
     }
+    if (view.kind === 'home') return <HomeView onOpen={open} onReveal={(item) => reveal(item)} />;
+    if (view.kind === 'teams') return <TeamsView />;
     if (view.kind === 'activity') return <ActivityView onOpen={openActivity} />;
     if (view.kind === 'tags') return <TagsView />;
     if (view.kind === 'albums') return <AlbumList />;
     if (view.kind === 'storage') return <StorageView onReveal={(item) => reveal(item)} />;
+    if (view.kind === 'notes') return <NotesView id={view.id} />;
+    if (view.kind === 'music') return <MusicView tab={view.tab} id={view.id} name={view.name} />;
     if (view.kind === 'plugin') return <PluginPageView plugin={view.plugin} page={view.page} />;
     if (listing.error) {
       return (
@@ -1199,6 +1434,10 @@ export function FilesApp() {
         {view.kind === 'folder' && view.id === rootId && (
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1, px: 1.5, pb: 1.5, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {[
+              { href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleRounded /> },
+              ...((data.teams ?? 0) > 0 ? [{ href: '/files/teams', label: t('Teamordner'), icon: <FolderSharedRounded /> }] : []),
+              { href: '/files/notes', label: t('Notizen'), icon: <StickyNote2Rounded /> },
+              { href: '/files/music', label: t('Musik'), icon: <LibraryMusicRounded /> },
               { href: '/files/starred', label: t('Favoriten'), icon: <StarRounded /> },
               { href: '/files/tags', label: t('Schlagwörter'), icon: <SellRounded /> },
               { href: '/files/activity', label: t('Aktivität'), icon: <HistoryRounded /> },
@@ -1216,6 +1455,11 @@ export function FilesApp() {
               />
             ))}
           </Box>
+        )}
+        {view.kind === 'folder' && listing.data.team && (
+          <Later>
+            <TeamBar info={listing.data.team} />
+          </Later>
         )}
         {readme && <FolderReadme item={readme} onOpen={() => open(readme)} />}
         {view.kind === 'trash' && items.length > 0 && (
@@ -1265,15 +1509,15 @@ export function FilesApp() {
   return (
     <>
       <AppShell
-        active={destinationOf(view)}
+        active={destinationOf(view, Boolean(listing.data?.team))}
         storage={storage}
         onNavigate={(href) => {
           if (!href.startsWith('/files')) return false;
           navigate(href);
           return true;
         }}
-        railAction={newMenu.rail}
-        mobileAction={newMenu.mobile}
+        railAction={guestOutside ? undefined : newMenu.rail}
+        mobileAction={guestOutside ? undefined : newMenu.mobile}
         topBar={
           <>
             <SearchBar
@@ -1313,7 +1557,10 @@ export function FilesApp() {
             {header()}
           </Box>
           <Box
-            sx={{ flex: 1, ...(view.kind === 'plugin' ? { display: 'flex', flexDirection: 'column', minHeight: 0 } : {}) }}
+            sx={{
+              flex: 1,
+              ...(view.kind === 'plugin' || view.kind === 'notes' ? { display: 'flex', flexDirection: 'column', minHeight: 0 } : {}),
+            }}
             onClick={(event) => {
               if (event.target === event.currentTarget && selected.size) setSelected(new Set());
             }}
@@ -1428,6 +1675,11 @@ export function FilesApp() {
           <PackDialog items={packing} onClose={() => setPacking(null)} onDone={() => refresh()} />
         </Later>
       )}
+      {automationsFor && (
+        <Later>
+          <AutomationsDialog folder={automationsFor} onClose={() => setAutomationsFor(null)} />
+        </Later>
+      )}
       {cleanupFor && (
         <Later>
           <CleanupDialog item={cleanupFor} trashDays={data.trashDays} onClose={() => setCleanupFor(null)} onDone={() => refresh()} />
@@ -1471,9 +1723,23 @@ export function FilesApp() {
           <ImageEditor item={imageEdit} onClose={() => setImageEdit(null)} onSaved={() => refresh()} />
         </Later>
       )}
+      {officeEdit && (
+        <OfficeEditor
+          item={officeEdit}
+          onClose={(changed) => {
+            setOfficeEdit(null);
+            if (changed) refresh();
+          }}
+        />
+      )}
       {albumPick && (
         <Later>
           <AlbumPicker items={albumPick} onClose={() => setAlbumPick(null)} onDone={() => setSelected(new Set())} />
+        </Later>
+      )}
+      {playlistPick && (
+        <Later>
+          <PlaylistPicker items={playlistPick} onClose={() => setPlaylistPick(null)} onDone={() => setSelected(new Set())} />
         </Later>
       )}
       <MoveDialog

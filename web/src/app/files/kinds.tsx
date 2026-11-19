@@ -44,6 +44,7 @@ export interface Item {
   owner?: { id: number; name: string } | null;
   location?: string | null;
   grantId?: string;
+  team?: boolean;
   viaGroup?: string;
   color?: string | null;
   infected?: boolean;
@@ -53,6 +54,7 @@ export interface Item {
   snippet?: string | null;
   progress?: number | null;
   shareEnds?: number | null;
+  shareNote?: string | null;
   watching?: boolean;
   cleanup?: number | null;
   lock?: { userId: number; name: string; mine: boolean; expiresAt: number | null } | null;

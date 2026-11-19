@@ -7,11 +7,12 @@ import { record } from './activity.ts';
 import { entryStream, isZip, openZip, safePath } from './archive.ts';
 import { blobPath, receive } from './blobs.ts';
 import { ingest } from './ingest.ts';
+import { isBlockedName } from './filetypes.ts';
 import { changed, ensurePath, findChild, getNode, insertNode, remaining, requireAccess, requireFolder, taken } from './nodes.ts';
 import { assertNotInfected } from './scan.ts';
 import * as settings from './settings.ts';
 import { checkQuota } from './uploads.ts';
-import type { UserRow } from './users.ts';
+import { getUser, type UserRow } from './users.ts';
 
 const MAX_FILES = 10_000;
 const DISK_RESERVE = 512 * 1024 * 1024;
@@ -27,7 +28,7 @@ export interface ExtractResult {
   folderId: string;
   files: number;
   folders: number;
-  skipped: { infected: number; encrypted: number; unsafe: number; tooLarge: number };
+  skipped: { infected: number; encrypted: number; unsafe: number; tooLarge: number; blocked: number };
 }
 
 function readEntries(zip: ZipFile): Promise<Entry[]> {
@@ -86,7 +87,7 @@ export async function extractArchive(user: UserRow, nodeId: string): Promise<Ext
       throw badRequest('Das Archiv lässt sich nicht lesen');
     });
     const maxUpload = settings.get('storage.maxUpload');
-    const skipped = { infected: 0, encrypted: 0, unsafe: 0, tooLarge: 0 };
+    const skipped = { infected: 0, encrypted: 0, unsafe: 0, tooLarge: 0, blocked: 0 };
     const plan: Planned[] = [];
     let total = 0;
     for (const entry of entries) {
@@ -105,6 +106,10 @@ export async function extractArchive(user: UserRow, nodeId: string): Promise<Ext
         skipped.tooLarge++;
         continue;
       }
+      if (!folder && isBlockedName(segments[segments.length - 1])) {
+        skipped.blocked++;
+        continue;
+      }
       if (!folder) total += entry.uncompressedSize;
       plan.push({ entry, segments, folder });
     }
@@ -112,11 +117,11 @@ export async function extractArchive(user: UserRow, nodeId: string): Promise<Ext
     if (fileCount > MAX_FILES) throw badRequest('Das Archiv enthält mehr als {count} Dateien', { count: MAX_FILES });
     if (plan.length === 0) throw badRequest('Im Archiv gibt es nichts, was sich entpacken lässt');
     if (total > remaining(parent.owner_id)) {
-      throw insufficientStorage(
-        parent.owner_id === user.id
-          ? 'Für den Inhalt des Archivs reicht dein Speicher nicht'
-          : 'Für den Inhalt des Archivs reicht der Speicher der Person nicht, der dieser Ordner gehört'
-      );
+      if (parent.owner_id === user.id) throw insufficientStorage('Für den Inhalt des Archivs reicht dein Speicher nicht');
+      if (getUser(parent.owner_id)?.role === 'team') {
+        throw insufficientStorage('Für den Inhalt des Archivs reicht der Speicher dieses Teamordners nicht');
+      }
+      throw insufficientStorage('Für den Inhalt des Archivs reicht der Speicher der Person nicht, der dieser Ordner gehört');
     }
     if (total + DISK_RESERVE > (await freeSpace())) throw insufficientStorage('Auf dem Server ist nicht genug Platz frei');
 

@@ -10,9 +10,14 @@ import { isSetUp } from '../services/setup.ts';
 import { CHUNK_SIZE } from '../services/uploads.ts';
 import { tools } from '../services/media.ts';
 import { scanEnabled } from '../services/scan.ts';
+import { audit } from '../services/audit.ts';
 import { secondFactorPending } from '../services/auth.ts';
+import { acceptTerms, termsPending, termsText } from '../services/terms.ts';
+import { knownExtensions, officeEnabled } from '../services/wopi.ts';
+import { checkFormCsrf } from '../lib/request.ts';
 import { pluginBoot } from '../services/plugins.ts';
-import { publicUser, storageOf } from '../services/users.ts';
+import { teamsFor } from '../services/teams.ts';
+import { prefsOf, publicUser, storageOf } from '../services/users.ts';
 
 function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
   if (!isSetUp()) {
@@ -31,6 +36,8 @@ export function userBoot(request: FastifyRequest) {
   const pending = secondFactorPending(user, request.auth?.session?.method);
   return {
     user: publicUser(user),
+    teams: pending ? 0 : teamsFor(user).length,
+    start: prefsOf(user).start,
     storage: storageOf(user),
     webdav: `${baseUrl(request)}/dav/`,
     setup2fa: pending,
@@ -75,6 +82,8 @@ export async function pageRoutes(app: FastifyInstance) {
         scan: scanEnabled(),
         contentSearch: settings.get('search.content'),
         import: settings.get('import.enabled'),
+        starter: user.role === 'admin' ? settings.get('accounts.starter') || null : null,
+        office: officeEnabled() ? knownExtensions() : null,
       },
     });
   };
@@ -107,4 +116,34 @@ export async function pageRoutes(app: FastifyInstance) {
       return renderDocument(request, reply, { title: t(request.lang, title), body: legalPage(request, t(request.lang, title), text) });
     });
   }
+
+  const termsPage = (request: FastifyRequest, reply: FastifyReply, error: string | null = null, status = 200) => {
+    const text = termsText();
+    if (!text) throw notFound();
+    if (/^https?:\/\//.test(text)) return reply.redirect(text);
+    const session = request.auth?.session;
+    const pending = Boolean(session && termsPending(request.auth!.user));
+    return renderDocument(request, reply, {
+      title: t(request.lang, 'Nutzungsbedingungen'),
+      status,
+      body: legalPage(request, t(request.lang, 'Nutzungsbedingungen'), text, pending ? { csrf: session!.csrf, error } : undefined),
+    });
+  };
+
+  app.get('/nutzungsbedingungen', async (request, reply) => termsPage(request, reply));
+
+  app.post('/nutzungsbedingungen', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (request, reply) => {
+    const user = requirePageUser(request, reply);
+    if (!user) return reply;
+    try {
+      checkFormCsrf(request, (request.body as Record<string, string> | undefined)?._csrf);
+    } catch (error) {
+      return termsPage(request, reply, t(request.lang, (error as Error).message), 403);
+    }
+    if (termsPending(user)) {
+      acceptTerms(user);
+      audit('terms_accepted', { actor: user.id, request, details: { version: settings.get('terms.version') } });
+    }
+    return reply.redirect('/files', 303);
+  });
 }

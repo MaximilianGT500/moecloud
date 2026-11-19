@@ -1,13 +1,16 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { run, one } from '../lib/db.ts';
 import { hashPassword, verifyPassword } from '../lib/crypto.ts';
-import { badRequest, conflict, forbidden, unauthorized } from '../lib/errors.ts';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.ts';
+import { publish } from '../lib/events.ts';
 import { t } from '../lib/i18n.ts';
-import { contentDisposition } from '../lib/http.ts';
+import { contentDisposition, sendFile } from '../lib/http.ts';
 import { me, setLanguageCookie } from '../lib/request.ts';
 import { displayName, email, parse, password } from '../lib/validate.ts';
 import { audit, listAudit, SECURITY_ACTIONS } from '../services/audit.ts';
+import { avatarFile, readLimited, removeAvatar, setAvatar } from '../services/avatars.ts';
 import {
   beginTotp,
   disableTotp,
@@ -55,6 +58,39 @@ export async function accountRoutes(app: FastifyInstance) {
   app.get('/api/session', async (request) => {
     const user = me(request);
     return { user: publicUser(user), csrf: request.auth?.session?.csrf ?? request.csrf };
+  });
+
+  app.put('/api/account/avatar', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    const body = request.body as Readable | undefined;
+    if (!body || typeof body.pipe !== 'function') throw badRequest('Schick das Bild als application/octet-stream');
+    const avatar = await setAvatar(user, await readLimited(body));
+    publish([user.id], 'account', { avatar });
+    return { avatar };
+  });
+
+  app.delete('/api/account/avatar', async (request) => {
+    const user = me(request);
+    await removeAvatar(user.id);
+    publish([user.id], 'account', { avatar: null });
+    return { avatar: null };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/avatars/:id', { compress: false }, async (request, reply) => {
+    me(request);
+    const owner = getUser(Number(request.params.id));
+    const file = owner ? await avatarFile(owner) : null;
+    if (!file) throw notFound();
+    return sendFile(request, reply, {
+      path: file.path,
+      size: file.size,
+      type: 'image/webp',
+      etag: `a-${file.stamp}`,
+      modified: file.modified,
+      name: 'avatar.webp',
+      disposition: 'inline',
+      cache: 'private, max-age=31536000, immutable',
+    });
   });
 
   app.get('/api/account', async (request) => {
@@ -142,6 +178,7 @@ export async function accountRoutes(app: FastifyInstance) {
             .refine((value) => value.from !== value.to, 'Beginn und Ende der Ruhezeit dürfen nicht gleich sein')
             .nullable(),
           zone: z.string().max(64).refine(validZone, 'Diese Zeitzone kennt MoeCloud nicht'),
+          start: z.enum(['files', 'home']),
         })
         .partial(),
       request.body
@@ -304,9 +341,17 @@ export async function accountRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/account/app-passwords', async (request) => {
-    const { name } = parse(z.object({ name: z.string().trim().min(1, 'Gib dem App-Passwort einen Namen').max(60) }), request.body);
-    const { token, row } = createAppPassword(me(request), name);
-    audit('app_password_created', { actor: me(request).id, request, details: { name: row.name } });
+    const input = parse(
+      z.object({
+        name: z.string().trim().min(1, 'Gib dem App-Passwort einen Namen').max(60),
+        readOnly: z.boolean().optional(),
+        shared: z.boolean().optional(),
+        expiresAt: z.number().int().positive().nullable().optional(),
+      }),
+      request.body
+    );
+    const { token, row } = createAppPassword(me(request), input.name, input);
+    audit('app_password_created', { actor: me(request).id, request, details: { name: row.name, readOnly: row.scope === 'read' } });
     return { token, item: presentAppPassword(row) };
   });
 

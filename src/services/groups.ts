@@ -4,11 +4,11 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.ts';
 import { publish } from '../lib/events.ts';
 import { record } from './activity.ts';
 import { audit } from './audit.ts';
-import { checkExpiry } from './grants.ts';
+import { checkExpiry, cleanNote } from './grants.ts';
 import { getNode, requireAccess, type NodeRow } from './nodes.ts';
 import { notify } from './notify.ts';
 import * as settings from './settings.ts';
-import { getUser, initials, type UserRow } from './users.ts';
+import { getUser, initials, isPerson, type UserRow } from './users.ts';
 
 export interface GroupRow {
   id: number;
@@ -26,6 +26,7 @@ export interface GroupGrantRow {
   created_by: number;
   created_at: number;
   expires_at: number | null;
+  note: string | null;
 }
 
 const nameKey = (name: string) => name.trim().toLocaleLowerCase('de');
@@ -54,7 +55,13 @@ export function presentGroup(group: GroupRow) {
     id: group.id,
     name: group.name,
     createdAt: group.created_at,
-    members: members.map((user) => ({ id: user.id, name: user.name, username: user.username, initials: initials(user.name) })),
+    members: members.map((user) => ({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      initials: initials(user.name),
+      avatar: user.avatar ?? null,
+    })),
     shares: (one<{ count: number }>('SELECT COUNT(*) AS count FROM group_grants WHERE group_id = ?', group.id) ?? { count: 0 }).count,
   };
 }
@@ -98,7 +105,7 @@ export function deleteGroup(admin: UserRow, id: number) {
 
 function addMemberRow(groupId: number, userId: number) {
   const user = getUser(userId);
-  if (!user) throw notFound('Diese Person gibt es nicht');
+  if (!user || !isPerson(user)) throw notFound('Diese Person gibt es nicht');
   run('INSERT OR IGNORE INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)', groupId, userId, Date.now());
 }
 
@@ -153,8 +160,10 @@ export function shareWithGroup(
   nodeId: string,
   groupId: number,
   permission: 'view' | 'edit',
-  expiresAt: number | null = null
+  expiresAt: number | null = null,
+  rawNote: string | null = null
 ) {
+  const note = cleanNote(rawNote);
   const expires = checkExpiry(expiresAt);
   if (!settings.get('share.users')) throw forbidden('Teilen mit anderen Personen ist auf diesem Server ausgeschaltet');
   const { node } = requireAccess(user, nodeId, 'owner');
@@ -168,7 +177,7 @@ export function shareWithGroup(
   if (existing) run('DELETE FROM group_grants WHERE id = ?', existing.id);
   const id = randomId();
   run(
-    'INSERT INTO group_grants (id, node_id, owner_id, group_id, permission, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO group_grants (id, node_id, owner_id, group_id, permission, created_by, created_at, expires_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     nodeId,
     node.owner_id,
@@ -176,7 +185,8 @@ export function shareWithGroup(
     permission,
     user.id,
     Date.now(),
-    expires
+    expires,
+    note
   );
   const recipients = memberIds(groupId).filter((memberId) => memberId !== node.owner_id);
   publish(recipients, 'shared', { nodeId, by: user.name, name: node.name });
@@ -193,18 +203,28 @@ export function shareWithGroup(
     notify(
       memberId,
       'shared',
-      { by: user.name, name: node.name, permission, group: group.name },
+      { by: user.name, name: node.name, permission, group: group.name, note: note ?? '' },
       node.type === 'folder' ? `/files/folder/${node.id}` : '/files/shared'
     );
   }
   return getGroupGrant(id)!;
 }
 
-export function updateGroupGrant(user: UserRow, id: string, change: { permission?: 'view' | 'edit'; expiresAt?: number | null }) {
+export function updateGroupGrant(
+  user: UserRow,
+  id: string,
+  change: { permission?: 'view' | 'edit'; expiresAt?: number | null; note?: string | null }
+) {
   const grant = getGroupGrant(id);
   if (!grant || grant.owner_id !== user.id) throw notFound('Diese Freigabe gibt es nicht mehr');
   const expires = change.expiresAt === undefined ? grant.expires_at : checkExpiry(change.expiresAt);
-  run('UPDATE group_grants SET permission = ?, expires_at = ? WHERE id = ?', change.permission ?? grant.permission, expires, id);
+  run(
+    'UPDATE group_grants SET permission = ?, expires_at = ?, note = ? WHERE id = ?',
+    change.permission ?? grant.permission,
+    expires,
+    change.note === undefined ? grant.note : cleanNote(change.note),
+    id
+  );
   publish(memberIds(grant.group_id), 'change', { folders: [grant.node_id] });
   return getGroupGrant(id)!;
 }
@@ -240,6 +260,7 @@ export function presentGroupGrant(grant: GroupGrantRow) {
     permission: grant.permission,
     createdAt: grant.created_at,
     expiresAt: grant.expires_at,
+    note: grant.note ?? null,
     user: null,
     group: group ? { id: group.id, name: group.name, members: memberCount(group.id) } : null,
   };

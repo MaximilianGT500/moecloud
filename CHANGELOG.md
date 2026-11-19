@@ -2,6 +2,89 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.6.0] · 2026-11-19
+
+Diese Version macht MoeCloud zum Ort für gemeinsame Arbeit: Teamordner mit eigenem Speicher, Gastkonten für Leute von außen, Office-Dokumente, die du mit Collabora Online im Browser bearbeitest, und Abläufe, die neue Dateien von selbst benennen, einsortieren und umwandeln. Dazu kommen Notizen, ein Bereich für Musik mit Wiedergabelisten, eine Startseite, Profilbilder, Nutzungsbedingungen mit Zustimmung und einiges für die Verwaltung.
+
+### Neu
+
+- **Teamordner** unter **Admin › Teamordner**: Ein Teamordner gehört keiner einzelnen Person und hat eigenen Speicher, der nicht zum Speicher der Mitglieder zählt. Was darin liegt, bleibt, auch wenn jemand das Team verlässt oder ein Konto gelöscht wird. Du nimmst Personen und Gruppen auf, zum Lesen oder Bearbeiten, und gibst einzelnen Personen die Leitung
+- **Leitung**: Wer einen Teamordner leitet, nimmt selbst Personen und Gruppen auf, ändert Rechte, Beschreibung und Farbe und verwaltet den Papierkorb. Name und Speicher legen weiter nur Admins fest
+- **Papierkorb pro Teamordner**: Was Mitglieder löschen, landet im Papierkorb des Teamordners. Leitung und Admins holen es zurück oder löschen es endgültig
+- **Teamordner überall**: Mitglieder finden ihre Teamordner in der Navigation, auf der Startseite und in der Suche, im WebDAV-Laufwerk dann, wenn das App-Passwort es vorsieht. Öffentliche Links aus einem Teamordner gehören zum Team und bleiben, wenn die Person geht, die sie angelegt hat
+- **Gastkonten**: Die neue Rolle **Gast** ist ein Konto ohne eigenen Speicher. Gäste sehen nur, was mit ihnen geteilt ist, und die Teamordner, in denen sie Mitglied sind. Eigene Dateien, öffentliche Links und die Leitung eines Teamordners gibt es für sie nicht
+- **Einladen von außen**: Einladungen legen auf Wunsch ein Gastkonto an und nehmen die Person gleich in einen Teamordner auf. In den Mitgliedern eines Teamordners schicken Admins die Einladung direkt an eine E-Mail-Adresse
+- **Abläufe** im Menü eines Ordners: Ein Ablauf kümmert sich um jede neue Datei, die hochgeladen wird, über einen Link zum Hochladen kommt oder über WebDAV. Er gilt für alle Dateien oder nur für bestimmte Arten, Endungen und Namen, auf Wunsch auch in Unterordnern
+- **Aktionen für Abläufe**: Schlagwort vergeben, nach einem Muster wie `{datum} {name}` umbenennen, als PDF oder in einem anderen Bildformat speichern, eine Kopie in einen zweiten Ordner legen, in einen anderen Ordner verschieben und dort in Ordner pro Jahr oder Monat einsortieren, Bilder und Videos in ein Album legen, als Favorit markieren und Bescheid geben. **Jetzt anwenden** schickt einmal alles durch den Ablauf, was schon im Ordner liegt
+- **Umwandeln** im Menü einer Datei: Bilder als JPEG, PNG, WebP oder AVIF, Office-Dokumente als PDF. Die neue Datei liegt neben dem Original, das bleibt, wie es ist. Mit mehreren ausgewählten Dateien gehen bis zu 50 auf einmal. Für PDFs braucht MoeCloud LibreOffice
+- **Office im Browser**: Mit einem Server für Collabora Online bearbeitest du Word, Excel, PowerPoint und OpenDocument direkt in der Cloud, auch zu mehreren gleichzeitig. Die Adresse trägst du unter **Admin › Einstellungen › Office** ein, MoeCloud zeigt dort, ob Collabora antwortet und welche Formate es bearbeitet. **Neu › Neues Dokument**, **Neue Tabelle** und **Neue Präsentation** legen leere Dateien an. Wer nur ansehen darf, öffnet ohne Schreibrecht, und während du bearbeitest, entsteht eine Version zu Beginn und danach höchstens alle zehn Minuten
+- **Notizen**: Ein eigener Bereich mit Liste und Editor für schnelle Notizen. Du schreibst in Markdown, hakst Aufgaben in der Leseansicht ab, sortierst mit Unterordnern in Kategorien und findest alles über das Suchfeld. MoeCloud speichert von selbst und sagt Bescheid, wenn sich eine Notiz an anderer Stelle geändert hat. Jede Notiz ist eine Textdatei im Ordner **Notizen**, mit Versionen, Teilen und WebDAV wie bei jeder anderen Datei
+- **Musik**: Der neue Bereich zeigt alle Audiodateien als Titel, nach Alben und nach Interpreten, mit den Angaben und Covern aus den Dateien und einem Suchfeld
+- **Wiedergabelisten**: Über **Zur Wiedergabeliste hinzufügen** sammelst du Titel, Alben und ganze Ordner in Listen, änderst die Reihenfolge und spielst sie ab. Jede Liste gibt es als M3U zum Herunterladen, und aus einer `.m3u`- oder `.m3u8`-Datei in der Cloud macht **Als Wiedergabeliste übernehmen** eine Liste
+- **App-Passwörter mit Rechten**: Ein App-Passwort darf auf Wunsch **nur lesen**, über WebDAV wie über die API, und bekommt ein Ablaufdatum von 7 Tagen bis zu einem Jahr
+- **Teamordner und Geteiltes im Laufwerk**: Mit **Im Laufwerk auch Teamordner und Geteiltes zeigen** erscheinen Teamordner und Freigaben im WebDAV-Laufwerk als Ordner neben den eigenen. Bei gleichen Namen hängt MoeCloud den Namen der Person an. Ohne den Haken zeigt das Laufwerk nur Eigenes, damit Programme, die einen Ordner spiegeln, nichts von anderen löschen
+- **Registrierung mit Freigabe**: Mit der neuen Wahl unter **Admin › Einstellungen › Anmeldung** legt sich jede Person selbst ein Konto an und kommt hinein, sobald ein Admin es unter **Admin › Personen** freigegeben hat. Die Admins bekommen eine Benachrichtigung, die Person nach der Freigabe eine E-Mail
+- **Notiz beim Teilen**: Beim Teilen mit Personen und Gruppen schreibst du ein paar Worte dazu. Die Empfänger sehen sie in der Benachrichtigung, unter **Geteilt** und in den Details
+- **Unbenutzte Konten**: Auf Wunsch sperrt MoeCloud Konten, die eine eingestellte Zahl von Tagen niemand genutzt hat. Admins sind ausgenommen und bekommen eine Nachricht mit den Namen
+- **Speicherwarnung für Teamordner**: Ist ein Teamordner zu 90 % voll, bekommt die Leitung eine Benachrichtigung, ohne Leitung die Admins
+- **Start**: Eine Übersicht zeigt, was du zuletzt bearbeitet hast, deine Favoriten, was andere mit dir geteilt haben, deine Teamordner, anstehende Erinnerungen, Fotos vom selben Tag aus früheren Jahren und deinen Speicher. Unter **Konto › Profil** legst du fest, ob du nach der Anmeldung dort oder bei deinen Dateien landest
+- **Profilbilder**: Unter **Konto › Profil** lädst du ein Bild hoch. Es erscheint überall, wo sonst die Initialen stehen, etwa beim Teilen, in Kommentaren, in der Aktivität und in der Verwaltung
+- **Nutzungsbedingungen** unter **Admin › Einstellungen › Rechtliches**: Neben Impressum und Datenschutz gibt es jetzt Nutzungsbedingungen. Auf Wunsch stimmt jede Person dem Text nach der Anmeldung einmal zu, bevor es weitergeht. Die Einstellungen zeigen, wie viele schon zugestimmt haben, und **Alle neu zustimmen lassen** holt die Zustimmung nach einer Änderung noch einmal ein. App-Passwörter und WebDAV laufen dabei weiter
+- **Benannte Versionen**: In den Details gibst du einer älteren Fassung einen Namen. Benannte Fassungen räumt MoeCloud nicht von selbst weg, weder über die Zahl pro Datei noch über die Frist in Tagen
+- **Startdateien für neue Konten**: Admins machen im Menü eines eigenen Ordners dessen Inhalt zu Startdateien. Jedes neue Konto bekommt eine Kopie davon, etwa eine Anleitung oder Vorlagen
+- **Gesperrte Dateiendungen** unter **Admin › Einstellungen › Speicher**: Dateien mit Endungen wie `exe` oder `bat` lassen sich weder hochladen noch so umbenennen, auch nicht über WebDAV oder Links. Beim Entpacken von Archiven überspringt MoeCloud sie
+- **Serverprotokoll** unter **Admin › System**: Die letzten 400 Meldungen des Servers seit dem Start, gefiltert nach Fehlern und Warnungen und zum Kopieren
+- **Prüfsumme**: Die Details einer Datei zeigen ihre Prüfsumme als SHA-256 zum Kopieren
+
+### Verbessert
+
+- **Verschieben in geteilte Ordner und Teamordner**: Eigene Dateien und Ordner lassen sich jetzt dorthin verschieben und nicht mehr nur kopieren. Sie zählen danach zum Speicher des Ziels. Ist darin noch etwas geteilt oder verlinkt, sagt MoeCloud das und verschiebt nichts. Aus geteilten Ordnern und Teamordnern heraus bleibt es beim Kopieren, damit dort nichts verschwindet, ohne im Papierkorb zu landen
+- **Navigation**: Die Leiste beginnt mit **Start**, Teamordner bekommen einen eigenen Eintrag, sobald du in einem bist, dazu kommen **Notizen** und **Musik**. Passt nicht alles auf den Bildschirm, rückt die Leiste zusammen und sammelt den Rest unter **Mehr**, der Bereich, in dem du gerade bist, bleibt sichtbar. Auf dem Handy liegen Start, Dateien, Fotos, Geteilt und dein Konto am unteren Rand
+- **Personen importieren** versteht die Rolle `guest`
+- **Übersicht in der Verwaltung** und alle Zahlen zu Konten zählen die Speicher von Teamordnern nicht als Personen
+- Der Schnellzugriff kennt **Start**, **Teamordner**, **Notizen**, **Musik** und **Teamordner verwalten**
+- **Geteilt** zeigt die Notiz einer Freigabe in einer eigenen Zeile unter dem Namen
+- Der **Datenexport** enthält auch deine Wiedergabelisten
+- Neue Audiodateien merken sich die Nummer des Titels und das Genre aus den Tags
+
+### Behoben
+
+- Die Benachrichtigung über ein neues Konto führte zur Übersicht der Verwaltung statt zu den Personen
+
+### API
+
+- Teamordner: `GET /api/teams`, `GET` und `PATCH /api/teams/:id`, `PUT` und `DELETE /api/teams/:id/people/:member` und `/groups/:member`, `POST /api/teams/:id/leave`, der Papierkorb unter `/api/teams/:id/trash`, für Admins `GET` und `POST /api/admin/teams` und `DELETE /api/admin/teams/:id`
+- Abläufe: `GET` und `POST /api/automations`, `PATCH` und `DELETE /api/automations/:id`, `POST /api/automations/:id/run`
+- Umwandeln: `GET` und `POST /api/nodes/:id/convert`
+- Office: `GET /api/office`, `POST /api/nodes/:id/office/edit` und `/office/new`, für Admins `GET /api/admin/office`. Collabora selbst spricht mit `/wopi/files/:id` und `/wopi/files/:id/contents`
+- Notizen: `GET` und `POST /api/notes`, `GET` und `PUT /api/notes/:id`
+- Musik: `GET /api/music`, Wiedergabelisten unter `/api/playlists` mit `GET`, `POST`, `PATCH`, `DELETE`, `/items`, `/remove` und `/m3u`, `POST /api/nodes/:id/playlist` liest eine M3U-Datei ein
+- App-Passwörter: `POST /api/account/app-passwords` nimmt `readOnly`, `shared` und `expiresAt` an. Ein Passwort nur zum Lesen beantwortet ändernde Anfragen mit `403` und dem Code `read_only`
+- Teilen: `POST /api/nodes/:id/grants` und `PATCH /api/grants/:id` nehmen `note` an, `GET /api/shared` nennt sie als `shareNote`
+- Konten: `POST /api/admin/users/:id/approve` gibt ein wartendes Konto frei, Personen bringen `pending` und `lastActiveAt` mit, die Rolle `guest` ist neu
+- Start: `GET /api/home`
+- Profilbilder: `PUT` und `DELETE /api/account/avatar`, `GET /api/avatars/:id`
+- Versionen: `PATCH /api/nodes/:id/versions/:version` gibt einer Fassung einen Namen
+- Verwaltung: `GET` und `PUT /api/admin/starter`, `GET /api/admin/terms`, `POST /api/admin/terms/renew`, `GET` und `DELETE /api/admin/log`
+- `GET /api/nodes/:id` und `/children` nennen bei Teamordnern das Feld `team`, `GET /api/shared` kennzeichnet Teamordner mit `team: true`, `GET /api/nodes/:id/meta` nennt `sha256`, Personen bringen `avatar` mit
+- Solange die Zustimmung zu den Nutzungsbedingungen fehlt, antwortet die API bei Anmeldung im Browser mit `403` und dem Code `terms_required`. Anfragen mit App-Passwort sind davon ausgenommen
+- Alle bisherigen Adressen und Felder bleiben, wie sie sind
+
+### Kleinigkeiten
+
+- Die Datenbank bekommt Stand 9. Vorher legt MoeCloud wie gewohnt eine Sicherung an
+- Abläufe hängen beim Umbenennen eine Zahl an, wenn es den Namen schon gibt
+- Meldungen zu vollem Speicher nennen den Teamordner, wenn es um seinen Speicher geht
+- 420 neue Texte mit englischer Übersetzung
+
+### Update von 1.5.1
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Tabellen für Teamordner, Abläufe, Wiedergabelisten und die Schlüssel für Office an, dazu Spalten für Profilbilder, die Zustimmung zu den Nutzungsbedingungen, Namen von Versionen, Einladungen für Gastkonten, Rechte und Ablauf von App-Passwörtern, Notizen zu Freigaben und die Freigabe neuer Konten. Deine Dateien, Konten und Freigaben bleiben unverändert. Neue Einstellungen sind zunächst aus: Es gibt keinen Teamordner, keine Pflicht zur Zustimmung, keine gesperrten Endungen, keine Startdateien und kein Office, bis du sie einrichtest.
+
+Eins ändert sich für vorhandene App-Passwörter nicht: Sie zeigen im WebDAV-Laufwerk wie bisher nur deine eigenen Dateien. Für Teamordner und Geteiltes im Laufwerk legst du ein neues App-Passwort mit dem passenden Haken an.
+
 ## [1.5.1] · 2026-11-17
 
 Diese Version repariert Installation und Update über das Skript. Es verlangte ein Image mit der Versionsnummer als Tag, das es in der Registry nicht gibt. MoeCloud läuft jetzt immer mit dem Image `latest`.
@@ -514,6 +597,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.6.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.6.0
 [1.5.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.1
 [1.5.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.0
 [1.4.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.4.0

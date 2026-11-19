@@ -30,10 +30,11 @@ export interface SessionUser {
   username: string;
   name: string;
   email: string | null;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   language: 'de' | 'en' | null;
   rootId: string;
   initials: string;
+  avatar?: string | null;
 }
 
 export interface Storage {
@@ -90,6 +91,8 @@ export interface Boot {
   theme?: ThemeBoot;
   csrf: string;
   user?: SessionUser;
+  teams?: number;
+  start?: 'files' | 'home';
   storage?: Storage;
   webdav?: string;
   unread?: number;

@@ -35,6 +35,7 @@ export const config = {
     previews: resolve(dataDir, 'previews'),
     tmp: resolve(dataDir, 'tmp'),
     backups: resolve(dataDir, 'backups'),
+    avatars: resolve(dataDir, 'avatars'),
     plugins: process.env.PLUGINS_DIR ? resolve(process.env.PLUGINS_DIR) : resolve(dataDir, 'plugins'),
     examples: resolve(root, 'examples/plugins'),
   },

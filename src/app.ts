@@ -10,14 +10,16 @@ import { forbidden, HttpError } from './lib/errors.ts';
 import { isSecure, sameOrigin } from './lib/http.ts';
 import { fromAcceptLanguage, isLang, t, type Lang } from './lib/i18n.ts';
 import { renderDocument } from './lib/html.ts';
-import { setLogger } from './lib/log.ts';
+import { remember, setLogger } from './lib/log.ts';
 import { maintenancePage, messagePage } from './views/pages.ts';
 import { basicAuth } from './services/apppasswords.ts';
 import { secondFactorPending } from './services/auth.ts';
+import { termsPending } from './services/terms.ts';
+import { officeOrigin } from './services/wopi.ts';
 import { readSession } from './services/sessions.ts';
 import { CSRF_COOKIE, LANG_COOKIE, type RequestAuth } from './lib/request.ts';
 import * as settings from './services/settings.ts';
-import type { UserRow } from './services/users.ts';
+import { touchSeen, type UserRow } from './services/users.ts';
 import { systemRoutes } from './routes/system.ts';
 import { pageRoutes } from './routes/pages.ts';
 import { authRoutes } from './routes/auth.ts';
@@ -33,6 +35,11 @@ import { davRoutes } from './routes/dav.ts';
 import { systemAdminRoutes } from './routes/system-admin.ts';
 import { metricsRoutes } from './routes/metrics.ts';
 import { groupRoutes } from './routes/groups.ts';
+import { teamRoutes } from './routes/teams.ts';
+import { automationRoutes } from './routes/automations.ts';
+import { officeRoutes } from './routes/office.ts';
+import { noteRoutes } from './routes/notes.ts';
+import { musicRoutes } from './routes/music.ts';
 import { tagRoutes } from './routes/tags.ts';
 import { albumRoutes } from './routes/albums.ts';
 import { toolRoutes } from './routes/tools.ts';
@@ -42,17 +49,26 @@ import { pluginRoutes } from './routes/plugins.ts';
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const MODE_SWITCH_STYLE = "'sha256-GNF74DLkXb0fH3ILHgILFjk1ozCF3SNXQ5mQb7WLu/Y='";
 
+const logHooks = {
+  logMethod(this: unknown, args: unknown[], method: (...values: unknown[]) => void, level: number) {
+    remember(level, args);
+    method.apply(this, args);
+  },
+};
+
 function loggerOptions() {
   if (config.test) return false;
-  if (config.logFormat === 'json') return { level: config.logLevel };
+  if (config.logFormat === 'json') return { level: config.logLevel, hooks: logHooks };
   return {
     level: config.logLevel,
+    hooks: logHooks,
     transport: { target: 'pino-pretty', options: { translateTime: 'SYS:HH:MM:ss', ignore: 'pid,hostname,reqId', singleLine: true } },
   };
 }
 
 function pagePolicy(nonce: string) {
   const dev = config.devServer ? new URL(config.devServer).origin : '';
+  const office = officeOrigin();
   const directives: [string, ...string[]][] = [
     ['default-src', "'self'"],
     ['script-src', `'nonce-${nonce}'`, "'strict-dynamic'", ...(dev ? [dev] : [])],
@@ -61,12 +77,12 @@ function pagePolicy(nonce: string) {
     ['media-src', "'self'", 'blob:'],
     ['font-src', "'self'", ...(dev ? [dev] : [])],
     ['connect-src', "'self'", ...(dev ? [dev, dev.replace(/^http/, 'ws')] : [])],
-    ['frame-src', "'self'"],
+    ['frame-src', "'self'", ...(office ? [office] : [])],
     ['worker-src', "'self'", 'blob:'],
     ['manifest-src', "'self'"],
     ['object-src', "'none'"],
     ['base-uri', "'none'"],
-    ['form-action', "'self'"],
+    ['form-action', "'self'", ...(office ? [office] : [])],
     ['frame-ancestors', "'none'"],
   ];
   return directives.map((parts) => parts.join(' ')).join('; ');
@@ -125,6 +141,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
 
+  const termsRoutes = new Set(['GET /api/session', 'DELETE /api/account/session', 'POST /api/language']);
   const secondFactorRoutes = new Set([
     'GET /api/session',
     'GET /api/account',
@@ -160,10 +177,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
     let auth: RequestAuth | null = readSession(request);
     if (!auth && request.url.startsWith('/api/') && request.headers.authorization?.startsWith('Basic ')) {
-      const user = basicAuth(request.headers.authorization, request.ip);
-      if (user && user !== 'blocked') auth = { user, session: null };
+      const found = basicAuth(request.headers.authorization, request.ip);
+      if (found && found !== 'blocked') auth = { user: found.user, session: null, readOnly: found.readOnly };
     }
     request.auth = auth;
+    if (auth) touchSeen(auth.user.id);
     request.lang = languageOf(request, auth?.user ?? null);
     let csrf = request.cookies?.[CSRF_COOKIE];
     if (!csrf || csrf.length !== 32) {
@@ -199,10 +217,22 @@ export async function buildApp(): Promise<FastifyInstance> {
         return reply.redirect('/account');
       }
     }
+    if (auth?.session && termsPending(auth.user)) {
+      if (request.url.startsWith('/api/')) {
+        if (!termsRoutes.has(`${request.method} ${request.routeOptions.url ?? ''}`)) {
+          return reply.code(403).send({
+            error: { code: 'terms_required', message: t(request.lang, 'Stimm zuerst den Nutzungsbedingungen zu') },
+          });
+        }
+      } else if (request.method === 'GET' && /^\/(files|admin|account)(\/|\?|$)/.test(request.url)) {
+        return reply.redirect('/nutzungsbedingungen');
+      }
+    }
   });
 
   app.addHook('preHandler', async (request) => {
     if (!UNSAFE.has(request.method) || !request.url.startsWith('/api/')) return;
+    if (request.auth?.readOnly) throw new HttpError(403, 'Dieses App-Passwort darf nur lesen', 'read_only');
     if (request.auth && !request.auth.session) return;
     if (!sameOrigin(request)) throw forbidden('Die Anfrage kam von einer fremden Seite');
     const expected = request.auth?.session?.csrf ?? request.csrf;
@@ -226,8 +256,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.addHook('onResponse', async (request, reply) => {
-    if (reply.statusCode >= 500) request.log.warn({ url: request.url, method: request.method, status: reply.statusCode }, 'request failed');
-    else request.log.debug({ url: request.url, method: request.method, status: reply.statusCode, ms: Math.round(reply.elapsedTime) });
+    if (reply.statusCode >= 500) {
+      const url = request.url.startsWith('/wopi/') ? request.url.split('?')[0] : request.url;
+      request.log.warn({ url, method: request.method, status: reply.statusCode }, 'request failed');
+    } else request.log.debug({ url: request.url, method: request.method, status: reply.statusCode, ms: Math.round(reply.elapsedTime) });
   });
 
   app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, request, reply) => {
@@ -292,6 +324,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(accountRoutes);
   await app.register(adminRoutes);
   await app.register(groupRoutes);
+  await app.register(teamRoutes);
+  await app.register(automationRoutes);
+  await app.register(officeRoutes);
+  await app.register(noteRoutes);
+  await app.register(musicRoutes);
   await app.register(systemAdminRoutes);
   await app.register(eventRoutes);
   await app.register(davRoutes);

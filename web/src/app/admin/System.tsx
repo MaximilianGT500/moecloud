@@ -15,6 +15,7 @@ import { confirm } from '../common/dialogs';
 import { toast } from '../common/toast';
 import { UpdateBanner, updateCommand, type UpdateInfo } from './Overview';
 import { Facts, Loading, StatusDot, Toggle } from './shared';
+import { ServerLog } from './ServerLog';
 
 interface SystemInfo {
   version: string;
@@ -240,6 +241,8 @@ export function SystemSection() {
           </Box>
         )}
       </Section>
+
+      <ServerLog />
     </Box>
   );
 }

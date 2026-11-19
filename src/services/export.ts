@@ -64,6 +64,14 @@ export function accountData(user: UserRow) {
     'SELECT ai.album_id, ai.node_id FROM album_items ai JOIN albums a ON a.id = ai.album_id WHERE a.owner_id = ? ORDER BY ai.added_at',
     user.id
   );
+  const playlists = all<{ id: string; name: string; created_at: number }>(
+    'SELECT id, name, created_at FROM playlists WHERE owner_id = ? ORDER BY created_at',
+    user.id
+  );
+  const tracks = all<{ playlist_id: string; node_id: string }>(
+    'SELECT pi.playlist_id, pi.node_id FROM playlist_items pi JOIN playlists p ON p.id = pi.playlist_id WHERE p.owner_id = ? ORDER BY pi.position, pi.added_at',
+    user.id
+  );
   return {
     format: 'moecloud-export',
     version: 1,
@@ -96,6 +104,14 @@ export function accountData(user: UserRow) {
       createdAt: iso(album.created_at),
       files: items
         .filter((row) => row.album_id === album.id)
+        .map((row) => path(row.node_id))
+        .filter(Boolean),
+    })),
+    playlists: playlists.map((playlist) => ({
+      name: playlist.name,
+      createdAt: iso(playlist.created_at),
+      files: tracks
+        .filter((row) => row.playlist_id === playlist.id)
         .map((row) => path(row.node_id))
         .filter(Boolean),
     })),

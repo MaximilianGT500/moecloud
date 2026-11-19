@@ -17,6 +17,7 @@ export interface GrantRow {
   created_by: number;
   created_at: number;
   expires_at: number | null;
+  note: string | null;
 }
 
 export const getGrant = (id: string) => one<GrantRow>('SELECT * FROM grants WHERE id = ?', id);
@@ -27,7 +28,17 @@ export function checkExpiry(expiresAt: number | null | undefined) {
   return Math.round(expiresAt);
 }
 
-export function shareWith(user: UserRow, nodeId: string, targetId: number, permission: 'view' | 'edit', expiresAt: number | null = null) {
+export const cleanNote = (note: string | null | undefined) => note?.replace(/\s+/g, ' ').trim().slice(0, 300) || null;
+
+export function shareWith(
+  user: UserRow,
+  nodeId: string,
+  targetId: number,
+  permission: 'view' | 'edit',
+  expiresAt: number | null = null,
+  rawNote: string | null = null
+) {
+  const note = cleanNote(rawNote);
   const expires = checkExpiry(expiresAt);
   if (!settings.get('share.users')) throw forbidden('Teilen mit anderen Personen ist auf diesem Server ausgeschaltet');
   const { node } = requireAccess(user, nodeId, 'owner');
@@ -42,7 +53,7 @@ export function shareWith(user: UserRow, nodeId: string, targetId: number, permi
   if (existing) run('DELETE FROM grants WHERE id = ?', existing.id);
   const id = randomId();
   run(
-    'INSERT INTO grants (id, node_id, owner_id, user_id, permission, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO grants (id, node_id, owner_id, user_id, permission, created_by, created_at, expires_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     nodeId,
     node.owner_id,
@@ -50,7 +61,8 @@ export function shareWith(user: UserRow, nodeId: string, targetId: number, permi
     permission,
     user.id,
     Date.now(),
-    expires
+    expires,
+    note
   );
   publish([target.id], 'shared', { nodeId, by: user.name, name: node.name });
   record({
@@ -65,17 +77,27 @@ export function shareWith(user: UserRow, nodeId: string, targetId: number, permi
   notify(
     target.id,
     'shared',
-    { by: user.name, name: node.name, permission },
+    { by: user.name, name: node.name, permission, note: note ?? '' },
     node.type === 'folder' ? `/files/folder/${node.id}` : '/files/shared'
   );
   return getGrant(id)!;
 }
 
-export function updateGrant(user: UserRow, id: string, change: { permission?: 'view' | 'edit'; expiresAt?: number | null }) {
+export function updateGrant(
+  user: UserRow,
+  id: string,
+  change: { permission?: 'view' | 'edit'; expiresAt?: number | null; note?: string | null }
+) {
   const grant = getGrant(id);
   if (!grant || grant.owner_id !== user.id) throw notFound('Diese Freigabe gibt es nicht mehr');
   const expires = change.expiresAt === undefined ? grant.expires_at : checkExpiry(change.expiresAt);
-  run('UPDATE grants SET permission = ?, expires_at = ? WHERE id = ?', change.permission ?? grant.permission, expires, id);
+  run(
+    'UPDATE grants SET permission = ?, expires_at = ?, note = ? WHERE id = ?',
+    change.permission ?? grant.permission,
+    expires,
+    change.note === undefined ? grant.note : cleanNote(change.note),
+    id
+  );
   publish([grant.user_id], 'change', { folders: [grant.node_id] });
   return getGrant(id)!;
 }
@@ -110,7 +132,10 @@ export function presentGrant(grant: GrantRow) {
     permission: grant.permission,
     createdAt: grant.created_at,
     expiresAt: grant.expires_at,
-    user: target ? { id: target.id, name: target.name, username: target.username, initials: initials(target.name) } : null,
+    note: grant.note ?? null,
+    user: target
+      ? { id: target.id, name: target.name, username: target.username, initials: initials(target.name), avatar: target.avatar ?? null }
+      : null,
     group: null,
   };
 }

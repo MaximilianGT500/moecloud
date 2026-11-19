@@ -30,10 +30,24 @@ export function BrandMark({ size = 44 }: { size?: number }) {
   );
 }
 
-export function UserAvatar({ initials, size = 40, label }: { initials: string; size?: number; label?: string }) {
+export function UserAvatar({
+  initials,
+  size = 40,
+  label,
+  avatar,
+  userId,
+}: {
+  initials: string;
+  size?: number;
+  label?: string;
+  avatar?: string | null;
+  userId?: number;
+}) {
   return (
     <Avatar
       aria-label={label}
+      src={avatar && userId ? `/api/avatars/${userId}?v=${avatar}` : undefined}
+      alt={avatar && userId ? (label ?? '') : undefined}
       sx={{ width: size, height: size, fontSize: size * 0.38, bgcolor: c.secondaryContainer, color: c.onSecondaryContainer }}
     >
       {initials}

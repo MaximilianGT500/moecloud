@@ -10,6 +10,8 @@ import ContrastRounded from '@mui/icons-material/ContrastRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import DeleteRounded from '@mui/icons-material/DeleteRounded';
 import FolderRounded from '@mui/icons-material/FolderRounded';
+import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
+import HomeRounded from '@mui/icons-material/HomeRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
 import InsertDriveFileRounded from '@mui/icons-material/InsertDriveFileRounded';
 import KeyboardRounded from '@mui/icons-material/KeyboardRounded';
@@ -21,6 +23,8 @@ import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import SellRounded from '@mui/icons-material/SellRounded';
 import StarRounded from '@mui/icons-material/StarRounded';
+import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
+import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
 import { api, errorText, logout } from '../../lib/api';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
@@ -132,10 +136,14 @@ export function CommandPalette({
   const looks = t('Aussehen');
   const more = t('Mehr');
   const commands: Command[] = [
+    { id: 'home', group: places, label: t('Start'), icon: <HomeRounded />, run: () => go('/files/home') },
     { id: 'files', group: places, label: t('Dateien'), icon: <FolderRounded />, run: () => go('/files') },
+    { id: 'teams', group: places, label: t('Teamordner'), icon: <FolderSharedRounded />, run: () => go('/files/teams') },
     { id: 'photos', group: places, label: t('Fotos'), icon: <PhotoLibraryRounded />, run: () => go('/files/photos') },
     { id: 'albums', group: places, label: t('Alben'), icon: <CollectionsRounded />, run: () => go('/files/photos/albums') },
     { id: 'recent', group: places, label: t('Zuletzt'), icon: <ScheduleRounded />, run: () => go('/files/recent') },
+    { id: 'notes', group: places, label: t('Notizen'), icon: <StickyNote2Rounded />, run: () => go('/files/notes') },
+    { id: 'music', group: places, label: t('Musik'), icon: <LibraryMusicRounded />, run: () => go('/files/music') },
     { id: 'activity', group: places, label: t('Aktivität'), icon: <HistoryRounded />, run: () => go('/files/activity') },
     { id: 'starred', group: places, label: t('Favoriten'), icon: <StarRounded />, run: () => go('/files/starred') },
     { id: 'tags', group: places, label: t('Schlagwörter'), icon: <SellRounded />, run: () => go('/files/tags') },
@@ -157,6 +165,7 @@ export function CommandPalette({
             ['', t('Übersicht')],
             ['people', t('Personen')],
             ['groups', t('Gruppen')],
+            ['teams', t('Teamordner verwalten')],
             ['invites', t('Einladungen')],
             ['links', t('Links')],
             ['audit', t('Protokoll')],

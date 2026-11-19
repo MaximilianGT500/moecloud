@@ -26,7 +26,7 @@ export function weeklyReport(lang: Lang, now = Date.now()) {
   const bytes = Number(today?.bytes ?? 0);
   const grown = bytes - Number(before?.bytes ?? bytes);
   const users = count(`SELECT COUNT(*) AS n FROM users WHERE ${ACTIVE}`, now);
-  const joined = count('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?', since);
+  const joined = count("SELECT COUNT(*) AS n FROM users WHERE role != 'team' AND created_at >= ?", since);
   const logins = count(`SELECT COUNT(*) AS n FROM audit WHERE action = 'login' AND created_at >= ?`, since);
   const failed = count(`SELECT COUNT(*) AS n FROM audit WHERE action = 'login_failed' AND created_at >= ?`, since);
   const links = count('SELECT COUNT(*) AS n FROM links WHERE created_at >= ?', since);

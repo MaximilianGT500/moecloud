@@ -173,7 +173,7 @@ export interface ExtractResult {
   folderId: string;
   files: number;
   folders: number;
-  skipped: { infected: number; encrypted: number; unsafe: number; tooLarge: number };
+  skipped: { infected: number; encrypted: number; unsafe: number; tooLarge: number; blocked?: number };
   folder: Item;
 }
 
@@ -181,8 +181,8 @@ export async function extract(item: Item) {
   toast(t('„{name}“ wird entpackt', { name: item.name }), { duration: 2500 });
   const result = await attempt(() => api.post<ExtractResult>(`/api/nodes/${item.id}/extract`, {}));
   if (!result) return null;
-  const { infected, encrypted, unsafe, tooLarge } = result.skipped;
-  const other = encrypted + unsafe + tooLarge;
+  const { infected, encrypted, unsafe, tooLarge, blocked = 0 } = result.skipped;
+  const other = encrypted + unsafe + tooLarge + blocked;
   return {
     result,
     message: [

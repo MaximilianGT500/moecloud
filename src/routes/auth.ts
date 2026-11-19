@@ -24,6 +24,7 @@ import { checkPassword } from '../services/passwords.ts';
 import { beginLogin, finishLogin, oidcEnabled, oidcLabel, userFor } from '../services/oidc.ts';
 import { completeReset, findReset, requestReset } from '../services/resets.ts';
 import { findInvite, useInvite } from '../services/invites.ts';
+import { joinByInvite } from '../services/teams.ts';
 import { authenticate, authenticationOptions } from '../services/passkeys.ts';
 import { clearSessionCookie, createSession, destroySession } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
@@ -48,7 +49,7 @@ function showLogin(
   reply: FastifyReply,
   options: { next: string; login?: string; error?: string | null; notice?: string | null; status?: number }
 ) {
-  const registration = settings.get('auth.registration') === 'open';
+  const registration = ['open', 'approval'].includes(settings.get('auth.registration'));
   return renderDocument(request, reply, {
     title: t(request.lang, 'Anmelden'),
     status: options.status,
@@ -246,7 +247,7 @@ export async function authRoutes(app: FastifyInstance) {
     const mode = settings.get('auth.registration');
     const invite = token ? findInvite(token) : null;
     if (token && !invite) throw notFound('Diese Einladung ist abgelaufen oder wurde schon genutzt');
-    if (!invite && mode !== 'open') throw notFound('Neue Konten kann hier nur die Verwaltung anlegen');
+    if (!invite && mode !== 'open' && mode !== 'approval') throw notFound('Neue Konten kann hier nur die Verwaltung anlegen');
     return { invite, token };
   };
 
@@ -273,12 +274,26 @@ export async function authRoutes(app: FastifyInstance) {
         email: input.email || null,
         password: input.password,
         quota: invite?.quota_bytes ?? null,
+        role: invite?.role === 'guest' ? 'guest' : 'user',
         language: request.lang,
+        pending: !invite && settings.get('auth.registration') === 'approval',
       });
+      if (user.pending) {
+        audit('registered', { actor: user.id, request, details: { invite: false, pending: true } });
+        notifyAdmins('admin_pending', { name: user.name, username: user.username }, '/admin/people');
+        return showLogin(request, reply, {
+          next: '/files',
+          notice: t(
+            request.lang,
+            'Dein Konto ist angelegt und wartet auf die Freigabe durch die Verwaltung. Danach meldest du dich hier an.'
+          ),
+        });
+      }
       if (invite) useInvite(invite.id, user.id);
+      if (invite?.team_id) joinByInvite(invite.team_id, user, invite.team_role ?? 'view', invite.created_by);
       createSession(request, reply, user, 'register');
       audit('registered', { actor: user.id, request, details: { invite: Boolean(invite) } });
-      notifyAdmins('admin_user', { name: user.name, username: user.username }, '/admin/users');
+      notifyAdmins('admin_user', { name: user.name, username: user.username }, '/admin/people');
       return reply.redirect('/files', 303);
     } catch (error) {
       return renderDocument(request, reply, {

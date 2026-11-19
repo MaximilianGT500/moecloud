@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
@@ -12,11 +12,19 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import FolderOutlined from '@mui/icons-material/FolderOutlined';
 import FolderRounded from '@mui/icons-material/FolderRounded';
+import FolderSharedOutlined from '@mui/icons-material/FolderSharedOutlined';
+import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
+import HomeOutlined from '@mui/icons-material/HomeOutlined';
+import HomeRounded from '@mui/icons-material/HomeRounded';
 import PhotoLibraryOutlined from '@mui/icons-material/PhotoLibraryOutlined';
 import PhotoLibraryRounded from '@mui/icons-material/PhotoLibraryRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
+import StickyNote2Outlined from '@mui/icons-material/StickyNote2Outlined';
+import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
+import LibraryMusicOutlined from '@mui/icons-material/LibraryMusicOutlined';
+import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
 import SellOutlined from '@mui/icons-material/SellOutlined';
 import SellRounded from '@mui/icons-material/SellRounded';
@@ -33,6 +41,7 @@ import ManageAccountsRounded from '@mui/icons-material/ManageAccountsRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import KeyboardRounded from '@mui/icons-material/KeyboardRounded';
 import ManageSearchRounded from '@mui/icons-material/ManageSearchRounded';
+import MoreHorizRounded from '@mui/icons-material/MoreHorizRounded';
 import { BrandMark, SkipLink, StorageMeter, UserAvatar } from '../common/bits';
 import { lazyNamed } from '../common/lazy';
 import { pluginIcon, pluginPageHref, pluginPageKey, usePlugins } from '../common/plugins';
@@ -50,7 +59,21 @@ export const RAIL = 88;
 const CommandPalette = lazyNamed(() => import('./CommandPalette'), 'CommandPalette');
 
 export type Destination =
-  'files' | 'photos' | 'recent' | 'starred' | 'tags' | 'shared' | 'trash' | 'storage' | 'admin' | 'account' | `plugin:${string}`;
+  | 'home'
+  | 'teams'
+  | 'files'
+  | 'photos'
+  | 'recent'
+  | 'notes'
+  | 'music'
+  | 'starred'
+  | 'tags'
+  | 'shared'
+  | 'trash'
+  | 'storage'
+  | 'admin'
+  | 'account'
+  | `plugin:${string}`;
 
 interface NavItem {
   key: Destination;
@@ -60,16 +83,55 @@ interface NavItem {
   activeIcon: ReactNode;
 }
 
+const HOME: NavItem = { key: 'home', href: '/files/home', label: t('Start'), icon: <HomeOutlined />, activeIcon: <HomeRounded /> };
+const TEAMS: NavItem = {
+  key: 'teams',
+  href: '/files/teams',
+  label: t('Teamordner'),
+  icon: <FolderSharedOutlined />,
+  activeIcon: <FolderSharedRounded />,
+};
+
 function railItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
   if (boot().setup2fa) return [];
+  const guest = user.role === 'guest';
+  const teams = guest || (boot().teams ?? 0) > 0;
+  const own: NavItem[] = guest
+    ? []
+    : [
+        { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
+        { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
+        { key: 'recent', href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleOutlined />, activeIcon: <ScheduleRounded /> },
+      ];
+  const extra: NavItem[] = guest
+    ? []
+    : [
+        {
+          key: 'notes',
+          href: '/files/notes',
+          label: t('Notizen'),
+          icon: <StickyNote2Outlined />,
+          activeIcon: <StickyNote2Rounded />,
+        },
+        {
+          key: 'music',
+          href: '/files/music',
+          label: t('Musik'),
+          icon: <LibraryMusicOutlined />,
+          activeIcon: <LibraryMusicRounded />,
+        },
+      ];
   return [
-    { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
-    { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
-    { key: 'recent', href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleOutlined />, activeIcon: <ScheduleRounded /> },
+    HOME,
+    ...own,
+    ...(teams ? [TEAMS] : []),
     { key: 'starred', href: '/files/starred', label: t('Favoriten'), icon: <StarOutlineRounded />, activeIcon: <StarRounded /> },
     { key: 'tags', href: '/files/tags', label: t('Schlagwörter'), icon: <SellOutlined />, activeIcon: <SellRounded /> },
     { key: 'shared', href: '/files/shared', label: t('Geteilt'), icon: <PeopleOutlined />, activeIcon: <PeopleRounded /> },
-    { key: 'trash', href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlined />, activeIcon: <DeleteRounded /> },
+    ...extra,
+    ...(guest
+      ? []
+      : [{ key: 'trash' as const, href: '/files/trash', label: t('Papierkorb'), icon: <DeleteOutlined />, activeIcon: <DeleteRounded /> }]),
     ...pages.map((page) => ({
       key: pluginPageKey(page),
       href: pluginPageHref(page),
@@ -91,16 +153,146 @@ function railItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
   ];
 }
 
+const RAIL_GAP = 10;
+const RAIL_TIGHT = 4;
+
+function RailItems({ items, active, onNavigate }: { items: NavItem[]; active: Destination; onNavigate?: (href: string) => boolean }) {
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const [layout, setLayout] = useState({ room: items.length, gap: RAIL_GAP });
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const count = items.length;
+
+  useLayoutEffect(() => {
+    if (!box) return;
+    const measure = () => {
+      const first = box.firstElementChild?.getBoundingClientRect().height ?? 0;
+      if (first <= 0) return;
+      const space = box.clientHeight - 8;
+      const gap = count * (first + RAIL_GAP) - RAIL_GAP <= space ? RAIL_GAP : RAIL_TIGHT;
+      const room = Math.max(2, Math.floor((space + gap) / (first + gap)));
+      setLayout((old) => (old.room === room && old.gap === gap ? old : { room, gap }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [box, count]);
+
+  const { room, gap } = layout;
+  const fits = items.length <= room;
+  const shown = fits ? items : items.slice(0, room - 1);
+  const rest = fits ? [] : items.slice(room - 1);
+  const current = rest.find((item) => item.key === active);
+  if (current && shown.length > 0) {
+    rest.splice(rest.indexOf(current), 1, shown[shown.length - 1]);
+    shown[shown.length - 1] = current;
+  }
+  const go = (event: MouseEvent, href: string) => {
+    setAnchor(null);
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    if (onNavigate?.(href)) event.preventDefault();
+  };
+
+  return (
+    <Box
+      ref={setBox}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: `${gap}px`,
+        py: 0.5,
+        width: '100%',
+        flex: '1 1 auto',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
+      {shown.map((item) => (
+        <NavButton key={item.key} item={item} active={item.key === active} onNavigate={onNavigate} />
+      ))}
+      {rest.length > 0 && (
+        <>
+          <ButtonBase
+            aria-label={t('Mehr Bereiche')}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(anchor)}
+            onClick={(event: MouseEvent<HTMLElement>) => setAnchor(event.currentTarget)}
+            sx={{
+              flexDirection: 'column',
+              gap: 0.5,
+              width: 84,
+              flex: 'none',
+              py: 0.5,
+              borderRadius: `${radius.md}px`,
+              color: c.onSurfaceVariant,
+              '&:hover .nav-pill': { bgcolor: mix(c.onSurface, 8) },
+              '& .MuiTouchRipple-root': { display: 'none' },
+              '&.Mui-focusVisible .nav-pill': { outline: `2px solid ${c.primary}`, outlineOffset: 2 },
+            }}
+          >
+            <Box
+              className="nav-pill"
+              sx={{
+                width: 56,
+                height: 32,
+                borderRadius: `${radius.full}px`,
+                display: 'grid',
+                placeItems: 'center',
+                '& svg': { fontSize: 24 },
+              }}
+            >
+              <MoreHorizRounded />
+            </Box>
+            <Typography variant="caption" sx={{ fontWeight: 500 }}>
+              {t('Mehr')}
+            </Typography>
+          </ButtonBase>
+          <Menu
+            anchorEl={anchor}
+            open={Boolean(anchor)}
+            onClose={() => setAnchor(null)}
+            anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+          >
+            {rest.map((item) => (
+              <MenuItem key={item.key} component="a" href={item.href} onClick={(event: MouseEvent) => go(event, item.href)}>
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                {item.label}
+              </MenuItem>
+            ))}
+          </Menu>
+        </>
+      )}
+    </Box>
+  );
+}
+
 function bottomItems(): NavItem[] {
   if (boot().setup2fa) {
     return [{ key: 'account', href: '/account', label: t('Ich'), icon: <AccountCircleOutlined />, activeIcon: <AccountCircleRounded /> }];
   }
+  const account: NavItem = {
+    key: 'account',
+    href: '/account',
+    label: t('Ich'),
+    icon: <AccountCircleOutlined />,
+    activeIcon: <AccountCircleRounded />,
+  };
+  const shared: NavItem = {
+    key: 'shared',
+    href: '/files/shared',
+    label: t('Geteilt'),
+    icon: <PeopleOutlined />,
+    activeIcon: <PeopleRounded />,
+  };
+  if (boot().user?.role === 'guest') return [HOME, TEAMS, shared, account];
   return [
+    HOME,
     { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
     { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
-    { key: 'recent', href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleOutlined />, activeIcon: <ScheduleRounded /> },
-    { key: 'shared', href: '/files/shared', label: t('Geteilt'), icon: <PeopleOutlined />, activeIcon: <PeopleRounded /> },
-    { key: 'account', href: '/account', label: t('Ich'), icon: <AccountCircleOutlined />, activeIcon: <AccountCircleRounded /> },
+    shared,
+    account,
   ];
 }
 
@@ -223,7 +415,7 @@ function AccountMenu({
       slotProps={{ paper: { sx: { width: 320 } } }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, pt: 1, pb: 1.5 }}>
-        <UserAvatar initials={user.initials} size={44} />
+        <UserAvatar initials={user.initials} size={44} avatar={user.avatar} userId={user.id} />
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="subtitle2" noWrap>
             {user.name}
@@ -316,7 +508,7 @@ export function AccountButton({ size = 40, storage }: { size?: number; storage?:
           onClick={(event) => setAnchor(event.currentTarget)}
           sx={{ p: 0.5 }}
         >
-          <UserAvatar initials={user.initials} size={size} />
+          <UserAvatar initials={user.initials} size={size} avatar={user.avatar} userId={user.id} />
         </IconButton>
       </Tooltip>
       <AccountMenu user={user} storage={storage} anchor={anchor} onClose={() => setAnchor(null)} />
@@ -415,8 +607,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
           gap: 1,
           py: 2,
           bgcolor: c.surface,
-          overflowY: 'auto',
-          scrollbarWidth: 'none',
+          overflow: 'hidden',
         }}
       >
         <ButtonBase
@@ -432,12 +623,9 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
           <BrandMark size={44} />
         </ButtonBase>
         {railAction && <Box sx={{ my: 1 }}>{railAction}</Box>}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, mt: 1 }}>
-          {railItems(user, pages).map((item) => (
-            <NavButton key={item.key} item={item} active={item.key === active} onNavigate={onNavigate} />
-          ))}
+        <Box sx={{ display: 'flex', flexDirection: 'column', mt: 1, width: '100%', flex: '1 1 auto', minHeight: 0 }}>
+          <RailItems items={railItems(user, pages)} active={active} onNavigate={onNavigate} />
         </Box>
-        <Box sx={{ flex: 1 }} />
         <ThemeToggleButton />
         <AccountButton storage={storage} />
         {site.version && (

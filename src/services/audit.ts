@@ -27,6 +27,7 @@ export const AUDIT_ACTIONS = [
   'registered',
   'user_created',
   'user_updated',
+  'user_approved',
   'user_deleted',
   'user_disabled',
   'user_enabled',
@@ -63,11 +64,16 @@ export const AUDIT_ACTIONS = [
   'group_updated',
   'group_deleted',
   'users_imported',
+  'team_created',
+  'team_updated',
+  'team_deleted',
+  'terms_accepted',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export const SECURITY_ACTIONS: AuditAction[] = [
+  'terms_accepted',
   'login',
   'login_failed',
   'password_changed',

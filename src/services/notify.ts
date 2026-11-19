@@ -12,6 +12,9 @@ import { dispatch, type WebhookEvent } from './webhooks.ts';
 
 export type NotifyKind =
   | 'shared'
+  | 'team_added'
+  | 'team_storage'
+  | 'automation'
   | 'request_upload'
   | 'comment'
   | 'mention'
@@ -32,6 +35,8 @@ export type NotifyKind =
   | 'link_download'
   | 'link_expiring'
   | 'admin_user'
+  | 'admin_pending'
+  | 'admin_inactive'
   | 'admin_left'
   | 'admin_storage'
   | 'admin_report'
@@ -69,10 +74,31 @@ const KINDS: Record<NotifyKind, Kind> = {
     title: (lang, p) =>
       p.group ? t(lang, '{by} hat „{name}“ mit der Gruppe {group} geteilt', p) : t(lang, '{by} hat „{name}“ mit dir geteilt', p),
     text: (lang, p) =>
-      p.permission === 'edit'
-        ? t(lang, 'Du kannst den Inhalt ansehen und bearbeiten.')
-        : t(lang, 'Du kannst den Inhalt ansehen und herunterladen.'),
+      [
+        p.note ? t(lang, 'Notiz: {note}', p) : '',
+        p.permission === 'edit'
+          ? t(lang, 'Du kannst den Inhalt ansehen und bearbeiten.')
+          : t(lang, 'Du kannst den Inhalt ansehen und herunterladen.'),
+      ]
+        .filter(Boolean)
+        .join(' '),
     pref: 'mailShares',
+    action: 'Ansehen',
+  },
+  team_added: {
+    title: (lang, p) => t(lang, '{by} hat dich in den Teamordner „{name}“ aufgenommen', p),
+    text: (lang) => t(lang, 'Du findest ihn in der Navigation unter Teamordner.'),
+    pref: 'mailShares',
+    action: 'Ansehen',
+  },
+  team_storage: {
+    title: (lang, p) => t(lang, 'Der Teamordner „{name}“ ist zu {percent} % voll', p),
+    text: (lang) => t(lang, 'Räum darin auf oder gib dem Teamordner in der Verwaltung mehr Platz.'),
+    action: 'Ansehen',
+  },
+  automation: {
+    title: (lang, p) => t(lang, 'Ablauf „{rule}“ hat „{name}“ bearbeitet', p),
+    pref: 'mailUploads',
     action: 'Ansehen',
   },
   request_upload: {
@@ -187,6 +213,25 @@ const KINDS: Record<NotifyKind, Kind> = {
     pref: 'mailAdmin',
     action: 'Zur Verwaltung',
     event: 'user_registered',
+  },
+  admin_pending: {
+    title: (lang, p) => t(lang, '{name} wartet auf die Freigabe', p),
+    text: (lang, p) => t(lang, 'Benutzername: {username}', p),
+    pref: 'mailAdmin',
+    action: 'Zur Verwaltung',
+  },
+  admin_inactive: {
+    title: (lang, p) =>
+      many(
+        lang,
+        Number(p.count),
+        'Ein Konto nach {days} Tagen ohne Nutzung gesperrt',
+        '{count} Konten nach {days} Tagen ohne Nutzung gesperrt',
+        p
+      ),
+    text: (lang, p) => t(lang, 'Betroffen: {names}. Unter Personen hebst du die Sperre wieder auf.', p),
+    pref: 'mailAdmin',
+    action: 'Zur Verwaltung',
   },
   admin_virus: {
     urgent: true,

@@ -7,7 +7,7 @@ import { cleanName, cleanRelativePath, uniqueName } from '../lib/names.ts';
 import { record } from './activity.ts';
 import { append, hashFile, receive, tmpPath, type Received } from './blobs.ts';
 import { ingest, ingestBuffer } from './ingest.ts';
-import { notify } from './notify.ts';
+import { notify, notifyAdmins } from './notify.ts';
 import {
   assertSpace,
   assertUnlocked,
@@ -22,6 +22,7 @@ import {
   type NodeRow,
 } from './nodes.ts';
 import { linkFolder, logLinkEvent, type LinkRow } from './links.ts';
+import { assertAllowedName } from './filetypes.ts';
 import * as settings from './settings.ts';
 import { getUser, prefsOf, quotaOf, updatePrefs, usageOf, type UserRow } from './users.ts';
 import { writeContent } from './versions.ts';
@@ -125,6 +126,18 @@ export function flushLinkNotices() {
   for (const id of [...linkNotices.keys()]) flushLinkNotice(id);
 }
 
+function warnTeam(owner: UserRow, percent: number) {
+  const team = one<{ id: number; name: string }>('SELECT id, name FROM teams WHERE user_id = ?', owner.id);
+  if (!team) return;
+  const leads = all<{ user_id: number }>(
+    `SELECT m.user_id FROM team_managers m JOIN users u ON u.id = m.user_id WHERE m.team_id = ? AND u.disabled = 0`,
+    team.id
+  ).map((row) => row.user_id);
+  const params = { name: team.name, percent };
+  if (leads.length === 0) return notifyAdmins('team_storage', params, '/admin/teams');
+  for (const id of leads) notify(id, 'team_storage', params, `/files/folder/${owner.root_id}`);
+}
+
 export function checkQuota(ownerId: number) {
   const owner = getUser(ownerId);
   if (!owner) return;
@@ -134,7 +147,8 @@ export function checkQuota(ownerId: number) {
   const prefs = prefsOf(owner);
   if (percent >= 90 && !prefs.storageWarned) {
     updatePrefs(ownerId, { storageWarned: true });
-    notify(ownerId, 'storage', { percent: Math.floor(percent) }, '/files/storage');
+    if (owner.role === 'team') warnTeam(owner, Math.floor(percent));
+    else notify(ownerId, 'storage', { percent: Math.floor(percent) }, '/files/storage');
   } else if (percent < 80 && prefs.storageWarned) {
     updatePrefs(ownerId, { storageWarned: false });
   }
@@ -194,6 +208,7 @@ export interface InitInput {
 export async function initUpload(actor: Actor, input: InitInput) {
   const parent = targetFolder(actor, input.parentId);
   const name = cleanName(input.name);
+  assertAllowedName(name);
   const segments = cleanRelativePath(input.relativePath);
   const conflictMode = actor.link ? 'rename' : (input.conflict ?? 'rename');
   const replacing = conflictMode === 'replace' && segments.length === 0 ? findChild(parent.id, name) : undefined;
@@ -303,6 +318,7 @@ export async function cleanupUploads(maxAgeMs = 24 * 60 * 60 * 1000) {
 export async function uploadStream(actor: Actor, target: Target, stream: Readable, declared?: number) {
   const parent = targetFolder(actor, target.parentId);
   const name = cleanName(target.name);
+  assertAllowedName(name);
   const max = settings.get('storage.maxUpload');
   if (declared !== undefined) checkLimits(parent.owner_id, actor.user?.id ?? null, declared, undefined);
   const limit = Math.min(max > 0 ? max : Number.MAX_SAFE_INTEGER, Math.max(0, remaining(parent.owner_id)));
@@ -318,6 +334,7 @@ export async function uploadStream(actor: Actor, target: Target, stream: Readabl
 export async function createTextFile(user: UserRow, parentId: string, rawName: unknown, content = '') {
   const parent = requireFolder(user, parentId, 'edit').node;
   const name = cleanName(rawName);
+  assertAllowedName(name);
   if (findChild(parent.id, name)) throw conflict('Hier gibt es schon etwas mit dem Namen „{name}“', { name });
   const buffer = Buffer.from(content, 'utf8');
   assertSpace(parent.owner_id, buffer.length, user.id);

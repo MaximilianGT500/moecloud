@@ -137,6 +137,8 @@ async function audioMeta(path: string) {
       artist: clean(tags.common.artist),
       album: clean(tags.common.album),
       year: clean(tags.common.year),
+      track: clean(tags.common.track?.no),
+      genre: clean(tags.common.genre?.[0]),
       duration: clean(tags.format.duration),
       bitrate: clean(tags.format.bitrate),
       codec: clean(tags.format.codec),

@@ -56,8 +56,16 @@ const GROUPED = new Set<ActivityAction>(['upload', 'link_upload', 'trash', 'rest
 const GRANTS = new Set<ActivityAction>(['share_user', 'unshare_user', 'share_group', 'unshare_group']);
 const WINDOW = 3 * 60 * 1000;
 
+type ArrivalListener = (nodeId: string | null | undefined, parentId: string | null | undefined) => void;
+let arrival: ArrivalListener | null = null;
+
+export function onArrival(listener: ArrivalListener) {
+  arrival = listener;
+}
+
 export function record(input: ActivityInput) {
   noteActivity(input);
+  if (arrival && (input.action === 'upload' || input.action === 'link_upload')) arrival(input.node, input.parent);
   emitHook(`file.${input.action}`, () => ({
     action: input.action,
     ownerId: input.owner,
@@ -108,12 +116,12 @@ export function record(input: ActivityInput) {
 }
 
 function present(rows: ActivityRow[], viewer: number) {
-  const people = new Map<number, { id: number; name: string; initials: string } | null>();
+  const people = new Map<number, { id: number; name: string; initials: string; avatar: string | null } | null>();
   const person = (id: number | null) => {
     if (!id) return null;
     if (!people.has(id)) {
       const user = getUser(id);
-      people.set(id, user ? { id: user.id, name: user.name, initials: initials(user.name) } : null);
+      people.set(id, user ? { id: user.id, name: user.name, initials: initials(user.name), avatar: user.avatar ?? null } : null);
     }
     return people.get(id) ?? null;
   };

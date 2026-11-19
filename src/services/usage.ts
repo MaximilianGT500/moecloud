@@ -23,7 +23,7 @@ export function recordUsage(now = Date.now(), force = false) {
     `INSERT INTO usage_days (day, users, files, bytes, stored) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (day) DO UPDATE SET users = excluded.users, files = excluded.files, bytes = excluded.bytes, stored = excluded.stored`,
     dayOf(now),
-    value<number>('SELECT COUNT(*) FROM users') ?? 0,
+    value<number>("SELECT COUNT(*) FROM users WHERE role != 'team'") ?? 0,
     value<number>("SELECT COUNT(*) FROM nodes WHERE type = 'file'") ?? 0,
     value<number>("SELECT COALESCE(SUM(size), 0) FROM nodes WHERE type = 'file'") ?? 0,
     value<number>('SELECT COALESCE(SUM(size), 0) FROM blobs') ?? 0

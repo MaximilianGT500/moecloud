@@ -27,7 +27,7 @@ export function leftoverSqlite(file: string) {
   let database: DatabaseSync | null = null;
   try {
     database = new DatabaseSync(file, { readOnly: true });
-    const row = database.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number } | undefined;
+    const row = database.prepare("SELECT COUNT(*) AS count FROM users WHERE role != 'team'").get() as { count: number } | undefined;
     return Number(row?.count ?? 0);
   } catch {
     return 0;

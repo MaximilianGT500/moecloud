@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { statfs } from 'node:fs/promises';
 import { z } from 'zod';
 import { config } from '../config.ts';
+import { clearLog, recentLog } from '../lib/log.ts';
 import { all, one, run, value } from '../lib/db.ts';
 import { hashPassword } from '../lib/crypto.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
@@ -13,6 +14,11 @@ import { AUDIT_ACTIONS, audit, listAudit, type AuditAction } from '../services/a
 import { hasSecondFactor, needsSecondFactor, resetTotp, secondFactorRequired } from '../services/auth.ts';
 import { listBackups } from '../services/backups.ts';
 import { createInvite, deleteInvite, listInvites, presentInvite } from '../services/invites.ts';
+import { requireTeam } from '../services/teams.ts';
+import { cleanTypes, validTypes } from '../services/filetypes.ts';
+import { forgetDiscovery } from '../services/wopi.ts';
+import { setStarter, starterState } from '../services/starter.ts';
+import { ensureTermsVersion, renewTerms, termsState } from '../services/terms.ts';
 import { serverGroups } from '../services/library.ts';
 import { adminDeleteLink, allLinks, baseUrl, presentLink } from '../services/links.ts';
 import { checkPassword, passwordMin } from '../services/passwords.ts';
@@ -20,7 +26,7 @@ import { sendReportTo } from '../services/report.ts';
 import { listReports, resolveReport } from '../services/reports.ts';
 import { deliver, mailReady } from '../services/mail.ts';
 import { tools } from '../services/media.ts';
-import { getNode } from '../services/nodes.ts';
+import { forgetOwners, getNode } from '../services/nodes.ts';
 import { officeReady } from '../services/office.ts';
 import { pendingCount } from '../services/processing.ts';
 import { sendResetByAdmin } from '../services/resets.ts';
@@ -34,15 +40,18 @@ import { updateStatus } from '../services/updates.ts';
 import {
   adminCount,
   adminUser,
+  approveUser,
   createUser,
   deleteUser,
   getUser,
   initials,
+  isPerson,
   keyOf,
   listUsers,
   preferredLanguage,
   usageOf,
   updatePrefs,
+  userCount,
 } from '../services/users.ts';
 import { runMaintenance } from '../services/jobs.ts';
 
@@ -53,7 +62,7 @@ const createSchema = z.object({
   name: displayName,
   email: email.optional().default(''),
   password: password.optional(),
-  role: z.enum(['admin', 'user']).default('user'),
+  role: z.enum(['admin', 'user', 'guest']).default('user'),
   quota: quota.nullable().optional(),
   sendLink: z.boolean().optional(),
   expiresAt: expiry,
@@ -62,12 +71,19 @@ const createSchema = z.object({
 const updateSchema = z.object({
   name: displayName.optional(),
   email: email.optional(),
-  role: z.enum(['admin', 'user']).optional(),
+  role: z.enum(['admin', 'user', 'guest']).optional(),
   disabled: z.boolean().optional(),
   quota: quota.nullable().optional(),
   password: password.optional(),
   expiresAt: expiry,
 });
+
+const webAddress = z
+  .string()
+  .trim()
+  .max(300)
+  .refine((value) => value === '' || /^https?:\/\/[^/\s]+/.test(value), 'Die Adresse muss mit http:// oder https:// beginnen')
+  .transform((value) => value.replace(/\/+$/, ''));
 
 const settingsSchema = z
   .object({
@@ -83,7 +99,9 @@ const settingsSchema = z
     'site.language': z.enum(['de', 'en']),
     'site.imprint': z.string().max(20_000),
     'site.privacy': z.string().max(50_000),
-    'auth.registration': z.enum(['closed', 'open', 'invite']),
+    'site.terms': z.string().max(50_000),
+    'terms.required': z.boolean(),
+    'auth.registration': z.enum(['closed', 'open', 'invite', 'approval']),
     'auth.passkeys': z.boolean(),
     'auth.require2fa': z.enum(['off', 'admins', 'all']),
     'auth.passwordMin': z
@@ -95,6 +113,17 @@ const settingsSchema = z
     'report.weekly': z.boolean(),
     'storage.defaultQuota': quota,
     'storage.maxUpload': quota,
+    'accounts.inactiveDays': z
+      .number()
+      .int()
+      .refine((value) => value === 0 || (value >= 30 && value <= 3650), 'Nimm 0 für nie oder 30 bis 3650 Tage'),
+    'collabora.url': webAddress,
+    'collabora.host': webAddress,
+    'storage.blockedTypes': z
+      .string()
+      .max(1500)
+      .refine(validTypes, 'Eine Endung besteht aus Buchstaben und Ziffern, zum Beispiel exe. Mehr als 100 gehen nicht')
+      .transform(cleanTypes),
     'storage.trashDays': z.number().int().min(0).max(3650),
     'storage.versions': z.number().int().min(0).max(100),
     'storage.versionDays': z.number().int().min(0).max(3650),
@@ -136,6 +165,13 @@ function userView(user: Parameters<typeof adminUser>[0]) {
   };
 }
 
+function person(id: number) {
+  const user = getUser(id);
+  return user && isPerson(user) ? user : undefined;
+}
+
+const started = Date.now();
+
 export async function adminRoutes(app: FastifyInstance) {
   app.get('/api/admin/overview', async (request) => {
     admin(request);
@@ -145,7 +181,15 @@ export async function adminRoutes(app: FastifyInstance) {
       "SELECT owner_id, COALESCE(SUM(size), 0) AS size, COUNT(*) AS files FROM nodes WHERE type = 'file' GROUP BY owner_id ORDER BY size DESC LIMIT 6"
     ).map((row) => {
       const user = getUser(row.owner_id);
-      return { id: row.owner_id, name: user?.name ?? '?', initials: initials(user?.name ?? '?'), size: row.size, files: row.files };
+      return {
+        id: row.owner_id,
+        name: user?.name ?? '?',
+        initials: initials(user?.name ?? '?'),
+        avatar: user?.avatar ?? null,
+        team: user?.role === 'team',
+        size: row.size,
+        files: row.files,
+      };
     });
     const backups = await listBackups();
     const lastBackup = backups.find((backup) => backup.kind !== 'update') ?? null;
@@ -154,7 +198,7 @@ export async function adminRoutes(app: FastifyInstance) {
       node: process.version,
       uptime: Math.round(process.uptime()),
       memory: process.memoryUsage().rss,
-      users: value<number>('SELECT COUNT(*) FROM users') ?? 0,
+      users: userCount(),
       active: value<number>('SELECT COUNT(DISTINCT user_id) FROM sessions WHERE last_seen_at > ?', Date.now() - 7 * 86_400_000) ?? 0,
       live: liveCount(),
       files: value<number>("SELECT COUNT(*) FROM nodes WHERE type = 'file'") ?? 0,
@@ -228,13 +272,19 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>('/api/admin/users/:id', async (request) => {
     const actor = admin(request);
-    const user = getUser(Number(request.params.id));
+    const user = person(Number(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     const input = parse(updateSchema, request.body);
-    const losesAdmin = (input.role === 'user' || input.disabled === true) && user.role === 'admin' && !user.disabled;
+    const losesAdmin =
+      ((input.role !== undefined && input.role !== 'admin') || input.disabled === true) && user.role === 'admin' && !user.disabled;
     if (losesAdmin && adminCount() <= 1) throw badRequest('Es muss immer mindestens einen Admin geben');
-    if (user.id === actor.id && (input.disabled || input.role === 'user'))
+    if (user.id === actor.id && (input.disabled || (input.role !== undefined && input.role !== 'admin')))
       throw badRequest('Dich selbst kannst du nicht sperren oder herabstufen');
+    if (input.role === 'guest' && user.role !== 'guest') {
+      if (value<number>('SELECT COUNT(*) FROM nodes WHERE owner_id = ? AND parent_id IS NOT NULL', user.id))
+        throw badRequest('Diese Person hat noch eigene Dateien. Übertrage oder lösche sie, bevor du ein Gastkonto daraus machst');
+      run('DELETE FROM team_managers WHERE user_id = ?', user.id);
+    }
     const nextExpiry = input.expiresAt !== undefined ? input.expiresAt : (user.expires_at ?? null);
     if (nextExpiry && (input.role ?? user.role) === 'admin') throw badRequest('Admins bekommen kein Ablaufdatum');
     if (input.expiresAt && input.expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
@@ -252,6 +302,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     if (input.role && input.role !== user.role) {
       run('UPDATE users SET role = ? WHERE id = ?', input.role, user.id);
+      forgetOwners();
       audit('role_changed', { actor: actor.id, subject: user.id, request, details: { role: input.role } });
     }
     if (input.quota !== undefined && input.quota !== user.quota_bytes) {
@@ -264,7 +315,7 @@ export async function adminRoutes(app: FastifyInstance) {
       fields.push('expiresAt');
     }
     if (input.disabled !== undefined && input.disabled !== Boolean(user.disabled)) {
-      run('UPDATE users SET disabled = ? WHERE id = ?', input.disabled, user.id);
+      run('UPDATE users SET disabled = ?, seen_at = ? WHERE id = ?', input.disabled, input.disabled ? user.seen_at : Date.now(), user.id);
       if (input.disabled) destroyUserSessions(user.id);
       audit(input.disabled ? 'user_disabled' : 'user_enabled', { actor: actor.id, subject: user.id, request });
     }
@@ -280,11 +331,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string }; Querystring: { transfer?: string } }>('/api/admin/users/:id', async (request) => {
     const actor = admin(request);
-    const user = getUser(Number(request.params.id));
+    const user = person(Number(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     if (user.id === actor.id) throw badRequest('Dein eigenes Konto kannst du hier nicht löschen');
     if (user.role === 'admin' && adminCount() <= 1) throw badRequest('Es muss immer mindestens einen Admin geben');
-    const transferTo = request.query.transfer ? getUser(Number(request.query.transfer)) : null;
+    const transferTo = request.query.transfer ? person(Number(request.query.transfer)) : null;
     if (request.query.transfer && (!transferTo || transferTo.id === user.id)) throw badRequest('Wähle eine andere Person für die Dateien');
     if (transferTo) {
       const folder = transferFiles(user, transferTo, t(preferredLanguage(transferTo), 'Von {name}', { name: user.name }));
@@ -304,9 +355,33 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.post<{ Params: { id: string } }>('/api/admin/users/:id/approve', async (request) => {
+    const actor = admin(request);
+    const target = person(Number(request.params.id));
+    if (!target) throw notFound('Diese Person gibt es nicht');
+    if (!approveUser(target.id)) throw badRequest('Dieses Konto wartet nicht auf eine Freigabe');
+    audit('user_approved', { actor: actor.id, subject: target.id, request, details: { username: target.username } });
+    if (target.email && mailReady()) {
+      const lang = target.language ?? settings.get('site.language');
+      const url = settings.get('site.url').replace(/\/+$/, '');
+      void deliver(target.email, {
+        lang,
+        title: t(lang, 'Dein Konto bei {site} ist freigegeben', { site: settings.get('site.name') }),
+        lines: [
+          t(lang, 'Hallo {name}, du kannst dich jetzt mit deinem Benutzernamen {username} und deinem Passwort anmelden.', {
+            name: target.name,
+            username: target.username,
+          }),
+        ],
+        action: url ? { label: t(lang, 'Anmelden'), url: `${url}/login` } : undefined,
+      }).catch((error: Error) => request.log.warn({ error: error.message }, 'Mail zur Freigabe fehlgeschlagen'));
+    }
+    return { user: userView(getUser(target.id)!) };
+  });
+
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/reset-2fa', async (request) => {
     const actor = admin(request);
-    const user = getUser(Number(request.params.id));
+    const user = person(Number(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     resetTotp(user.id);
     audit('admin_2fa_reset', { actor: actor.id, subject: user.id, request });
@@ -315,7 +390,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/reset-passkeys', async (request) => {
     const actor = admin(request);
-    const user = getUser(Number(request.params.id));
+    const user = person(Number(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     const removed = run('DELETE FROM passkeys WHERE user_id = ?', user.id).changes;
     audit('admin_2fa_reset', { actor: actor.id, subject: user.id, request, details: { passkeys: removed } });
@@ -324,7 +399,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/logout', async (request) => {
     const actor = admin(request);
-    const user = getUser(Number(request.params.id));
+    const user = person(Number(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     destroyUserSessions(user.id);
     audit('admin_logout', { actor: actor.id, subject: user.id, request });
@@ -336,7 +411,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
     async (request) => {
       const actor = admin(request);
-      const user = getUser(Number(request.params.id));
+      const user = person(Number(request.params.id));
       if (!user) throw notFound('Diese Person gibt es nicht');
       await sendResetByAdmin(request, actor, user).catch((error: Error) => {
         if (error.message === 'mail-not-configured') throw badRequest('Richte zuerst den E-Mail-Versand ein');
@@ -374,6 +449,8 @@ export async function adminRoutes(app: FastifyInstance) {
       throw badRequest('Ohne Passkeys fehlt dir der zweite Faktor. Richte zuerst die Authenticator-App ein.');
     }
     settings.setMany(input as Partial<settings.Settings>);
+    if (settings.get('terms.required') && (changed.includes('terms.required') || changed.includes('site.terms'))) ensureTermsVersion(actor);
+    if (changed.includes('collabora.url')) forgetDiscovery();
     if (changed.includes('site.seed')) settings.set('theme.site', null);
     if (maintenance !== undefined && changed.includes('maintenance.enabled')) {
       audit('maintenance', { actor: actor.id, request, details: { enabled: maintenance } });
@@ -381,6 +458,43 @@ export async function adminRoutes(app: FastifyInstance) {
     const rest = changed.filter((key) => key !== 'site.palette' && key !== 'maintenance.enabled');
     if (rest.length) audit('settings_changed', { actor: actor.id, request, details: { keys: rest } });
     return { settings: settings.adminView() };
+  });
+
+  app.get<{ Querystring: { level?: string } }>('/api/admin/log', async (request) => {
+    admin(request);
+    const level = request.query.level === 'error' ? 'error' : request.query.level === 'warn' ? 'warn' : 'info';
+    return { items: recentLog(level), since: started, format: config.logFormat, level: config.logLevel };
+  });
+
+  app.delete('/api/admin/log', async (request) => {
+    admin(request);
+    clearLog();
+    return { ok: true };
+  });
+
+  app.get('/api/admin/starter', async (request) => {
+    admin(request);
+    return starterState();
+  });
+
+  app.put('/api/admin/starter', async (request) => {
+    const actor = admin(request);
+    const input = parse(z.object({ folderId: z.string().min(1).max(64).nullable() }), request.body);
+    const state = setStarter(actor, input.folderId);
+    audit('settings_changed', { actor: actor.id, request, details: { keys: ['accounts.starter'] } });
+    return state;
+  });
+
+  app.get('/api/admin/terms', async (request) => {
+    admin(request);
+    return termsState();
+  });
+
+  app.post('/api/admin/terms/renew', async (request) => {
+    const actor = admin(request);
+    const state = renewTerms(actor);
+    audit('settings_changed', { actor: actor.id, request, details: { keys: ['terms.version'] } });
+    return state;
   });
 
   app.get('/api/admin/invites', async (request) => {
@@ -396,12 +510,27 @@ export async function adminRoutes(app: FastifyInstance) {
         days: z.number().int().min(1).max(90).default(7),
         quota: quota.nullable().optional(),
         email: email.optional(),
+        role: z.enum(['user', 'guest']).default('user'),
+        teamId: z.number().int().positive().nullable().optional(),
+        teamRole: z.enum(['view', 'edit']).optional(),
       }),
       request.body
     );
     const address = input.email?.trim() || null;
     if (address && !mailReady()) throw badRequest('Richte zuerst den E-Mail-Versand ein');
-    const { token, invite } = createInvite(actor, input.note ?? null, input.days, input.quota ?? null, address);
+    const team = input.teamId ? requireTeam(input.teamId) : null;
+    const { token, invite } = createInvite(
+      actor,
+      input.note ?? null,
+      input.days,
+      input.role === 'guest' ? null : (input.quota ?? null),
+      address,
+      {
+        role: input.role,
+        teamId: team?.id ?? null,
+        teamRole: input.teamRole ?? 'view',
+      }
+    );
     const url = `${baseUrl(request)}/register?invite=${token}`;
     audit('invite_created', { actor: actor.id, request, details: { days: input.days, email: Boolean(address) } });
     if (address) {

@@ -5,7 +5,7 @@ import { badRequest, forbidden } from '../lib/errors.ts';
 import { audit } from './audit.ts';
 import { notify, notifyAdmins } from './notify.ts';
 import * as settings from './settings.ts';
-import { adminCount, deleteUser, keyOf, prefsOf, updatePrefs, type UserRow } from './users.ts';
+import { adminCount, deleteUser, keyOf, lastActive, prefsOf, updatePrefs, type UserRow } from './users.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 export const EXPIRY_NOTICE = 7 * DAY;
@@ -29,6 +29,33 @@ export function remindExpiring(now = Date.now()) {
     now
   ).changes;
   return { reminded, ended };
+}
+
+export function disableInactive(now = Date.now()) {
+  const days = settings.get('accounts.inactiveDays');
+  if (days <= 0) return 0;
+  const cutoff = now - days * DAY;
+  const candidates = all<UserRow>(
+    "SELECT * FROM users WHERE disabled = 0 AND pending = 0 AND role IN ('user', 'guest') AND created_at < ? AND (expires_at IS NULL OR expires_at > ?)",
+    cutoff,
+    now
+  );
+  const names: string[] = [];
+  for (const user of candidates) {
+    if (lastActive(user) >= cutoff) continue;
+    run('UPDATE users SET disabled = 1 WHERE id = ?', user.id);
+    run('DELETE FROM sessions WHERE user_id = ?', user.id);
+    audit('user_disabled', { subject: user.id, details: { reason: 'inactive', days } });
+    names.push(user.name);
+  }
+  if (names.length) {
+    notifyAdmins(
+      'admin_inactive',
+      { count: names.length, days, names: names.slice(0, 5).join(', ') + (names.length > 5 ? ' …' : '') },
+      '/admin/people'
+    );
+  }
+  return names.length;
 }
 
 export const selfDeleteAllowed = (user: UserRow) => settings.get('users.selfDelete') && !(user.role === 'admin' && adminCount() <= 1);

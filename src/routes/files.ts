@@ -17,12 +17,15 @@ import { rotateImage } from '../services/rotate.ts';
 import { editImage, OUTPUTS } from '../services/editor.ts';
 import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
 import { addComment, commentPeople, deleteComment, listComments } from '../services/comments.ts';
+import { CONVERT_FORMATS, convertNode, convertOptions } from '../services/convert.ts';
+import { homeFor } from '../services/home.ts';
 import { ingest } from '../services/ingest.ts';
 import { lockNode, MAX_LOCK_MINUTES, unlockNode } from '../services/locks.ts';
 import { listReminders, removeReminder, setReminder } from '../services/reminders.ts';
 import { fromTemplate, setTemplates, templatesOf } from '../services/templates.ts';
 import { cleanDuplicates, memories, photos, storageReport } from '../services/library.ts';
 import { assertNotInfected } from '../services/scan.ts';
+import { roleIn, teamOfAccount } from '../services/teams.ts';
 import {
   assertUnlocked,
   breadcrumbs,
@@ -59,7 +62,7 @@ import { createTextFile, formatBytes } from '../services/uploads.ts';
 import { cancelDavImport, listDavImports, startDavImport } from '../services/davimport.ts';
 import { listImports, startImport } from '../services/imports.ts';
 import { deleteSearch, listSearches, renameSearch, saveSearch } from '../services/searches.ts';
-import { deleteVersion, getVersion, listVersions, restoreVersion, writeContent } from '../services/versions.ts';
+import { deleteVersion, getVersion, labelVersion, listVersions, restoreVersion, writeContent } from '../services/versions.ts';
 import { EMAIL_CSP, emailAttachment, emailBody, emailSummary } from '../services/email.ts';
 import { blanker, locationBlanks } from '../services/location.ts';
 import { zipName, zipStream, type ZipOptions } from '../services/zip.ts';
@@ -230,11 +233,24 @@ export function sendZip(request: FastifyRequest, reply: FastifyReply, roots: Nod
   return reply.send(zipStream(roots, options));
 }
 
+function teamInfo(user: UserRow, node: NodeRow) {
+  if (node.owner_id === user.id) return null;
+  const team = teamOfAccount(node.owner_id);
+  if (!team) return null;
+  const role = roleIn(team, user);
+  return { id: team.id, name: team.name, role, canManage: user.role === 'admin' || role === 'manage' };
+}
+
 export async function fileRoutes(app: FastifyInstance) {
   app.get<IdParams>('/api/nodes/:id', async (request) => {
     const user = me(request);
     const access = requireAccess(user, request.params.id);
-    return { node: present([access.node], user, access.role)[0], breadcrumbs: breadcrumbs(access), role: access.role };
+    return {
+      node: present([access.node], user, access.role)[0],
+      breadcrumbs: breadcrumbs(access),
+      role: access.role,
+      team: teamInfo(user, access.node),
+    };
   });
 
   app.get<IdParams & { Querystring: { folders?: string } }>('/api/nodes/:id/children', async (request) => {
@@ -245,6 +261,7 @@ export async function fileRoutes(app: FastifyInstance) {
       breadcrumbs: breadcrumbs(access),
       role: access.role,
       shared: access.role !== 'owner' ? { rootId: access.rootId } : null,
+      team: teamInfo(user, access.node),
       items: present(children(access.node.id, request.query.folders === '1'), user, access.role),
     };
   });
@@ -372,6 +389,10 @@ export async function fileRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.get<{ Querystring: { date?: string; offset?: string } }>('/api/home', async (request) =>
+    homeFor(me(request), String(request.query.date ?? ''), Number(request.query.offset ?? 0))
+  );
+
   app.get('/api/recent', async (request) => {
     const user = me(request);
     return { items: present(recent(user), user) };
@@ -402,7 +423,11 @@ export async function fileRoutes(app: FastifyInstance) {
       maxSize: number(query.maxSize),
       tag: query.tag && /^[0-9A-Za-z]{8,40}$/.test(query.tag) ? query.tag : undefined,
     };
-    return { items: present(search(user, String(query.q ?? ''), filters), user) };
+    return {
+      items: present(search(user, String(query.q ?? ''), filters), user, (node) =>
+        node.owner_id === user.id ? 'owner' : (resolveAccess(user, node.id)?.role ?? 'view')
+      ),
+    };
   });
 
   app.get('/api/storage', async (request) => storageOf(me(request)));
@@ -509,6 +534,18 @@ export async function fileRoutes(app: FastifyInstance) {
     return { node: present([updated], user, requireAccess(user, updated.id).role)[0] };
   });
 
+  app.get<IdParams>('/api/nodes/:id/convert', async (request) => {
+    const { node } = requireAccess(me(request), request.params.id);
+    return { formats: convertOptions(node) };
+  });
+
+  app.post<IdParams>('/api/nodes/:id/convert', { config: { rateLimit: { max: 60, timeWindow: '10 minutes' } } }, async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ format: z.enum(CONVERT_FORMATS) }), request.body);
+    const created = await convertNode(user, request.params.id, input.format);
+    return { node: present([created], user, requireAccess(user, created.id).role)[0] };
+  });
+
   app.post<IdParams>('/api/nodes/:id/rotate', async (request) => {
     const user = me(request);
     const input = parse(z.object({ degrees: z.union([z.literal(90), z.literal(180), z.literal(270)]) }), request.body);
@@ -572,6 +609,11 @@ export async function fileRoutes(app: FastifyInstance) {
     return { node: present([node], user, requireAccess(user, node.id).role)[0] };
   });
 
+  app.patch<{ Params: { id: string; version: string } }>('/api/nodes/:id/versions/:version', async (request) => {
+    const input = parse(z.object({ label: z.string().trim().max(60).nullable() }), request.body);
+    return { items: labelVersion(me(request), request.params.id, request.params.version, input.label) };
+  });
+
   app.delete<{ Params: { id: string; version: string } }>('/api/nodes/:id/versions/:version', async (request) => {
     deleteVersion(me(request), request.params.id, request.params.version);
     return { ok: true };
@@ -610,7 +652,7 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get<IdParams>('/api/nodes/:id/meta', async (request) => {
     const { node } = requireAccess(me(request), request.params.id);
-    return nodeMeta(node);
+    return { ...nodeMeta(node), sha256: node.type === 'file' ? node.sha256 : null };
   });
 
   app.post<IdParams>('/api/nodes/:id/extract', async (request) => {

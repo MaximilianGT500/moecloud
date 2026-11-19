@@ -32,6 +32,8 @@ const WRITABLE: Record<string, Output> = {
 };
 const EXTENSIONS: Record<Output, string> = { jpeg: 'jpg', png: 'png', webp: 'webp', avif: 'avif', tiff: 'tif' };
 
+export const formatOf = (type: string | null): Output | null => (type ? (WRITABLE[type] ?? null) : null);
+
 export interface EditInput {
   rotate: 0 | 90 | 180 | 270;
   flipH: boolean;

@@ -42,7 +42,13 @@ export function commentPeople(user: UserRow, nodeId: string) {
   return [...peopleOf(nodeId).values()]
     .filter((person) => person.id !== user.id)
     .sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    .map((person) => ({ id: person.id, name: person.name, username: person.username, initials: initials(person.name) }));
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      username: person.username,
+      initials: initials(person.name),
+      avatar: person.avatar ?? null,
+    }));
 }
 
 function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>) {
@@ -51,7 +57,7 @@ function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>)
     id: row.id,
     text: row.text,
     mentions: mentioned(row.text, people).map((person) => ({ username: person.username, name: person.name, me: person.id === viewer.id })),
-    author: author ? { id: author.id, name: author.name, initials: initials(author.name) } : null,
+    author: author ? { id: author.id, name: author.name, initials: initials(author.name), avatar: author.avatar ?? null } : null,
     mine: row.user_id === viewer.id,
     edited: row.updated_at > row.created_at,
     createdAt: row.created_at,

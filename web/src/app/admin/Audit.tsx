@@ -17,6 +17,7 @@ import { Loading } from './shared';
 
 const GROUPS: Record<string, string[]> = {
   security: [
+    'terms_accepted',
     'login',
     'login_failed',
     'logout',
@@ -39,6 +40,7 @@ const GROUPS: Record<string, string[]> = {
     'registered',
     'user_created',
     'user_updated',
+    'user_approved',
     'user_deleted',
     'account_deleted',
     'user_disabled',
@@ -55,6 +57,9 @@ const GROUPS: Record<string, string[]> = {
     'group_updated',
     'group_deleted',
     'users_imported',
+    'team_created',
+    'team_updated',
+    'team_deleted',
   ],
   system: [
     'settings_changed',

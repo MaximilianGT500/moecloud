@@ -30,6 +30,7 @@ interface Person {
   name: string;
   username: string;
   initials: string;
+  avatar?: string | null;
 }
 
 const MENTION = /(?<![\w@.-])@([a-zA-Z0-9._-]{3,32})/g;
@@ -71,7 +72,7 @@ interface Comment {
   id: string;
   text: string;
   mentions: Mention[];
-  author: { id: number; name: string; initials: string } | null;
+  author: { id: number; name: string; initials: string; avatar?: string | null } | null;
   mine: boolean;
   edited: boolean;
   createdAt: number;
@@ -194,7 +195,12 @@ export function Comments({ item }: { item: Item }) {
         >
           {list.map((comment) => (
             <Box component="li" key={comment.id} sx={{ display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
-              <UserAvatar initials={comment.author?.initials ?? '?'} size={32} />
+              <UserAvatar
+                initials={comment.author?.initials ?? '?'}
+                size={32}
+                avatar={comment.author?.avatar}
+                userId={comment.author?.id}
+              />
               <Box
                 sx={{
                   flex: 1,
@@ -325,7 +331,7 @@ export function Comments({ item }: { item: Item }) {
                   color: index === active ? c.onSecondaryContainer : c.onSurface,
                 }}
               >
-                <UserAvatar initials={person.initials} size={24} />
+                <UserAvatar initials={person.initials} size={24} avatar={person.avatar} userId={person.id} />
                 <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                   {person.name}
                 </Typography>

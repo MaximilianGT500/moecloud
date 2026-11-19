@@ -4,7 +4,7 @@ import type { Lang } from '../lib/i18n.ts';
 import defaultPalette from '../lib/default-palette.json' with { type: 'json' };
 
 export type Palette = { dark: Record<string, string>; light: Record<string, string> };
-export type Registration = 'closed' | 'open' | 'invite';
+export type Registration = 'closed' | 'open' | 'invite' | 'approval';
 export type MailSecurity = 'tls' | 'starttls' | 'none';
 export type SecondFactorPolicy = 'off' | 'admins' | 'all';
 
@@ -55,6 +55,9 @@ const DEFAULTS = {
   'site.language': 'de' as Lang,
   'site.imprint': '',
   'site.privacy': '',
+  'site.terms': '',
+  'terms.required': false,
+  'terms.version': 0,
   'auth.registration': 'closed' as Registration,
   'auth.passkeys': true,
   'auth.require2fa': 'off' as SecondFactorPolicy,
@@ -63,7 +66,12 @@ const DEFAULTS = {
   'report.weekly': false,
   'report.sent': '',
   'storage.defaultQuota': 0,
+  'accounts.starter': '',
+  'accounts.inactiveDays': 0,
+  'collabora.url': '',
+  'collabora.host': '',
   'storage.maxUpload': 0,
+  'storage.blockedTypes': '',
   'storage.trashDays': 30,
   'storage.versions': 10,
   'storage.versionDays': 0,
@@ -186,14 +194,21 @@ export const PUBLIC_KEYS = [
   'site.language',
   'site.imprint',
   'site.privacy',
+  'site.terms',
+  'terms.required',
+  'terms.version',
   'auth.registration',
   'auth.passkeys',
   'auth.require2fa',
   'auth.passwordMin',
+  'accounts.inactiveDays',
   'auth.passwordBreach',
   'report.weekly',
   'storage.defaultQuota',
   'storage.maxUpload',
+  'storage.blockedTypes',
+  'collabora.url',
+  'collabora.host',
   'storage.trashDays',
   'storage.versions',
   'storage.versionDays',

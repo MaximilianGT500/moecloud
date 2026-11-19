@@ -28,6 +28,8 @@ interface Invite {
   id: string;
   note: string | null;
   email: string | null;
+  role?: 'user' | 'guest';
+  team?: string | null;
   quota: number | null;
   createdAt: number;
   expiresAt: number;
@@ -36,7 +38,16 @@ interface Invite {
   expired: boolean;
 }
 
-const EMPTY = { open: false, note: '', email: '', days: 7, quota: null as number | null };
+const EMPTY = {
+  open: false,
+  note: '',
+  email: '',
+  days: 7,
+  quota: null as number | null,
+  role: 'user' as 'user' | 'guest',
+  teamId: 0,
+  teamRole: 'edit' as 'view' | 'edit',
+};
 
 export function InvitesSection({ registration }: { registration: string }) {
   const [invites, setInvites] = useState<Invite[] | null>(null);
@@ -44,6 +55,7 @@ export function InvitesSection({ registration }: { registration: string }) {
   const [created, setCreated] = useState<{ url: string; sent: boolean } | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
+  const [teams, setTeams] = useState<{ id: number; name: string }[]>([]);
 
   const load = () =>
     api
@@ -56,6 +68,10 @@ export function InvitesSection({ registration }: { registration: string }) {
 
   useEffect(() => {
     void load();
+    api
+      .get<{ items: { id: number; name: string }[] }>('/api/admin/teams')
+      .then((result) => setTeams(result.items))
+      .catch(() => {});
   }, []);
 
   const close = () => {
@@ -69,7 +85,9 @@ export function InvitesSection({ registration }: { registration: string }) {
       const result = await api.post<{ url: string; sent: boolean }>('/api/admin/invites', {
         note: form.note || null,
         days: form.days,
-        quota: form.quota,
+        quota: form.role === 'guest' ? null : form.quota,
+        role: form.role,
+        ...(form.teamId ? { teamId: form.teamId, teamRole: form.teamRole } : {}),
         ...(form.email.trim() ? { email: form.email.trim() } : {}),
       });
       setCreated(result);
@@ -121,6 +139,8 @@ export function InvitesSection({ registration }: { registration: string }) {
                         ? t('Abgelaufen')
                         : t('Gültig bis {date}', { date: formatDay(invite.expiresAt) }),
                     invite.email && invite.note ? invite.email : null,
+                    invite.role === 'guest' ? t('Gastkonto') : null,
+                    invite.team ? t('Teamordner {name}', { name: invite.team }) : null,
                     invite.quota ? formatBytes(invite.quota) : null,
                   ]
                     .filter(Boolean)
@@ -186,7 +206,49 @@ export function InvitesSection({ registration }: { registration: string }) {
                   </MenuItem>
                 ))}
               </TextField>
-              <QuotaField label={t('Speicher')} value={form.quota} allowDefault onChange={(quota) => setForm({ ...form, quota })} />
+              <TextField
+                select
+                label={t('Art des Kontos')}
+                value={form.role}
+                onChange={(event) => setForm({ ...form, role: event.target.value as 'user' | 'guest' })}
+                helperText={form.role === 'guest' ? t('Ohne eigenen Speicher. Sieht nur Geteiltes und Teamordner.') : undefined}
+              >
+                <MenuItem value="user">{t('Volles Konto')}</MenuItem>
+                <MenuItem value="guest">{t('Gastkonto')}</MenuItem>
+              </TextField>
+              {teams.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                  <TextField
+                    select
+                    label={t('Gleich in einen Teamordner aufnehmen')}
+                    value={form.teamId}
+                    onChange={(event) => setForm({ ...form, teamId: Number(event.target.value) })}
+                    sx={{ flex: 1, minWidth: 200 }}
+                  >
+                    <MenuItem value={0}>{t('In keinen')}</MenuItem>
+                    {teams.map((team) => (
+                      <MenuItem key={team.id} value={team.id}>
+                        {team.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  {form.teamId > 0 && (
+                    <TextField
+                      select
+                      label={t('Recht')}
+                      value={form.teamRole}
+                      onChange={(event) => setForm({ ...form, teamRole: event.target.value as 'view' | 'edit' })}
+                      sx={{ width: 160 }}
+                    >
+                      <MenuItem value="view">{t('Lesen')}</MenuItem>
+                      <MenuItem value="edit">{t('Bearbeiten')}</MenuItem>
+                    </TextField>
+                  )}
+                </Box>
+              )}
+              {form.role !== 'guest' && (
+                <QuotaField label={t('Speicher')} value={form.quota} allowDefault onChange={(quota) => setForm({ ...form, quota })} />
+              )}
             </>
           )}
         </DialogContent>

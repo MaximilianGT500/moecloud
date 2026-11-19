@@ -9,6 +9,7 @@ export interface NodeMeta {
   processed: boolean;
   meta: Record<string, string | number | boolean | undefined>;
   scan: { status: string; signature: string | null; at: number | null } | null;
+  sha256?: string | null;
 }
 
 export function useMeta(item: Item | null, base = '/api') {

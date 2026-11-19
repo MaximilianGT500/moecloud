@@ -73,6 +73,7 @@ interface Person {
   name: string;
   username: string;
   initials: string;
+  avatar?: string | null;
 }
 
 type Recipient = ({ kind: 'user' } & Person) | { kind: 'group'; id: number; name: string; members: number };
@@ -571,6 +572,7 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
   const [options, setOptions] = useState<Recipient[]>([]);
   const [recipient, setRecipient] = useState<Recipient | null>(null);
   const [permission, setPermission] = useState<'view' | 'edit'>('view');
+  const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -608,10 +610,12 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
       const result = await api.post<{ grant: SharedGrant }>(`/api/nodes/${item.id}/grants`, {
         ...(recipient.kind === 'group' ? { groupId: recipient.id } : { userId: recipient.id }),
         permission,
+        note: note.trim() || null,
       });
       onChange([...grants, result.grant]);
       setRecipient(null);
       setQuery('');
+      setNote('');
       toast(
         recipient.kind === 'group'
           ? t('Mit der Gruppe {name} geteilt', { name: recipient.name })
@@ -642,7 +646,11 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
             const { key, ...rest } = props as typeof props & { key: string };
             return (
               <Box component="li" key={key} {...rest} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                {option.kind === 'group' ? <GroupAvatar size={32} /> : <UserAvatar initials={option.initials} size={32} />}
+                {option.kind === 'group' ? (
+                  <GroupAvatar size={32} />
+                ) : (
+                  <UserAvatar initials={option.initials} size={32} avatar={option.avatar} userId={option.id} />
+                )}
                 <Box>
                   <Typography variant="body2">{option.name}</Typography>
                   <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
@@ -671,9 +679,23 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
           {t('Teilen')}
         </Button>
       </Box>
+      {recipient && (
+        <TextField
+          label={t('Notiz dazu (freiwillig)')}
+          placeholder={t('zum Beispiel Bitte bis Freitag ansehen')}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          helperText={t('{name} sieht die Notiz in der Benachrichtigung und bei der Freigabe.', { name: recipient.name })}
+          slotProps={{ htmlInput: { maxLength: 300 } }}
+        />
+      )}
       {grants.map((grant) => (
         <Box key={grant.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {grant.group ? <GroupAvatar size={36} /> : <UserAvatar initials={grant.user?.initials ?? '?'} size={36} />}
+          {grant.group ? (
+            <GroupAvatar size={36} />
+          ) : (
+            <UserAvatar initials={grant.user?.initials ?? '?'} size={36} avatar={grant.user?.avatar} userId={grant.user?.id} />
+          )}
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
               {grant.group?.name ?? grant.user?.name ?? t('Gelöschtes Konto')}
@@ -684,6 +706,7 @@ function People({ item, grants, onChange }: { item: Item; grants: SharedGrant[];
                   ? tn(grant.group.members, 'Gruppe mit {count} Person', 'Gruppe mit {count} Personen')
                   : `@${grant.user?.username ?? ''}`,
                 grant.expiresAt ? t('bis {date}', { date: formatDay(grant.expiresAt) }) : null,
+                grant.note ? `„${grant.note}“` : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}

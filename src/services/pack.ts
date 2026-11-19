@@ -1,8 +1,8 @@
-import { badRequest, insufficientStorage, notFound, tooLarge } from '../lib/errors.ts';
+import { badRequest, notFound, tooLarge } from '../lib/errors.ts';
 import { cleanName } from '../lib/names.ts';
 import { receive } from './blobs.ts';
 import { createDerived, writableFolder } from './derived.ts';
-import { remaining, requireAccess, subtree } from './nodes.ts';
+import { remaining, requireAccess, storageFull, subtree } from './nodes.ts';
 import * as settings from './settings.ts';
 import { formatBytes } from './uploads.ts';
 import type { UserRow } from './users.ts';
@@ -27,11 +27,7 @@ export async function packZip(user: UserRow, ids: string[], rawName: string) {
   const max = settings.get('storage.maxUpload');
   const limited = max > 0 && max < space;
   const received = await receive(zipStream(roots), limited ? max : space, () =>
-    limited
-      ? tooLarge('Dateien dürfen höchstens {size} groß sein', { size: formatBytes(max) })
-      : insufficientStorage(
-          folder.owner_id === user.id ? 'Dein Speicher ist voll' : 'Der Speicher der Person, der dieser Ordner gehört, ist voll'
-        )
+    limited ? tooLarge('Dateien dürfen höchstens {size} groß sein', { size: formatBytes(max) }) : storageFull(folder.owner_id, user.id)
   );
   return createDerived(user, folder, name, received);
 }

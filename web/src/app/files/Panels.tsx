@@ -12,6 +12,7 @@ import Divider from '@mui/material/Divider';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddRounded from '@mui/icons-material/AddRounded';
+import ArticleRounded from '@mui/icons-material/ArticleRounded';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
@@ -26,6 +27,8 @@ import DriveFolderUploadRounded from '@mui/icons-material/DriveFolderUploadRound
 import CreateNewFolderRounded from '@mui/icons-material/CreateNewFolderRounded';
 import NoteAddRounded from '@mui/icons-material/NoteAddRounded';
 import PostAddRounded from '@mui/icons-material/PostAddRounded';
+import SlideshowRounded from '@mui/icons-material/SlideshowRounded';
+import TableChartRounded from '@mui/icons-material/TableChartRounded';
 import CloudDownloadRounded from '@mui/icons-material/CloudDownloadRounded';
 import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
 import { AnimatePresence, m } from 'motion/react';
@@ -203,6 +206,7 @@ export function useNewMenu({
   onNewFolder,
   onNewText,
   onTemplate,
+  onOffice,
   onImport,
   onDavImport,
   disabled,
@@ -212,6 +216,7 @@ export function useNewMenu({
   onNewFolder: () => void;
   onNewText: () => void;
   onTemplate?: () => void;
+  onOffice?: (kind: 'document' | 'spreadsheet' | 'presentation') => void;
   onImport?: () => void;
   onDavImport?: () => void;
   disabled?: boolean;
@@ -236,6 +241,9 @@ export function useNewMenu({
       <Divider sx={{ my: 0.5 }} />
       {item(<CreateNewFolderRounded />, t('Neuer Ordner'), onNewFolder)}
       {item(<NoteAddRounded />, t('Neue Textdatei'), onNewText)}
+      {onOffice && item(<ArticleRounded />, t('Neues Dokument'), () => onOffice('document'))}
+      {onOffice && item(<TableChartRounded />, t('Neue Tabelle'), () => onOffice('spreadsheet'))}
+      {onOffice && item(<SlideshowRounded />, t('Neue Präsentation'), () => onOffice('presentation'))}
       {onTemplate && item(<PostAddRounded />, t('Neu aus Vorlage'), onTemplate)}
       {onImport && item(<CloudDownloadRounded />, t('Aus dem Internet laden'), onImport)}
       {onDavImport && item(<CloudSyncRounded />, t('Per WebDAV importieren'), onDavImport)}

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -306,6 +306,75 @@ await emi.upload(
 
 const song = media(['-f', 'lavfi', '-i', 'sine=frequency=523:duration=4', '-q:a', '6'], 'mp3');
 if (song) await emi.upload(music, 'Melodie.mp3', song, now - 12 * day);
+
+const records: { album: string; artist: string; color: string; year: number; tracks: [string, number, number][] }[] = [
+  {
+    album: 'Sommer am See',
+    artist: 'Lea Hoffmann',
+    color: '0x2a9d8f',
+    year: 2025,
+    tracks: [
+      ['Morgens am Steg', 392, 3],
+      ['Mittagshitze', 440, 4],
+      ['Abendlicht', 494, 3],
+    ],
+  },
+  {
+    album: 'Nachtfahrt',
+    artist: 'Mia Weber',
+    color: '0x6750a4',
+    year: 2026,
+    tracks: [
+      ['Auffahrt', 262, 3],
+      ['Raststätte', 330, 4],
+    ],
+  },
+];
+for (const record of records) {
+  const cover = media(['-f', 'lavfi', '-i', `color=c=${record.color}:s=320x320`, '-frames:v', '1'], 'png');
+  if (!cover) continue;
+  const dir = mkdtempSync(join(tmpdir(), 'moecloud-demo-'));
+  const picture = join(dir, 'cover.png');
+  writeFileSync(picture, cover);
+  const folder = await emi.folder(music, record.album);
+  for (const [index, [title, tone, seconds]] of record.tracks.entries()) {
+    const file = media(
+      [
+        '-f',
+        'lavfi',
+        '-i',
+        `sine=frequency=${tone}:duration=${seconds}`,
+        '-i',
+        picture,
+        '-map',
+        '0:a',
+        '-map',
+        '1:v',
+        '-c:v',
+        'mjpeg',
+        '-q:a',
+        '6',
+        '-id3v2_version',
+        '3',
+        '-metadata',
+        `title=${title}`,
+        '-metadata',
+        `artist=${record.artist}`,
+        '-metadata',
+        `album=${record.album}`,
+        '-metadata',
+        `track=${index + 1}`,
+        '-metadata',
+        `date=${record.year}`,
+        '-disposition:v',
+        'attached_pic',
+      ],
+      'mp3'
+    );
+    if (file) await emi.upload(folder, `${String(index + 1).padStart(2, '0')} ${title}.mp3`, file, now - (40 - index) * day);
+  }
+  rmSync(dir, { recursive: true, force: true });
+}
 const clip = media(
   ['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24:duration=4', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'veryfast'],
   'mp4'

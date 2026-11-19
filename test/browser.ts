@@ -8,6 +8,7 @@ import { PDFDocument, StandardFonts, rgb } from '@pdfme/pdf-lib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import sharp from 'sharp';
 import yazl from 'yazl';
+import { fakeCollabora } from './collabora.ts';
 import { proRaw } from './images.ts';
 import { smtpSink } from './smtp.ts';
 
@@ -187,6 +188,30 @@ function seedHistory(now: { logical: number; physical: number; files: number; us
   } finally {
     database.close();
   }
+}
+
+async function inNavigation(page: Page, name: string, wanted: boolean, click = false) {
+  const rail = page.getByRole('navigation', { name: 'Hauptnavigation' }).first();
+  const direct = rail.getByRole('link', { name, exact: true });
+  const more = rail.getByRole('button', { name: 'Mehr Bereiche' });
+  const entry = page.getByRole('menuitem', { name, exact: true });
+  for (let tries = 0; tries < 60; tries++) {
+    if ((await direct.count()) > 0) {
+      if (wanted) return click ? direct.click() : undefined;
+    } else if ((await more.count()) > 0) {
+      await more.click();
+      await page.getByRole('menu').waitFor();
+      const found = (await entry.count()) > 0;
+      if (found && wanted && click) return entry.click();
+      await page.keyboard.press('Escape');
+      await page.getByRole('menu').waitFor({ state: 'detached' });
+      if (found === wanted) return;
+    } else if (!wanted) {
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`„${name}“ ${wanted ? 'fehlt in der Navigation' : 'steht noch in der Navigation'}`);
 }
 
 const visible = (page: Page, text: string) => page.getByText(text, { exact: true }).filter({ visible: true }).first().waitFor();
@@ -1227,7 +1252,6 @@ try {
     await page.goto(`${base}/admin/plugins`);
     await visible(page, 'Mitgelieferte Beispiele');
     const card = (name: string) => page.getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) });
-    const rail = page.getByRole('navigation', { name: 'Hauptnavigation' }).first();
     const quiet = async () => {
       const close = page.locator('.MuiSnackbar-root').getByRole('button', { name: 'Schließen' });
       if (await close.isVisible()) await close.click();
@@ -1246,7 +1270,7 @@ try {
     await trust.getByRole('button', { name: 'Einschalten' }).click();
     await trust.waitFor({ state: 'detached' });
     await card('Statistik').getByText('Läuft', { exact: true }).waitFor();
-    await rail.getByRole('link', { name: 'Statistik' }).waitFor();
+    await inNavigation(page, 'Statistik', true);
     for (const name of ['Inhaltsliste', 'Farbpaket']) {
       await card(name).getByRole('button', { name: 'Einschalten' }).click();
       await trust.getByRole('button', { name: 'Einschalten' }).click();
@@ -1282,7 +1306,7 @@ try {
     await page.goto(`${base}/files`);
     await item(page, 'Urlaub 2026').waitFor();
 
-    await rail.getByRole('link', { name: 'Statistik' }).click();
+    await inNavigation(page, 'Statistik', true, true);
     await page.waitForURL('**/files/plugins/statistik/uebersicht');
     await page.getByRole('heading', { name: 'Statistik', level: 1 }).waitFor();
     const frame = page.frameLocator('iframe[title="Statistik"]');
@@ -1353,7 +1377,7 @@ try {
       await card(name).getByRole('button', { name: 'Ausschalten' }).click();
       await card(name).getByText('Aus', { exact: true }).waitFor();
     }
-    await rail.getByRole('link', { name: 'Statistik' }).waitFor({ state: 'detached' });
+    await inNavigation(page, 'Statistik', false);
     await page.goto(`${base}/files/plugins/statistik/uebersicht`);
     await visible(page, 'Diese Seite gibt es nicht mehr');
     await page.goto(`${base}/files`);
@@ -1507,6 +1531,455 @@ try {
     await share.getByText('Familie', { exact: true }).first().waitFor();
     await share.getByRole('button', { name: 'Fertig', exact: true }).click();
     await share.waitFor({ state: 'detached' });
+  });
+
+  await step('Teamordner mit Mitgliedern und Startseite', async () => {
+    await page.goto(`${base}/admin/teams`);
+    await page.getByRole('button', { name: 'Teamordner anlegen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('Marketing');
+    await dialog.getByLabel('Beschreibung (freiwillig)').fill('Kampagnen, Vorlagen und Bilder');
+    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await visible(page, 'Teamordner „Marketing“ angelegt');
+    const members = page.getByRole('dialog');
+    await members.getByText('Mitglieder von „Marketing“').waitFor();
+    for (const name of ['Mia', 'Emi']) {
+      await members.getByLabel('Person oder Gruppe hinzufügen').fill(name);
+      await page
+        .getByRole('option', { name: new RegExp(name) })
+        .first()
+        .click();
+      await members.getByRole('listitem').filter({ hasText: name }).first().waitFor();
+    }
+    await members.getByLabel('Person oder Gruppe hinzufügen').fill('Fam');
+    await page.getByRole('option', { name: /Familie/ }).click();
+    await members.getByText('Gruppe · 1 Mitglied').waitFor();
+    await members.getByLabel(/^Recht für Emi/).click();
+    await page.getByRole('option', { name: 'Leitung', exact: true }).click();
+    await page.waitForTimeout(300);
+    await shot(page, 'teamordner-mitglieder');
+    await members.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await members.waitFor({ state: 'detached' });
+    await page.getByText(/2 Personen · 1 Gruppe · Kampagnen, Vorlagen und Bilder/).waitFor();
+    const teams = await api<{ items: { rootId: string; name: string }[] }>(page, 'GET', '/api/teams');
+    const rootId = teams.items.find((team) => team.name === 'Marketing')!.rootId;
+    const folder = await api<{ node: { id: string } }>(page, 'POST', `/api/nodes/${rootId}/folders`, { name: 'Kampagne Herbst' });
+    await api(page, 'POST', `/api/nodes/${folder.node.id}/text`, { name: 'Zeitplan.md', content: '# Zeitplan\n\n- Entwurf bis Freitag' });
+    await api(page, 'POST', `/api/nodes/${rootId}/text`, { name: 'Leitfaden.md', content: '# Leitfaden\n\nSo arbeiten wir zusammen.' });
+    await page.goto(`${base}/files/teams`);
+    await page.getByRole('heading', { name: 'Marketing', exact: true }).waitFor();
+    await visible(page, 'Leitung');
+    await shot(page, 'teamordner');
+    await page.getByRole('link', { name: /Marketing/ }).click();
+    await item(page, 'Kampagne Herbst').waitFor();
+    await item(page, 'Leitfaden.md').waitFor();
+    await visible(page, 'Teamordner · Leitung');
+    await item(page, 'Leitfaden.md').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'In den Papierkorb', exact: true }).click();
+    await item(page, 'Leitfaden.md').waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Papierkorb', exact: true }).click();
+    const trash = page.getByRole('dialog');
+    await trash.getByText('Leitfaden.md', { exact: true }).waitFor();
+    await trash.getByRole('button', { name: 'Leitfaden.md wiederherstellen' }).click();
+    await visible(page, 'Wiederhergestellt');
+    await trash.getByRole('button', { name: 'Schließen', exact: true }).click();
+    await item(page, 'Leitfaden.md').waitFor();
+    await page.goto(`${base}/files/home`);
+    await page.getByText(/^(Guten Morgen|Hallo|Guten Abend|Gute Nacht), Emi$/).waitFor();
+    await page.getByRole('heading', { name: 'Zuletzt bearbeitet' }).waitFor();
+    await page.getByRole('heading', { name: 'Teamordner' }).waitFor();
+    await visible(page, 'Leitfaden.md');
+    await page.waitForTimeout(400);
+    await shot(page, 'start');
+  });
+
+  await step('Abläufe, Umwandeln und benannte Versionen', async () => {
+    const session = await api<{ user: { rootId: string } }>(page, 'GET', '/api/session');
+    const inbox = await api<{ node: { id: string } }>(page, 'POST', `/api/nodes/${session.user.rootId}/folders`, { name: 'Eingang' });
+    await api(page, 'POST', '/api/tags', { name: 'Rechnung', color: 'green' });
+    await page.goto(`${base}/files`);
+    await item(page, 'Eingang').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Abläufe', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText('Abläufe für „Eingang“').waitFor();
+    await dialog.getByText('Für diesen Ordner gibt es noch keinen Ablauf.').waitFor();
+    await dialog.getByRole('button', { name: 'Neuer Ablauf' }).click();
+    await dialog.getByLabel('Name', { exact: true }).fill('Rechnungen ablegen');
+    await dialog.getByRole('button', { name: 'PDFs', exact: true }).click();
+    await dialog.getByLabel('Name enthält').fill('Rechnung');
+    await dialog.getByLabel('Schlagwort vergeben').click();
+    await page.getByRole('option', { name: 'Rechnung', exact: true }).click();
+    await dialog.getByLabel('Umbenennen nach Muster').fill('{datum} {name}');
+    await dialog.getByLabel('Dort einsortieren').click();
+    await page.getByRole('option', { name: 'In Ordner pro Jahr', exact: true }).click();
+    await dialog.getByLabel('Mir Bescheid geben').check();
+    await dialog.locator('.MuiDialogContent-root').evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.waitForTimeout(300);
+    await shot(page, 'automations');
+    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await visible(page, 'Ablauf angelegt');
+    await dialog.getByText('Rechnungen ablegen', { exact: true }).waitFor();
+    await dialog
+      .getByText(/PDFs · Name enthält „Rechnung“ → Schlagwort „Rechnung“, umbenennen, nach Jahr einsortieren, Bescheid geben/)
+      .waitFor();
+    await dialog.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Eingang').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dateien hochladen' }).click();
+    await (await chooser).setFiles({ name: 'Rechnung Strom.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') });
+    const year = String(new Date().getFullYear());
+    await item(page, year).waitFor();
+    await item(page, year).dblclick();
+    await page
+      .getByRole('grid')
+      .getByText(/^\d{4}-\d{2}-\d{2} Rechnung Strom\.pdf$/)
+      .waitFor();
+    await page.getByRole('grid').getByRole('img', { name: 'Schlagwörter: Rechnung' }).waitFor();
+    const rules = await api<{ items: { runs: number; error: string | null }[] }>(page, 'GET', `/api/automations?folder=${inbox.node.id}`);
+    if (rules.items[0].runs !== 1 || rules.items[0].error) throw new Error(`Ablauf: ${JSON.stringify(rules.items[0])}`);
+
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    const photo = page
+      .getByRole('grid')
+      .getByText(/\.jpg$/)
+      .first();
+    const photoName = (await photo.textContent())!.trim();
+    await photo.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Umwandeln', exact: true }).click();
+    const convert = page.getByRole('dialog');
+    await convert.getByText(`„${photoName}“ umwandeln`).waitFor();
+    await convert.getByRole('button', { name: 'WEBP', exact: true }).click();
+    await visible(page, `„${photoName.replace(/\.jpg$/, '.webp')}“ gespeichert`);
+    await item(page, photoName.replace(/\.jpg$/, '.webp')).waitFor();
+
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Ideen.md').click();
+    await page.getByRole('tab', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'SHA-256 kopieren' }).waitFor();
+    await page.getByRole('button', { name: 'Version benennen' }).first().click();
+    const naming = page.getByRole('dialog');
+    await naming.getByLabel('Name').fill('Erster Entwurf');
+    await naming.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await naming.waitFor({ state: 'detached' });
+    await visible(page, 'Erster Entwurf');
+  });
+
+  await step('Nutzungsbedingungen, Startdateien und Serverprotokoll', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Projekte').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Als Startdateien für neue Konten', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Nutzen', exact: true }).click();
+    await visible(page, 'Neue Konten bekommen jetzt diese Dateien');
+    await page.goto(`${base}/admin/settings`);
+    await page.getByText(/Jedes neue Konto bekommt eine Kopie aus „Projekte“ von Emi/).waitFor();
+    await page.getByRole('button', { name: 'Nicht mehr nutzen' }).click();
+    await visible(page, 'Neue Konten starten wieder leer');
+    await page.getByLabel('Gesperrte Dateiendungen').fill('exe, bat');
+    await page.getByLabel('Nutzungsbedingungen', { exact: true }).fill('## Miteinander\n\nBitte geht sorgsam mit dem Speicher um.');
+    await page.getByLabel('Zustimmung zu den Nutzungsbedingungen verlangen').check();
+    await page.getByRole('button', { name: /Änderung(en)? speichern$/ }).click();
+    await page.getByText(/1 von \d+ Personen haben der aktuellen Fassung zugestimmt\./).waitFor();
+    const mia = await context('dark');
+    const miaPage = await open(mia, 'Mia');
+    await miaPage.goto(`${base}/login`);
+    await miaPage.fill('input[name=login]', 'mia');
+    await miaPage.fill('input[name=password]', password);
+    await Promise.all([miaPage.waitForURL('**/nutzungsbedingungen'), miaPage.click('button[type=submit]')]);
+    await miaPage.getByRole('heading', { name: 'Miteinander' }).waitFor();
+    await shot(miaPage, 'terms');
+    await miaPage.getByRole('button', { name: 'Ich stimme zu' }).click();
+    await miaPage.waitForURL('**/files**');
+    await mia.close();
+    await page.reload();
+    await page.getByText(/2 von \d+ Personen haben der aktuellen Fassung zugestimmt\./).waitFor();
+    await page.getByLabel('Zustimmung zu den Nutzungsbedingungen verlangen').uncheck();
+    await page.getByLabel('Gesperrte Dateiendungen').fill('');
+    await page.getByRole('button', { name: /Änderung(en)? speichern$/ }).click();
+    await page.getByLabel('Gesperrte Dateiendungen').waitFor();
+    await page.waitForTimeout(400);
+    await page.goto(`${base}/admin/system`);
+    await page.getByRole('heading', { name: 'Serverprotokoll' }).waitFor();
+    await page.getByRole('button', { name: 'Alles', exact: true }).click();
+    await page
+      .getByRole('list', { name: 'Serverprotokoll' })
+      .getByText(/MoeCloud .* läuft auf Port/)
+      .waitFor();
+  });
+
+  await step('Office-Dokument anlegen, bearbeiten und speichern', async () => {
+    const edited = await readFile(join(root, 'src/assets/office/document.en.docx'));
+    const office = await fakeCollabora(edited);
+    try {
+      await page.goto(`${base}/admin/settings`);
+      await page.getByLabel('Adresse von Collabora Online').fill(office.url);
+      await page.getByRole('button', { name: /Änderung(en)? speichern$/ }).click();
+      await page.getByText(/Collabora antwortet\. 4 Dateiformate lassen sich bearbeiten, darunter docx, xlsx, pptx, odt\./).waitFor();
+      await page.goto(`${base}/files`);
+      await page.getByRole('button', { name: 'Neu', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Neues Dokument' }).click();
+      const editor = page.getByRole('dialog');
+      await editor.getByRole('heading', { name: 'Dokument.docx' }).waitFor();
+      const frame = page.frameLocator('iframe[name^="office-"]');
+      await frame.locator('#state', { hasText: 'bereit' }).waitFor();
+      const shown = {
+        name: await frame.locator('#name').textContent(),
+        user: await frame.locator('#user').textContent(),
+        write: await frame.locator('#write').textContent(),
+        size: Number(await frame.locator('#size').textContent()),
+        ttl: Number(await frame.locator('#ttl').textContent()),
+        mode: await frame.locator('#mode').textContent(),
+      };
+      if (shown.name !== 'Dokument.docx' || shown.user !== 'Emi Sato' || shown.write !== 'schreiben' || shown.size < 3000) {
+        throw new Error(`CheckFileInfo: ${JSON.stringify(shown)}`);
+      }
+      if (shown.mode !== 'edit de true' || shown.ttl < Date.now() + 9 * 60 * 60 * 1000) throw new Error(`Aufruf: ${JSON.stringify(shown)}`);
+      await frame.locator('#save').click();
+      await frame.locator('#state', { hasText: 'gespeichert' }).waitFor();
+      await frame.locator('#save').click();
+      await page.waitForTimeout(300);
+      await frame.locator('#state', { hasText: 'gespeichert' }).waitFor();
+      if (office.saves.length !== 2 || office.saves.some((save) => save.status !== 200))
+        throw new Error(`Speichern: ${JSON.stringify(office.saves)}`);
+      await frame.locator('#close').click();
+      await editor.waitFor({ state: 'detached' });
+      await item(page, 'Dokument.docx').waitFor();
+      const session = await api<{ user: { rootId: string } }>(page, 'GET', '/api/session');
+      const list = await api<{ items: { id: string; name: string; size: number }[] }>(
+        page,
+        'GET',
+        `/api/nodes/${session.user.rootId}/children`
+      );
+      const document = list.items.find((entry) => entry.name === 'Dokument.docx')!;
+      if (document.size !== edited.length) throw new Error(`Größe nach dem Speichern: ${document.size}`);
+      const versions = await api<{ items: unknown[] }>(page, 'GET', `/api/nodes/${document.id}/versions`);
+      if (versions.items.length !== 1) throw new Error(`Versionen: ${versions.items.length}`);
+      await item(page, 'Dokument.docx').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'In Office bearbeiten', exact: true }).waitFor();
+      await page.getByRole('menuitem', { name: 'Vorschau', exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await api(page, 'POST', '/api/nodes/trash', { ids: [document.id] });
+    } finally {
+      await api(page, 'PATCH', '/api/admin/settings', { 'collabora.url': '' });
+      await office.close();
+    }
+  });
+
+  await step('Musik nach Alben und Wiedergabelisten', async () => {
+    await page.goto(`${base}/files/music`);
+    await visible(page, 'Morgens am Steg');
+    await visible(page, 'Melodie');
+    await page.getByRole('button', { name: 'Alben', exact: true }).click();
+    await page.waitForURL('**/files/music/albums');
+    const albums = page.getByRole('list', { name: 'Alben' });
+    await albums.getByText('Nachtfahrt', { exact: true }).waitFor();
+    await albums.getByText('Ohne Album', { exact: true }).waitFor();
+    await images(page, '[role=list][aria-label="Alben"]');
+    await shot(page, 'musik');
+    await albums.getByText('Sommer am See', { exact: true }).click();
+    await page.getByRole('heading', { name: 'Sommer am See' }).waitFor();
+    await visible(page, 'Lea Hoffmann · 2025 · 3 Titel · 0:10');
+    await page.getByRole('button', { name: 'Zur Wiedergabeliste', exact: true }).click();
+    const picker = page.getByRole('dialog');
+    await picker.getByLabel('Neue Wiedergabeliste').fill('Zum Kochen');
+    await picker.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await visible(page, 'Zu „Zum Kochen“ hinzugefügt');
+    await page.getByRole('button', { name: 'Öffnen', exact: true }).click();
+    await page.waitForURL('**/files/music/playlists/*');
+    await page.getByRole('heading', { name: 'Zum Kochen' }).waitFor();
+    await visible(page, '3 Titel · 0:10');
+    await page.getByRole('button', { name: 'Aktionen für „Abendlicht“' }).click();
+    await page.getByRole('menuitem', { name: 'Nach oben' }).click();
+    const id = page.url().split('/').pop()!;
+    const order = async () =>
+      (await api<{ items: { track: { title: string } }[] }>(page, 'GET', `/api/playlists/${id}`)).items
+        .map((entry) => entry.track.title)
+        .join(', ');
+    for (let tries = 0; (await order()) !== 'Morgens am Steg, Abendlicht, Mittagshitze'; tries++) {
+      if (tries > 20) throw new Error(`Unerwartete Reihenfolge: ${await order()}`);
+      await page.waitForTimeout(100);
+    }
+    await page.getByRole('button', { name: 'Aktionen für „Mittagshitze“' }).click();
+    await page.getByRole('menuitem', { name: 'Aus der Liste nehmen' }).click();
+    await visible(page, '2 Titel · 0:06');
+
+    await page.goto(`${base}/files`);
+    await item(page, 'Musik').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Nachtfahrt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Zur Wiedergabeliste hinzufügen' }).click();
+    await page.getByRole('dialog').getByRole('listitem').filter({ hasText: 'Zum Kochen' }).click();
+    await visible(page, 'Zu „Zum Kochen“ hinzugefügt');
+    if ((await order()) !== 'Morgens am Steg, Abendlicht, Auffahrt, Raststätte')
+      throw new Error(`Unerwartete Reihenfolge: ${await order()}`);
+
+    await page.goto(`${base}/files/music/playlists`);
+    await page.getByRole('list', { name: 'Wiedergabelisten' }).getByText('Zum Kochen', { exact: true }).click();
+    await page.getByRole('button', { name: 'Abspielen', exact: true }).click();
+    const player = page.getByRole('region', { name: 'Musik' });
+    await player.getByRole('button', { name: 'Pause' }).waitFor();
+    await player.getByRole('button', { name: 'Warteschlange' }).click();
+    await page.getByText('4 Titel in der Warteschlange').waitFor();
+    await page.keyboard.press('Escape');
+    await player.getByRole('button', { name: 'Player schließen' }).click();
+    await player.waitFor({ state: 'detached' });
+  });
+
+  await step('Notizen schreiben, abhaken und wiederfinden', async () => {
+    await page.goto(`${base}/files/notes`);
+    await visible(page, 'Noch keine Notizen');
+    await page.getByRole('button', { name: 'Erste Notiz schreiben' }).click();
+    await page.waitForURL('**/files/notes/*');
+    const title = page.getByLabel('Titel der Notiz');
+    await title.waitFor();
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Titel der Notiz');
+    await page.keyboard.type('Wochenende');
+    await page.keyboard.press('Enter');
+    const text = page.getByLabel('Text der Notiz');
+    await text.fill('## Einkauf\n\n- [ ] Brot\n- [ ] Äpfel\n\nAbends kommt **Lea** vorbei.\n');
+    await page.getByRole('status').filter({ hasText: 'Gespeichert' }).waitFor();
+    await page.getByRole('navigation', { name: 'Notizen' }).getByText('Wochenende', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Lesen', exact: true }).click();
+    await page.getByRole('heading', { name: 'Einkauf' }).waitFor();
+    const boxes = page.locator('.markdown li.task input[type=checkbox]');
+    if ((await boxes.count()) !== 2) throw new Error(`Erwartet waren 2 Aufgaben, gefunden ${await boxes.count()}`);
+    await boxes.nth(1).click();
+    await page.locator('.markdown li.task input[type=checkbox]:checked').waitFor();
+    await page.getByRole('status').filter({ hasText: 'Gespeichert' }).waitFor();
+    await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+    const written = await text.inputValue();
+    if (written !== '## Einkauf\n\n- [ ] Brot\n- [x] Äpfel\n\nAbends kommt **Lea** vorbei.\n')
+      throw new Error(`Unerwarteter Text: ${JSON.stringify(written)}`);
+    await text.focus();
+    await page.keyboard.press('Control+End');
+    await page.getByRole('button', { name: 'Aufgabe zum Abhaken' }).click();
+    await page.keyboard.type('Kuchen backen');
+    await page.getByRole('status').filter({ hasText: 'Gespeichert' }).waitFor();
+
+    await page.getByRole('button', { name: 'Neue Notiz', exact: true }).click();
+    await page.waitForFunction(() => {
+      const field = document.activeElement as HTMLInputElement | null;
+      return field?.getAttribute('aria-label') === 'Titel der Notiz' && field.value === 'Neue Notiz';
+    });
+    await page.keyboard.type('Ideen fürs Fotobuch');
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Text der Notiz').fill('Die Bilder aus Lissabon nach Tagen ordnen.');
+    await page.getByRole('status').filter({ hasText: 'Gespeichert' }).waitFor();
+    const list = page.getByRole('navigation', { name: 'Notizen' });
+    await list.getByText('Ideen fürs Fotobuch', { exact: true }).waitFor();
+    await list.getByText('Die Bilder aus Lissabon nach Tagen ordnen.', { exact: true }).waitFor();
+    await list.getByText('Wochenende', { exact: true }).click();
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('input[aria-label="Titel der Notiz"]')?.value === 'Wochenende'
+    );
+    await page.getByRole('button', { name: 'Lesen', exact: true }).click();
+    await page.locator('.markdown li.task input[type=checkbox]:checked').waitFor();
+    await shot(page, 'notizen');
+
+    const saved = await api<{ folderId: string; items: { id: string; name: string; title: string; excerpt: string }[] }>(
+      page,
+      'GET',
+      '/api/notes'
+    );
+    const names = saved.items.map((entry) => entry.name).sort();
+    if (names.join() !== 'Ideen fürs Fotobuch.md,Wochenende.md') throw new Error(`Unerwartete Notizen: ${names.join()}`);
+    const weekend = saved.items.find((entry) => entry.title === 'Wochenende')!;
+    const content = await api<{ content: string }>(page, 'GET', `/api/notes/${weekend.id}`);
+    if (content.content !== '## Einkauf\n\n- [ ] Brot\n- [x] Äpfel\n\nAbends kommt **Lea** vorbei.\n- [ ] Kuchen backen') {
+      throw new Error(`Unerwarteter Inhalt: ${JSON.stringify(content.content)}`);
+    }
+
+    await page.getByPlaceholder('Notizen durchsuchen').fill('lissabon');
+    await list.getByText('Wochenende', { exact: true }).waitFor({ state: 'detached' });
+    await page.getByPlaceholder('Notizen durchsuchen').fill('');
+    await list.getByText('Wochenende', { exact: true }).click();
+    await page.getByRole('button', { name: 'Zu den Favoriten' }).click();
+    await page.getByRole('button', { name: 'Aus den Favoriten nehmen' }).waitFor();
+    await page.goto(`${base}/files`);
+    await item(page, 'Notizen').dblclick();
+    await item(page, 'Wochenende.md').waitFor();
+    await item(page, 'Ideen fürs Fotobuch.md').waitFor();
+
+    const phoneContext = await context('light', true);
+    const phone = await open(phoneContext, 'Handy');
+    await login(phone, 'emi');
+    await phone.goto(`${base}/files/notes`);
+    const phoneList = phone.getByRole('navigation', { name: 'Notizen' });
+    await phoneList.getByText('Wochenende', { exact: true }).waitFor();
+    if (await phone.getByLabel('Titel der Notiz').count()) throw new Error('Auf dem Handy soll zuerst nur die Liste erscheinen');
+    await phoneList.getByText('Wochenende', { exact: true }).click();
+    await phone.getByLabel('Titel der Notiz').waitFor();
+    await phone.getByRole('button', { name: 'Lesen', exact: true }).click();
+    await phone.locator('.markdown li.task input[type=checkbox]').first().waitFor();
+    await phone.getByRole('button', { name: 'Zu den Notizen' }).click();
+    await phoneList.getByText('Ideen fürs Fotobuch', { exact: true }).waitFor();
+    await phone.goto(`${base}/files/music/albums`);
+    await phone.getByRole('list', { name: 'Alben' }).getByText('Sommer am See', { exact: true }).click();
+    await phone.getByRole('heading', { name: 'Sommer am See' }).waitFor();
+    await phoneContext.close();
+  });
+
+  await step('Notiz zur Freigabe, App-Passwort mit Rechten und Konten mit Freigabe', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen', exact: true }).click();
+    const share = page.getByRole('dialog');
+    await share.getByLabel('Person oder Gruppe', { exact: true }).fill('Lea');
+    await page.getByRole('option', { name: /Lea/ }).first().click();
+    await share.getByLabel('Notiz dazu (freiwillig)').fill('Such dir die schönsten aus');
+    await share.getByRole('button', { name: 'Teilen', exact: true }).click();
+    await share.getByText(/„Such dir die schönsten aus“/).waitFor();
+    await share.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await share.waitFor({ state: 'detached' });
+    const leaContext = await context('light');
+    const lea = await open(leaContext, 'Lea');
+    await login(lea, 'lea');
+    await lea.goto(`${base}/files/shared`);
+    await lea
+      .getByText(/„Such dir die schönsten aus“/)
+      .first()
+      .waitFor();
+    await leaContext.close();
+
+    await page.goto(`${base}/account`);
+    await page.getByRole('button', { name: 'App-Passwort erstellen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('Bilderrahmen');
+    await dialog.getByLabel(/^Nur lesen/).check();
+    await dialog.getByLabel(/^Im Laufwerk auch Teamordner und Geteiltes zeigen/).check();
+    await dialog.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await dialog.getByText('Kopiere das Passwort jetzt. Danach zeigt MoeCloud es nicht mehr an.').waitFor();
+    await dialog.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.getByText(/nur lesen · mit Teamordnern und Geteiltem · noch nie genutzt/).waitFor();
+
+    await api(page, 'PATCH', '/api/admin/settings', { 'auth.registration': 'approval' });
+    const guest = await context('light');
+    const signup = await open(guest, 'Neu');
+    await signup.goto(`${base}/register`);
+    await signup.fill('input[name=name]', 'Emily Neu');
+    await signup.fill('input[name=username]', 'emily-neu');
+    await signup.fill('input[name=password]', password);
+    await signup.click('button[type=submit]');
+    await signup.getByText(/Dein Konto ist angelegt und wartet auf die Freigabe durch die Verwaltung/).waitFor();
+    await page.goto(`${base}/admin/people`);
+    await page.getByText('Ein Konto wartet auf deine Freigabe').waitFor();
+    await page.getByRole('button', { name: 'Emily Neu freigeben' }).click();
+    await visible(page, 'Emily Neu kann sich jetzt anmelden');
+    await page.getByText('Ein Konto wartet auf deine Freigabe').waitFor({ state: 'detached' });
+    await signup.fill('input[name=login]', 'emily-neu');
+    await signup.fill('input[name=password]', password);
+    await Promise.all([signup.waitForURL('**/files**'), signup.click('button[type=submit]')]);
+    await guest.close();
+    await api(page, 'PATCH', '/api/admin/settings', { 'auth.registration': 'closed' });
   });
 
   await step('Ankündigung für alle', async () => {

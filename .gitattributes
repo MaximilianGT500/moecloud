@@ -3,3 +3,6 @@
 docker/* text eol=lf
 test/fixtures/host/* text eol=lf
 *.heic binary
+*.docx binary
+*.xlsx binary
+*.pptx binary

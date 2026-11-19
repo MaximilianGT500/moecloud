@@ -40,6 +40,8 @@ function cleanName(raw: string) {
   return name;
 }
 
+export const getAlbum = (id: string) => one<AlbumRow>('SELECT * FROM albums WHERE id = ?', id);
+
 export function ownAlbum(user: UserRow, id: string) {
   const album = one<AlbumRow>('SELECT * FROM albums WHERE id = ? AND owner_id = ?', id, user.id);
   if (!album) throw notFound('Das Album gibt es nicht mehr');

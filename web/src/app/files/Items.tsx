@@ -131,6 +131,27 @@ function detail(item: Item) {
   return formatBytes(item.size);
 }
 
+function ShareNote({ text }: { text: string }) {
+  return (
+    <Typography
+      variant="caption"
+      component="p"
+      title={text}
+      sx={{
+        color: 'inherit',
+        opacity: 0.85,
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        mt: 0.25,
+      }}
+    >
+      {`„${text}“`}
+    </Typography>
+  );
+}
+
 function columnText(item: Item, column: ItemsProps['column']) {
   if (column === 'location') return item.location === '' ? t('Meine Dateien') : (item.location ?? '');
   if (column === 'owner') {
@@ -138,7 +159,7 @@ function columnText(item: Item, column: ItemsProps['column']) {
       item.viaGroup && item.owner
         ? t('{name} über {group}', { name: item.owner.name, group: item.viaGroup })
         : (item.owner?.name ?? t('Du'));
-    return item.shareEnds ? `${owner} · ${t('bis {date}', { date: formatDay(item.shareEnds) })}` : owner;
+    return [owner, item.shareEnds ? t('bis {date}', { date: formatDay(item.shareEnds) }) : null].filter(Boolean).join(' · ');
   }
   if (column === 'trashed') return formatDate(item.trashedAt ?? item.modifiedAt);
   return formatDate(item.modifiedAt);
@@ -576,6 +597,7 @@ export function Items(props: ItemsProps) {
               <Typography variant="caption" noWrap component="p" sx={{ color: 'inherit', opacity: 0.75, display: { sm: 'none' } }}>
                 {[columnText(item, column), detail(item)].filter(Boolean).join(' · ')}
               </Typography>
+              {item.shareNote && <ShareNote text={item.shareNote} />}
               {item.snippet && <Snippet text={item.snippet} />}
             </Box>
             <Typography

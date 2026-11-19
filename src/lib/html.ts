@@ -20,6 +20,9 @@ export function legalLinks(request: FastifyRequest) {
   const privacy = settings.get('site.privacy').trim();
   if (imprint) links.push({ label: t(request.lang, 'Impressum'), href: /^https?:\/\//.test(imprint) ? imprint : '/impressum' });
   if (privacy) links.push({ label: t(request.lang, 'Datenschutz'), href: /^https?:\/\//.test(privacy) ? privacy : '/datenschutz' });
+  const terms = settings.get('site.terms').trim();
+  if (terms)
+    links.push({ label: t(request.lang, 'Nutzungsbedingungen'), href: /^https?:\/\//.test(terms) ? terms : '/nutzungsbedingungen' });
   return links;
 }
 

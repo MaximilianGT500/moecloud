@@ -11,6 +11,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
+import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
@@ -49,7 +50,8 @@ import { setPrefs, usePrefs } from '../../lib/prefs';
 import { c, fonts, radius } from '../../theme/tokens';
 import { AppShell } from '../shell/AppShell';
 import { auditDetail, auditLabel, type AuditEntry } from '../common/audit';
-import { CopyField, QrCode, Row, Section, StorageMeter, UserAvatar, copyText } from '../common/bits';
+import { CopyField, QrCode, Row, Section, StorageMeter, copyText } from '../common/bits';
+import { AvatarEdit } from './AvatarEdit';
 import { confirm, prompt } from '../common/dialogs';
 import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
@@ -71,6 +73,7 @@ interface Prefs extends MailPrefs {
   digest: 'off' | 'daily' | 'weekly';
   quiet: { from: number; to: number } | null;
   zone: string;
+  start?: 'files' | 'home';
 }
 
 const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -101,7 +104,17 @@ interface Account {
     totp: boolean;
     recoveryCodes: number;
     passkeys: { id: string; name: string; synced: boolean; createdAt: number; lastUsedAt: number | null }[];
-    appPasswords: { id: string; name: string; hint: string; createdAt: number; lastUsedAt: number | null }[];
+    appPasswords: {
+      id: string;
+      name: string;
+      hint: string;
+      createdAt: number;
+      lastUsedAt: number | null;
+      readOnly?: boolean;
+      shared?: boolean;
+      expiresAt?: number | null;
+      expired?: boolean;
+    }[];
     sessions: {
       id: string;
       current: boolean;
@@ -484,14 +497,20 @@ function PasswordDialog({ open, hasPassword, min, onClose }: { open: boolean; ha
 }
 
 function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const user = boot().user!;
   const [name, setName] = useState('');
+  const [readOnly, setReadOnly] = useState(false);
+  const [shared, setShared] = useState(user.role === 'guest');
+  const [days, setDays] = useState(0);
   const [token, setToken] = useState<string | null>(null);
   const close = () => {
     setName('');
+    setReadOnly(false);
+    setShared(user.role === 'guest');
+    setDays(0);
     setToken(null);
     onClose();
   };
-  const user = boot().user!;
   return (
     <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
       <DialogTitle>{token ? t('Dein neues App-Passwort') : t('App-Passwort erstellen')}</DialogTitle>
@@ -516,6 +535,45 @@ function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClos
               autoFocus
               slotProps={{ htmlInput: { maxLength: 60 } }}
             />
+            <TextField
+              select
+              label={t('Gültig')}
+              value={days}
+              onChange={(event) => setDays(Number(event.target.value))}
+              helperText={t('Nach dem Ablauf kommt das Gerät nicht mehr hinein, bis du ihm ein neues Passwort gibst.')}
+            >
+              <MenuItem value={0}>{t('Ohne Ablauf')}</MenuItem>
+              <MenuItem value={7}>{t('7 Tage')}</MenuItem>
+              <MenuItem value={30}>{t('30 Tage')}</MenuItem>
+              <MenuItem value={90}>{t('90 Tage')}</MenuItem>
+              <MenuItem value={365}>{t('Ein Jahr')}</MenuItem>
+            </TextField>
+            <FormControlLabel
+              sx={{ alignItems: 'flex-start', m: 0, gap: 1 }}
+              control={<Checkbox checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} sx={{ mt: -1 }} />}
+              label={
+                <Box>
+                  <Typography variant="body1">{t('Nur lesen')}</Typography>
+                  <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+                    {t('Das Gerät sieht und lädt alles, kann aber nichts hochladen, ändern oder löschen.')}
+                  </Typography>
+                </Box>
+              }
+            />
+            <FormControlLabel
+              sx={{ alignItems: 'flex-start', m: 0, gap: 1 }}
+              control={<Checkbox checked={shared} onChange={(event) => setShared(event.target.checked)} sx={{ mt: -1 }} />}
+              label={
+                <Box>
+                  <Typography variant="body1">{t('Im Laufwerk auch Teamordner und Geteiltes zeigen')}</Typography>
+                  <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+                    {t(
+                      'Sie erscheinen als Ordner neben deinen eigenen. Lass das aus, wenn ein Programm dein Laufwerk spiegelt und dabei löscht, was bei dir fehlt.'
+                    )}
+                  </Typography>
+                </Box>
+              }
+            />
           </Field>
         )}
       </DialogContent>
@@ -532,7 +590,12 @@ function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClos
               disabled={!name.trim()}
               onClick={async () => {
                 try {
-                  const result = await api.post<{ token: string }>('/api/account/app-passwords', { name });
+                  const result = await api.post<{ token: string }>('/api/account/app-passwords', {
+                    name,
+                    readOnly,
+                    shared,
+                    expiresAt: days ? Date.now() + days * 24 * 60 * 60 * 1000 : null,
+                  });
                   setToken(result.token);
                   onCreated();
                 } catch (error) {
@@ -1193,16 +1256,26 @@ export function AccountPage() {
                 flexWrap: 'wrap',
               }}
             >
-              <UserAvatar initials={account.user.initials} size={72} />
+              <AvatarEdit
+                user={account.user}
+                onChange={(avatar: string | null) => setAccount({ ...account, user: { ...account.user, avatar } })}
+              />
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <Typography variant="h4" component="h1" sx={{ overflowWrap: 'anywhere' }}>
                   {account.user.name}
                 </Typography>
                 <Typography variant="body2" sx={{ color: c.onSurfaceVariant, mb: 1.5 }}>
-                  @{account.user.username} · {account.user.role === 'admin' ? t('Admin') : t('Mitglied')}
+                  @{account.user.username} ·{' '}
+                  {account.user.role === 'admin' ? t('Admin') : account.user.role === 'guest' ? t('Gast') : t('Mitglied')}
                 </Typography>
-                <StorageMeter storage={account.storage} />
-                <Box sx={{ display: locked ? 'none' : 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
+                {account.user.role === 'guest' ? (
+                  <Typography variant="body2" sx={{ color: c.onSurfaceVariant, textWrap: 'pretty' }}>
+                    {t('Gastkonten haben keinen eigenen Speicher. Du arbeitest in dem, was andere mit dir teilen.')}
+                  </Typography>
+                ) : (
+                  <StorageMeter storage={account.storage} />
+                )}
+                <Box sx={{ display: locked || account.user.role === 'guest' ? 'none' : 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
                   <Button size="small" variant="tonal" startIcon={<DataUsageRounded />} href="/files/storage">
                     {t('Speicher ansehen')}
                   </Button>
@@ -1275,6 +1348,25 @@ export function AccountPage() {
                     English
                   </MenuItem>
                 </TextField>
+                {account.user.role !== 'guest' && (
+                  <TextField
+                    select
+                    label={t('Nach der Anmeldung zeigen')}
+                    value={account.prefs.start ?? 'files'}
+                    onChange={async (event) => {
+                      const start = event.target.value as 'files' | 'home';
+                      try {
+                        await api.patch('/api/account/prefs', { start });
+                        setAccount({ ...account, prefs: { ...account.prefs, start } });
+                      } catch (error) {
+                        toast(errorText(error));
+                      }
+                    }}
+                  >
+                    <MenuItem value="files">{t('Meine Dateien')}</MenuItem>
+                    <MenuItem value="home">{t('Start mit der Übersicht')}</MenuItem>
+                  </TextField>
+                )}
                 <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
                   <Button type="submit" variant="contained" disabled={name === account.user.name && email === (account.user.email ?? '')}>
                     {t('Speichern')}
@@ -1509,7 +1601,16 @@ export function AccountPage() {
                     key={entry.id}
                     icon={<KeyRounded />}
                     title={entry.name}
-                    text={`…${entry.hint} · ${entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt')}`}
+                    text={[
+                      `…${entry.hint}`,
+                      entry.readOnly ? t('nur lesen') : null,
+                      entry.shared ? t('mit Teamordnern und Geteiltem') : null,
+                      entry.expired ? t('abgelaufen') : null,
+                      entry.expiresAt && !entry.expired ? t('gültig bis {date}', { date: formatDate(entry.expiresAt) }) : null,
+                      entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt'),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                     action={
                       <Tooltip title={t('Widerrufen')}>
                         <IconButton

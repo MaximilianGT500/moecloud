@@ -339,7 +339,7 @@ const inhalt = await moe.files.read(mia.id, dateien[0].id);
 await moe.files.write(mia.id, null, 'Kopie.txt', inhalt);
 ```
 
-Konten haben `id`, `username`, `name`, `email`, `role` und `language`. Dateien haben `id`, `name`, `type`, `size`, `mime`, `sha256`, `parentId`, `ownerId` und `modifiedAt`.
+Konten haben `id`, `username`, `name`, `email`, `role` (`admin`, `user` oder `guest`) und `language`. Dateien in einem Teamordner tragen als `ownerId` das Konto des Teamordners. Dateien haben `id`, `name`, `type`, `size`, `mime`, `sha256`, `parentId`, `ownerId` und `modifiedAt`.
 
 Alle Aufrufe von `moe.files` nennen zuerst das Konto, in dessen Namen sie laufen. Es gelten dessen Rechte, Kontingent und Freigaben, und was das Plugin schreibt, geht durch dieselben Prüfungen wie ein Upload.
 
@@ -368,7 +368,7 @@ if (antwort.ok) moe.log.info('Angekommen', { daten: antwort.json() });
 
 ## Seiten
 
-Eine Seite ist eine HTML-Datei im Ordner `web/` des Plugins. MoeCloud zeigt sie in der Navigation und rahmt sie mit der gewohnten Oberfläche.
+Eine Seite ist eine HTML-Datei im Ordner `web/` des Plugins. MoeCloud zeigt sie in der Navigation und rahmt sie mit der gewohnten Oberfläche. Reicht der Platz in der Leiste nicht für alle Einträge, steht die Seite dort unter **Mehr**.
 
 ```html
 <!doctype html>
