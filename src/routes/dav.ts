@@ -178,27 +178,37 @@ async function readText(request: FastifyRequest, limit = 256 * 1024): Promise<st
 
 function propNames(body: string) {
   const namespaces = new Map<string, string>();
-  for (const match of body.matchAll(/xmlns(?::([\w.-]+))?\s*=\s*"([^"]*)"/g)) namespaces.set(match[1] ?? '', match[2]);
+  for (const match of body.matchAll(/xmlns(?::([\w.-]{1,60}))?\s{0,20}=\s{0,20}"([^"<>]{0,500})"/g))
+    namespaces.set(match[1] ?? '', match[2]);
   const names: { prefix: string; local: string; uri: string }[] = [];
-  for (const block of body.matchAll(/<(?:[\w.-]+:)?prop\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?prop>/g)) {
+  const open = /<(?:[\w.-]{1,60}:)?prop\b[^<>]*>/g;
+  const close = /<\/(?:[\w.-]{1,60}:)?prop>/g;
+  for (;;) {
+    const start = open.exec(body);
+    if (!start) break;
+    close.lastIndex = open.lastIndex;
+    const end = close.exec(body);
+    if (!end) break;
     let depth = 0;
-    for (const tag of block[1].matchAll(/<(\/?)([\w.-]+:)?([\w.-]+)[^>]*?(\/?)>/g)) {
+    for (const tag of body.slice(open.lastIndex, end.index).matchAll(/<(\/?)([\w.-]{1,60}:)?([\w.-]{1,120})[^<>]*?(\/?)>/g)) {
       const closing = tag[1] === '/';
       const selfClosing = tag[4] === '/';
       if (closing) {
         depth--;
         continue;
       }
-      if (depth === 0) {
+      if (depth === 0 && names.length < 200) {
         const prefix = (tag[2] ?? '').replace(':', '');
         names.push({ prefix, local: tag[3], uri: namespaces.get(prefix) ?? 'DAV:' });
       }
       if (!selfClosing) depth++;
     }
+    open.lastIndex = close.lastIndex;
   }
   return names;
 }
 
+const MAX_LOCKS = 5000;
 const locks = new Map<string, { path: string; expires: number }>();
 
 function lockResponse(token: string, path: string, timeout: number) {
@@ -366,6 +376,10 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
       const existing = typeof request.headers.if === 'string' ? /<(opaquelocktoken:[^>]+)>/.exec(request.headers.if)?.[1] : undefined;
       const token = existing && locks.has(existing) ? existing : `opaquelocktoken:${randomUUID()}`;
       locks.set(token, { path: request.url, expires: now + timeout * 1000 });
+      for (const key of locks.keys()) {
+        if (locks.size <= MAX_LOCKS) break;
+        locks.delete(key);
+      }
       let status = 200;
       if (!target.node) {
         if (!target.parent) throw new HttpError(409, 'Der Ordner dafür fehlt', 'conflict');

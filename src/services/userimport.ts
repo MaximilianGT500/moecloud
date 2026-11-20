@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { badRequest } from '../lib/errors.ts';
@@ -14,7 +15,7 @@ export const IMPORT_LIMIT = 500;
 
 type Field = 'username' | 'name' | 'email' | 'role' | 'quota' | 'password' | 'language' | 'expires';
 
-const HEADERS: Record<string, Field> = {
+const HEADERS: Record<string, Field> = lookup({
   username: 'username',
   benutzername: 'username',
   login: 'username',
@@ -39,9 +40,9 @@ const HEADERS: Record<string, Field> = {
   ablauf: 'expires',
   ablaufdatum: 'expires',
   gültigbis: 'expires',
-};
+});
 
-const UNITS: Record<string, number> = { '': 1, b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 };
+const UNITS: Record<string, number> = lookup({ '': 1, b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 });
 
 export interface PlannedUser {
   line: number;
@@ -220,7 +221,7 @@ export function planImport(text: string, sendLinks: boolean, lang: Lang) {
   });
 }
 
-export async function runImport(request: FastifyRequest, actor: UserRow, text: string, sendLinks: boolean) {
+export async function runImport(request: FastifyRequest, actor: UserRow, text: string, sendLinks: boolean, mustChange = false) {
   const plan = planImport(text, sendLinks, request.lang);
   const lines: ImportLine[] = [];
   let created = 0;
@@ -239,6 +240,7 @@ export async function runImport(request: FastifyRequest, actor: UserRow, text: s
         quota: entry.planned.quota,
         language: entry.planned.language,
         expiresAt: entry.planned.expiresAt,
+        mustChange,
       });
       created++;
       let sent = false;

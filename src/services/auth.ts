@@ -1,7 +1,8 @@
 import type { FastifyRequest } from 'fastify';
 import { one, run, tx, value } from '../lib/db.ts';
-import { hmac, newTotpSecret, normalizeRecoveryCode, randomId, recoveryCode, verifyPassword, verifyTotp } from '../lib/crypto.ts';
+import { hmac, newTotpSecret, normalizeRecoveryCode, randomId, recoveryCode, sha256, verifyPassword, verifyTotp } from '../lib/crypto.ts';
 import { badRequest, unauthorized } from '../lib/errors.ts';
+import { truncateIp } from '../lib/http.ts';
 import { Limiter } from '../lib/limiter.ts';
 import * as settings from './settings.ts';
 import { assertActive, findByLogin, getUser, inactive, keyOf, type UserRow } from './users.ts';
@@ -24,6 +25,32 @@ export const secondFactorPending = (user: UserRow, method?: string | null) => me
 const perIp = new Limiter(30, 15 * 60 * 1000);
 const perAccount = new Limiter(10, 15 * 60 * 1000);
 const secondFactor = new Limiter(10, 15 * 60 * 1000);
+
+export function lockouts() {
+  return [
+    ...perAccount
+      .entries()
+      .map((entry) => ({ kind: 'account' as const, id: sha256(entry.key).slice(0, 24), label: entry.key.slice(6), until: entry.until })),
+    ...perIp.entries().map((entry) => ({
+      kind: 'address' as const,
+      id: sha256(entry.key).slice(0, 24),
+      label: truncateIp(entry.key.slice(3)),
+      until: entry.until,
+    })),
+  ].sort((a, b) => b.until - a.until);
+}
+
+export function releaseLockout(id: string) {
+  let released = false;
+  for (const limiter of [perAccount, perIp, secondFactor]) {
+    for (const entry of limiter.entries()) {
+      if (sha256(entry.key).slice(0, 24) !== id) continue;
+      limiter.reset(entry.key);
+      released = true;
+    }
+  }
+  return released;
+}
 
 export function loginBlocked(request: FastifyRequest, login: string) {
   return perIp.blocked(`ip:${request.ip}`) || perAccount.blocked(`login:${keyOf(login)}`);

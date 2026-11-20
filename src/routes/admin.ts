@@ -8,9 +8,10 @@ import { hashPassword } from '../lib/crypto.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
 import { liveCount } from '../lib/events.ts';
 import { t } from '../lib/i18n.ts';
+import { contentDisposition } from '../lib/http.ts';
 import { admin } from '../lib/request.ts';
-import { displayName, email, hexColor, palette, parse, password, quota, username } from '../lib/validate.ts';
-import { AUDIT_ACTIONS, audit, listAudit, type AuditAction } from '../services/audit.ts';
+import { displayName, email, hexColor, intOf, palette, parse, password, quota, username } from '../lib/validate.ts';
+import { AUDIT_ACTIONS, audit, auditCsv, listAudit, type AuditAction } from '../services/audit.ts';
 import { hasSecondFactor, needsSecondFactor, resetTotp, secondFactorRequired } from '../services/auth.ts';
 import { listBackups } from '../services/backups.ts';
 import { createInvite, deleteInvite, listInvites, presentInvite } from '../services/invites.ts';
@@ -28,6 +29,10 @@ import { deliver, mailReady } from '../services/mail.ts';
 import { tools } from '../services/media.ts';
 import { forgetOwners, getNode } from '../services/nodes.ts';
 import { officeReady } from '../services/office.ts';
+import type { Readable } from 'node:stream';
+import { readLimited } from '../services/avatars.ts';
+import { BRANDING, removeBranding, setBranding } from '../services/branding.ts';
+import { cleanDomains, validDomains } from '../services/confirmations.ts';
 import { pendingCount } from '../services/processing.ts';
 import { sendResetByAdmin } from '../services/resets.ts';
 import { scanEnabled, scanStats } from '../services/scan.ts';
@@ -65,6 +70,7 @@ const createSchema = z.object({
   role: z.enum(['admin', 'user', 'guest']).default('user'),
   quota: quota.nullable().optional(),
   sendLink: z.boolean().optional(),
+  mustChange: z.boolean().optional(),
   expiresAt: expiry,
 });
 
@@ -75,6 +81,7 @@ const updateSchema = z.object({
   disabled: z.boolean().optional(),
   quota: quota.nullable().optional(),
   password: password.optional(),
+  mustChange: z.boolean().optional(),
   expiresAt: expiry,
 });
 
@@ -109,7 +116,18 @@ const settingsSchema = z
       .int()
       .min(10, 'Mindestens 10 Zeichen müssen es sein')
       .max(64, 'Mehr als 64 Zeichen kann niemand verlangen'),
+    'auth.sessionDays': z.number().int().min(1, 'Mindestens ein Tag muss es sein').max(365, 'Mehr als 365 Tage gehen nicht'),
+    'auth.sessionMaxDays': z.number().int().min(0).max(365, 'Mehr als 365 Tage gehen nicht'),
     'auth.passwordBreach': z.boolean(),
+    'auth.confirmEmail': z.boolean(),
+    'auth.domains': z
+      .string()
+      .max(1500)
+      .refine(validDomains, 'Schreib Domains wie example.com, getrennt durch Kommas. Mehr als 50 gehen nicht')
+      .transform(cleanDomains),
+    'login.title': z.string().trim().max(60, 'Die Überschrift darf höchstens 60 Zeichen haben'),
+    'login.text': z.string().trim().max(400, 'Der Text darf höchstens 400 Zeichen haben'),
+    'login.layout': z.enum(['center', 'left', 'right']),
     'report.weekly': z.boolean(),
     'storage.defaultQuota': quota,
     'storage.maxUpload': quota,
@@ -118,6 +136,7 @@ const settingsSchema = z
       .int()
       .refine((value) => value === 0 || (value >= 30 && value <= 3650), 'Nimm 0 für nie oder 30 bis 3650 Tage'),
     'collabora.url': webAddress,
+    'collabora.internal': webAddress,
     'collabora.host': webAddress,
     'storage.blockedTypes': z
       .string()
@@ -152,6 +171,18 @@ const settingsSchema = z
     'import.private': z.boolean(),
     'push.enabled': z.boolean(),
     'push.private': z.boolean(),
+    'integrity.schedule': z.enum(['off', 'weekly', 'monthly']),
+    'security.contact': z
+      .string()
+      .trim()
+      .max(200)
+      .refine(
+        (value) =>
+          value === '' ||
+          /^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._~:/?#@%&=+,;-]*)?$/.test(value) ||
+          /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value),
+        'Trag eine E-Mail-Adresse oder eine Adresse mit https:// ein'
+      ),
   })
   .partial();
 
@@ -238,6 +269,8 @@ export async function adminRoutes(app: FastifyInstance) {
     if (input.password) await checkPassword(input.password);
     if (input.expiresAt && input.expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
     if (input.expiresAt && input.role === 'admin') throw badRequest('Admins bekommen kein Ablaufdatum');
+    if (input.mustChange && !input.password)
+      throw badRequest('Einen Passwortwechsel kannst du nur verlangen, wenn das Konto ein Passwort hat');
     const user = await createUser({
       username: input.username,
       name: input.name,
@@ -246,6 +279,7 @@ export async function adminRoutes(app: FastifyInstance) {
       role: input.role,
       quota: input.quota ?? null,
       expiresAt: input.expiresAt ?? null,
+      mustChange: Boolean(input.mustChange),
     });
     audit('user_created', { actor: actor.id, subject: user.id, request, details: { role: user.role } });
     let sent = false;
@@ -262,17 +296,18 @@ export async function adminRoutes(app: FastifyInstance) {
       z.object({
         csv: z.string().max(1_000_000, 'Die Datei ist zu groß'),
         sendLinks: z.boolean().default(false),
+        mustChange: z.boolean().default(false),
         apply: z.boolean().default(false),
       }),
       request.body
     );
     if (!input.apply) return { lines: planImport(input.csv, input.sendLinks, request.lang).map((entry) => entry.shown), created: 0 };
-    return runImport(request, actor, input.csv, input.sendLinks);
+    return runImport(request, actor, input.csv, input.sendLinks, input.mustChange);
   });
 
   app.patch<{ Params: { id: string } }>('/api/admin/users/:id', async (request) => {
     const actor = admin(request);
-    const user = person(Number(request.params.id));
+    const user = person(intOf(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     const input = parse(updateSchema, request.body);
     const losesAdmin =
@@ -288,6 +323,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const nextExpiry = input.expiresAt !== undefined ? input.expiresAt : (user.expires_at ?? null);
     if (nextExpiry && (input.role ?? user.role) === 'admin') throw badRequest('Admins bekommen kein Ablaufdatum');
     if (input.expiresAt && input.expiresAt <= Date.now()) throw badRequest('Das Ablaufdatum muss in der Zukunft liegen');
+    if (input.mustChange) {
+      if (user.id === actor.id) throw badRequest('Dein eigenes Passwort änderst du im Konto');
+      if (!user.password_hash && !input.password)
+        throw badRequest('Einen Passwortwechsel kannst du nur verlangen, wenn das Konto ein Passwort hat');
+    }
     const fields: string[] = [];
     if (input.email !== undefined && input.email !== (user.email ?? '')) {
       const key = input.email ? keyOf(input.email) : null;
@@ -325,17 +365,21 @@ export async function adminRoutes(app: FastifyInstance) {
       destroyUserSessions(user.id);
       audit('admin_password_set', { actor: actor.id, subject: user.id, request });
     }
+    if (input.mustChange !== undefined && input.mustChange !== Boolean(user.must_change)) {
+      run('UPDATE users SET must_change = ? WHERE id = ?', input.mustChange, user.id);
+      fields.push('mustChange');
+    }
     if (fields.length) audit('user_updated', { actor: actor.id, subject: user.id, request, details: { fields } });
     return { user: userView(getUser(user.id)!) };
   });
 
   app.delete<{ Params: { id: string }; Querystring: { transfer?: string } }>('/api/admin/users/:id', async (request) => {
     const actor = admin(request);
-    const user = person(Number(request.params.id));
+    const user = person(intOf(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     if (user.id === actor.id) throw badRequest('Dein eigenes Konto kannst du hier nicht löschen');
     if (user.role === 'admin' && adminCount() <= 1) throw badRequest('Es muss immer mindestens einen Admin geben');
-    const transferTo = request.query.transfer ? person(Number(request.query.transfer)) : null;
+    const transferTo = request.query.transfer ? person(intOf(request.query.transfer)) : null;
     if (request.query.transfer && (!transferTo || transferTo.id === user.id)) throw badRequest('Wähle eine andere Person für die Dateien');
     if (transferTo) {
       const folder = transferFiles(user, transferTo, t(preferredLanguage(transferTo), 'Von {name}', { name: user.name }));
@@ -357,7 +401,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/approve', async (request) => {
     const actor = admin(request);
-    const target = person(Number(request.params.id));
+    const target = person(intOf(request.params.id));
     if (!target) throw notFound('Diese Person gibt es nicht');
     if (!approveUser(target.id)) throw badRequest('Dieses Konto wartet nicht auf eine Freigabe');
     audit('user_approved', { actor: actor.id, subject: target.id, request, details: { username: target.username } });
@@ -381,7 +425,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/reset-2fa', async (request) => {
     const actor = admin(request);
-    const user = person(Number(request.params.id));
+    const user = person(intOf(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     resetTotp(user.id);
     audit('admin_2fa_reset', { actor: actor.id, subject: user.id, request });
@@ -390,7 +434,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/reset-passkeys', async (request) => {
     const actor = admin(request);
-    const user = person(Number(request.params.id));
+    const user = person(intOf(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     const removed = run('DELETE FROM passkeys WHERE user_id = ?', user.id).changes;
     audit('admin_2fa_reset', { actor: actor.id, subject: user.id, request, details: { passkeys: removed } });
@@ -399,7 +443,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/admin/users/:id/logout', async (request) => {
     const actor = admin(request);
-    const user = person(Number(request.params.id));
+    const user = person(intOf(request.params.id));
     if (!user) throw notFound('Diese Person gibt es nicht');
     destroyUserSessions(user.id);
     audit('admin_logout', { actor: actor.id, subject: user.id, request });
@@ -411,7 +455,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
     async (request) => {
       const actor = admin(request);
-      const user = person(Number(request.params.id));
+      const user = person(intOf(request.params.id));
       if (!user) throw notFound('Diese Person gibt es nicht');
       await sendResetByAdmin(request, actor, user).catch((error: Error) => {
         if (error.message === 'mail-not-configured') throw badRequest('Richte zuerst den E-Mail-Versand ein');
@@ -448,15 +492,44 @@ export async function adminRoutes(app: FastifyInstance) {
     ) {
       throw badRequest('Ohne Passkeys fehlt dir der zweite Faktor. Richte zuerst die Authenticator-App ein.');
     }
+    const wantsMail =
+      (input['auth.confirmEmail'] ?? settings.get('auth.confirmEmail')) || Boolean(input['auth.domains'] ?? settings.get('auth.domains'));
+    if (wantsMail && (changed.includes('auth.confirmEmail') || changed.includes('auth.domains')) && !mailReady()) {
+      throw badRequest('Richte zuerst den E-Mail-Versand ein. Ohne ihn kommt die Bestätigung nicht an');
+    }
     settings.setMany(input as Partial<settings.Settings>);
     if (settings.get('terms.required') && (changed.includes('terms.required') || changed.includes('site.terms'))) ensureTermsVersion(actor);
-    if (changed.includes('collabora.url')) forgetDiscovery();
+    if (changed.includes('collabora.url') || changed.includes('collabora.internal')) forgetDiscovery();
     if (changed.includes('site.seed')) settings.set('theme.site', null);
     if (maintenance !== undefined && changed.includes('maintenance.enabled')) {
       audit('maintenance', { actor: actor.id, request, details: { enabled: maintenance } });
     }
     const rest = changed.filter((key) => key !== 'site.palette' && key !== 'maintenance.enabled');
     if (rest.length) audit('settings_changed', { actor: actor.id, request, details: { keys: rest } });
+    return { settings: settings.adminView() };
+  });
+
+  app.put<{ Params: { kind: string } }>(
+    '/api/admin/branding/:kind',
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (request) => {
+      const actor = admin(request);
+      const kind = BRANDING.find((entry) => entry === request.params.kind);
+      if (!kind) throw notFound();
+      const body = request.body as Readable | undefined;
+      if (!body || typeof body.pipe !== 'function') throw badRequest('Schick das Bild als application/octet-stream');
+      await setBranding(kind, await readLimited(body));
+      audit('settings_changed', { actor: actor.id, request, details: { keys: [kind === 'logo' ? 'site.logo' : 'login.background'] } });
+      return { settings: settings.adminView() };
+    }
+  );
+
+  app.delete<{ Params: { kind: string } }>('/api/admin/branding/:kind', async (request) => {
+    const actor = admin(request);
+    const kind = BRANDING.find((entry) => entry === request.params.kind);
+    if (!kind) throw notFound();
+    await removeBranding(kind);
+    audit('settings_changed', { actor: actor.id, request, details: { keys: [kind === 'logo' ? 'site.logo' : 'login.background'] } });
     return { settings: settings.adminView() };
   });
 
@@ -610,8 +683,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { before?: string; user?: string; action?: string } }>('/api/admin/audit', async (request) => {
     admin(request);
-    const before = Number(request.query.before);
-    const user = Number(request.query.user);
+    const before = intOf(request.query.before);
+    const user = intOf(request.query.user);
     const actions = String(request.query.action ?? '')
       .split(',')
       .filter((action): action is AuditAction => (AUDIT_ACTIONS as readonly string[]).includes(action));
@@ -619,6 +692,28 @@ export async function adminRoutes(app: FastifyInstance) {
       ...listAudit({ before: before > 0 ? before : undefined, user: user > 0 ? user : undefined, actions, limit: 50 }),
       actions: AUDIT_ACTIONS,
     };
+  });
+
+  app.get<{ Querystring: { user?: string; action?: string } }>('/api/admin/audit/export', async (request, reply) => {
+    const actor = admin(request);
+    const user = intOf(request.query.user);
+    const actions = String(request.query.action ?? '')
+      .split(',')
+      .filter((action): action is AuditAction => (AUDIT_ACTIONS as readonly string[]).includes(action));
+    const csv = auditCsv({ user: user > 0 ? user : undefined, actions }, [
+      t(request.lang, 'Zeit'),
+      t(request.lang, 'Ereignis'),
+      t(request.lang, 'Benutzername'),
+      t(request.lang, 'Name'),
+      t(request.lang, 'Betrifft'),
+      t(request.lang, 'Adresse'),
+      t(request.lang, 'Details'),
+    ]);
+    audit('audit_exported', { actor: actor.id, request, details: { rows: csv.rows } });
+    return reply
+      .type('text/csv; charset=utf-8')
+      .header('Content-Disposition', contentDisposition(`moecloud-protokoll-${new Date().toISOString().slice(0, 10)}.csv`, 'attachment'))
+      .send(csv.text);
   });
 
   app.post('/api/admin/maintenance', async (request) => {

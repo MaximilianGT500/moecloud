@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { posix } from 'node:path';
 import { badRequest, notFound } from '../lib/errors.ts';
 import { openEntry } from './archive.ts';
@@ -11,7 +12,7 @@ export interface EpubInfo {
   chapters: { title: string | null; path: string }[];
 }
 
-const TYPES: Record<string, string> = {
+const TYPES: Record<string, string> = lookup({
   xhtml: 'application/xhtml+xml',
   xml: 'application/xhtml+xml',
   html: 'text/html; charset=utf-8',
@@ -30,12 +31,12 @@ const TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
   m4a: 'audio/mp4',
   mp4: 'video/mp4',
-};
+});
 
 export const epubType = (path: string) => TYPES[path.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
 
 export const EPUB_CSP =
-  "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
+  "sandbox allow-same-origin; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
 
 async function text(file: string, name: string) {
   const entry = await openEntry(file, name, MAX_XML);
@@ -44,7 +45,7 @@ async function text(file: string, name: string) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const ENTITIES: Record<string, string> = lookup({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
 
 const decode = (value: string) =>
   value

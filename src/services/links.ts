@@ -8,7 +8,8 @@ import { record } from './activity.ts';
 import { chain, getNode, requireAccess, resolveAccess, type NodeRow } from './nodes.ts';
 import { notify } from './notify.ts';
 import * as settings from './settings.ts';
-import { getUser, type UserRow } from './users.ts';
+import { findTheme } from './themes.ts';
+import { getUser, inactive, type UserRow } from './users.ts';
 
 export interface LinkRow {
   id: string;
@@ -33,6 +34,9 @@ export interface LinkRow {
   notified_at: number | null;
   slug: string | null;
   warned_at: number | null;
+  starts_at: number | null;
+  message: string | null;
+  theme: string | null;
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
@@ -56,16 +60,20 @@ export interface LinkInput {
   maxDownloads?: number | null;
   paused?: boolean;
   slug?: string | null;
+  startsAt?: number | null;
+  message?: string | null;
+  theme?: string | null;
 }
 
 export const getLink = (id: string) => one<LinkRow>('SELECT * FROM links WHERE id = ?', id);
 
 export const exhausted = (link: LinkRow) => Boolean(link.max_downloads && link.downloads >= link.max_downloads);
 
-export function linkState(link: LinkRow): 'active' | 'expired' | 'paused' | 'exhausted' {
+export function linkState(link: LinkRow): 'active' | 'expired' | 'paused' | 'exhausted' | 'scheduled' {
   if (link.expires_at && link.expires_at <= Date.now()) return 'expired';
   if (link.paused) return 'paused';
   if (exhausted(link)) return 'exhausted';
+  if (link.starts_at && link.starts_at > Date.now()) return 'scheduled';
   return 'active';
 }
 
@@ -149,11 +157,24 @@ export function warnExpiringLinks(now = Date.now()) {
   return warned;
 }
 
+export function linkBlock(link: LinkRow): 'account' | 'access' | null {
+  const owner = getUser(link.owner_id);
+  if (!owner) return 'account';
+  if (owner.role === 'team') return null;
+  if (inactive(owner)) return 'account';
+  if (link.created_by === link.owner_id) return null;
+  const creator = getUser(link.created_by);
+  if (!creator || inactive(creator)) return 'account';
+  const access = resolveAccess(creator, link.node_id);
+  return access && access.role !== 'view' ? null : 'access';
+}
+
 export function resolveToken(token: string) {
   const link = linkByToken(token);
   if (!link || linkState(link) !== 'active') return null;
   const node = getNode(link.node_id);
   if (!node || node.trashed_at) return null;
+  if (linkBlock(link)) return null;
   return { link, node };
 }
 
@@ -191,8 +212,26 @@ function expiry(input: number | null | undefined) {
   return limit ? Math.min(input, limit) : input;
 }
 
+function startOf(input: number | null | undefined, expiresAt: number | null, current: number | null = null) {
+  const start = input === undefined ? current : input;
+  if (!start) return null;
+  if (expiresAt && start >= expiresAt) throw badRequest('Der Beginn muss vor dem Ablaufdatum liegen');
+  return start;
+}
+
+function themeOf(input: string | null | undefined, current: string | null = null) {
+  if (input === undefined) return current;
+  if (!input) return null;
+  if (input === current) return input;
+  if (!findTheme(input)) throw badRequest('Dieses Theme gibt es nicht');
+  return input;
+}
+
+const messageOf = (input: string | null | undefined, current: string | null = null) =>
+  input === undefined ? current : input?.trim() || null;
+
 function canManage(user: UserRow, link: LinkRow) {
-  return link.created_by === user.id || link.owner_id === user.id || user.role === 'admin';
+  return link.created_by === user.id || link.owner_id === user.id;
 }
 
 function ownLink(user: UserRow, id: string) {
@@ -223,9 +262,12 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
   const id = randomId(16);
   const uploads = folder && Boolean(input.allowUpload || input.uploadOnly);
   const slug = slugFor(input.slug, null);
+  const expiresAt = expiry(input.expiresAt);
+  const startsAt = startOf(input.startsAt, expiresAt);
+  const theme = themeOf(input.theme);
   run(
-    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, max_downloads, notify_downloads, slug, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO links (id, token, node_id, owner_id, created_by, label, password_hash, expires_at, allow_download, allow_upload, upload_only, notify, max_downloads, notify_downloads, slug, starts_at, message, theme, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     randomId(22),
     node.id,
@@ -233,7 +275,7 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
     user.id,
     input.label?.trim() || null,
     password ? await hashPassword(password) : null,
-    expiry(input.expiresAt),
+    expiresAt,
     input.allowDownload ?? true,
     uploads,
     folder && Boolean(input.uploadOnly),
@@ -241,6 +283,9 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
     input.maxDownloads ?? null,
     (input.allowDownload ?? true) && !(folder && input.uploadOnly) && Boolean(input.notifyDownloads),
     slug,
+    startsAt,
+    messageOf(input.message),
+    theme,
     Date.now()
   );
   record({ owner: node.owner_id, actor: user.id, node: node.id, parent: node.parent_id, action: 'share_link', name: node.name });
@@ -260,7 +305,7 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
   const downloads = (input.allowDownload ?? Boolean(link.allow_download)) && !uploadOnly;
   const expiresAt = input.expiresAt === undefined ? link.expires_at : expiry(input.expiresAt);
   run(
-    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ?, max_downloads = ?, paused = ?, notify_downloads = ?, slug = ?, warned_at = ? WHERE id = ?`,
+    `UPDATE links SET label = ?, password_hash = ?, expires_at = ?, allow_download = ?, allow_upload = ?, upload_only = ?, notify = ?, max_downloads = ?, paused = ?, notify_downloads = ?, slug = ?, warned_at = ?, starts_at = ?, message = ?, theme = ? WHERE id = ?`,
     input.label === undefined ? link.label : input.label?.trim() || null,
     passwordHash,
     expiresAt,
@@ -273,6 +318,9 @@ export async function updateLink(user: UserRow, id: string, input: LinkInput & {
     downloads && (input.notifyDownloads ?? Boolean(link.notify_downloads)),
     slugFor(input.slug, link),
     expiresAt === link.expires_at ? link.warned_at : null,
+    startOf(input.startsAt, expiresAt, link.starts_at),
+    messageOf(input.message, link.message),
+    themeOf(input.theme, link.theme),
     id
   );
   return getLink(id)!;
@@ -352,6 +400,11 @@ export function presentLink(link: LinkRow, request: FastifyRequest) {
     downloads: link.downloads,
     maxDownloads: link.max_downloads,
     paused: Boolean(link.paused),
+    startsAt: link.starts_at,
+    scheduled: Boolean(link.starts_at && link.starts_at > Date.now()),
+    message: link.message,
+    theme: link.theme,
+    blocked: linkBlock(link),
     exhausted: exhausted(link),
     createdAt: link.created_at,
     lastAccessAt: link.last_access_at,

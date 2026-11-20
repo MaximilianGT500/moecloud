@@ -32,6 +32,7 @@ interface AdminLink {
   expired: boolean;
   paused?: boolean;
   exhausted?: boolean;
+  blocked?: 'account' | 'access' | null;
   allowDownload: boolean;
   allowUpload: boolean;
   uploadOnly: boolean;
@@ -186,7 +187,7 @@ export function LinksSection() {
       !query ||
       [link.label, link.node?.name, link.owner?.name, link.owner?.username].some((value) => (value ?? '').toLowerCase().includes(query))
   );
-  const active = (links ?? []).filter((link) => !link.expired && !link.paused && !link.exhausted).length;
+  const active = (links ?? []).filter((link) => !link.expired && !link.paused && !link.exhausted && !link.blocked).length;
 
   return (
     <>
@@ -250,6 +251,9 @@ export function LinksSection() {
                       {link.expired && <Chip size="small" label={t('Abgelaufen')} />}
                       {link.paused && <Chip size="small" label={t('Pausiert')} />}
                       {link.exhausted && <Chip size="small" label={t('Alle Downloads genutzt')} />}
+                      {link.blocked && (
+                        <Chip size="small" label={link.blocked === 'access' ? t('Ohne Zugriff, außer Kraft') : t('Konto gesperrt')} />
+                      )}
                       {link.node?.trashed && <Chip size="small" label={t('Im Papierkorb')} />}
                       {link.hasPassword && <Chip size="small" variant="outlined" label={t('Passwort')} />}
                       {(link.allowUpload || link.uploadOnly) && (

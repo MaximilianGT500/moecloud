@@ -28,7 +28,7 @@ export function isBlockedName(name: string) {
   const text = settings.get('storage.blockedTypes');
   if (!text) return false;
   if (parsed.text !== text) parsed = { text, list: new Set(splitTypes(text)) };
-  const extension = extensionOf(name);
+  const extension = extensionOf(name.replace(/[.\s]+$/, ''));
   return Boolean(extension) && parsed.list.has(extension);
 }
 

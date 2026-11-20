@@ -5,7 +5,7 @@ import { notFound } from '../lib/errors.ts';
 import { t } from '../lib/i18n.ts';
 import { me } from '../lib/request.ts';
 import { toVtt } from '../lib/subtitles.ts';
-import { ids, parse } from '../lib/validate.ts';
+import { ids, intOf, parse } from '../lib/validate.ts';
 import { pdfPage, tools } from '../services/media.ts';
 import { blobPath } from '../services/blobs.ts';
 import { getPosition, savePosition, subtitleNode, subtitlesOf } from '../services/media-state.ts';
@@ -36,9 +36,9 @@ export async function toolRoutes(app: FastifyInstance) {
     { compress: false },
     async (request, reply) => {
       const path = pdfPath(me(request), request.params.id);
-      const page = Number(request.params.page);
+      const page = intOf(request.params.page);
       if (!tools.pdftoppm || !Number.isInteger(page) || page < 1 || page > 2000) throw notFound();
-      const size = Math.min(1200, Math.max(120, Number(request.query.size) || 360));
+      const size = Math.min(1200, Math.max(120, intOf(request.query.size) || 360));
       const image = await pdfPage(path, page, size).catch(() => null);
       if (!image?.length) throw notFound();
       return reply.header('Content-Type', 'image/png').header('Cache-Control', 'private, max-age=3600').send(image);

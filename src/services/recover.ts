@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import type { Dirent } from 'node:fs';
 import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -39,7 +40,7 @@ const RAW_MAGIC: [string, number, string][] = [
   ['HEAPCCDR', 6, 'crw'],
 ];
 
-const AUDIO_ONLY: Record<string, string> = { mp4: 'm4a', mkv: 'mka', webm: 'weba', asf: 'wma' };
+const AUDIO_ONLY: Record<string, string> = lookup({ mp4: 'm4a', mkv: 'mka', webm: 'weba', asf: 'wma' });
 const PLAIN_TEXT = new Set(['md', 'txt']);
 const OFFICE_TEXT = new Set(['docx', 'odt', 'pptx', 'odp']);
 const HINT_LENGTH = 60;

@@ -48,7 +48,9 @@ import { deviceOf, formatDate, formatDateTime } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { setPrefs, usePrefs } from '../../lib/prefs';
 import { c, fonts, radius } from '../../theme/tokens';
-import { AppShell } from '../shell/AppShell';
+import { AppShell, DEFAULT_BAR, navEntries } from '../shell/AppShell';
+import { ArrangeDialog, type Arrangement } from '../common/Arrange';
+import { usePlugins } from '../common/plugins';
 import { auditDetail, auditLabel, type AuditEntry } from '../common/audit';
 import { CopyField, QrCode, Row, Section, StorageMeter, copyText } from '../common/bits';
 import { AvatarEdit } from './AvatarEdit';
@@ -74,6 +76,8 @@ interface Prefs extends MailPrefs {
   quiet: { from: number; to: number } | null;
   zone: string;
   start?: 'files' | 'home';
+  nav?: Arrangement | null;
+  home?: Arrangement | null;
 }
 
 const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -112,6 +116,7 @@ interface Account {
       lastUsedAt: number | null;
       readOnly?: boolean;
       shared?: boolean;
+      admin?: boolean;
       expiresAt?: number | null;
       expired?: boolean;
     }[];
@@ -496,16 +501,232 @@ function PasswordDialog({ open, hasPassword, min, onClose }: { open: boolean; ha
   );
 }
 
+function SecureDialog({
+  open,
+  hasPassword,
+  onClose,
+  onDone,
+}: {
+  open: boolean;
+  hasPassword: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [sessions, setSessions] = useState(true);
+  const [appPasswords, setAppPasswords] = useState(true);
+  const [links, setLinks] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState('');
+  const close = () => {
+    if (busy) return;
+    setPassword('');
+    setError('');
+    setResult('');
+    onClose();
+  };
+  const options: [boolean, (value: boolean) => void, string, string][] = [
+    [
+      sessions,
+      setSessions,
+      t('Alle anderen Geräte abmelden'),
+      t('Nur dieser Browser bleibt angemeldet. Offene Links zum Zurücksetzen des Passworts verfallen.'),
+    ],
+    [
+      appPasswords,
+      setAppPasswords,
+      t('Alle App-Passwörter widerrufen'),
+      t('Laufwerke, Apps und Skripte brauchen danach ein neues App-Passwort.'),
+    ],
+    [
+      links,
+      setLinks,
+      t('Meine öffentlichen Links pausieren'),
+      t('Niemand kommt mehr über einen Link an deine Dateien, bis du ihn wieder freigibst.'),
+    ],
+  ];
+  return (
+    <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (busy || (hasPassword && !password) || !(sessions || appPasswords || links)) return;
+          setBusy(true);
+          setError('');
+          try {
+            const done = await api.post<{ sessions: number; appPasswords: number; links: number }>('/api/account/secure', {
+              password: hasPassword ? password : undefined,
+              sessions,
+              appPasswords,
+              links,
+            });
+            setResult(
+              t('Erledigt: {sessions} Sitzungen beendet, {tokens} App-Passwörter widerrufen, {links} Links pausiert', {
+                sessions: done.sessions,
+                tokens: done.appPasswords,
+                links: done.links,
+              })
+            );
+            setPassword('');
+            onDone();
+          } catch (failure) {
+            setError(errorText(failure));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <DialogTitle>{t('Konto absichern')}</DialogTitle>
+        {result ? (
+          <>
+            <DialogContent>
+              <Alert severity="success">{result}</Alert>
+            </DialogContent>
+            <DialogActions>
+              <Button variant="contained" onClick={close}>
+                {t('Fertig')}
+              </Button>
+            </DialogActions>
+          </>
+        ) : (
+          <>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <DialogContentText>
+                {t(
+                  'Für den Fall, dass ein Gerät weg ist oder jemand an dein Konto gekommen sein könnte. Ändere danach dein Passwort, falls du es noch nicht getan hast.'
+                )}
+              </DialogContentText>
+              {error && <Alert severity="error">{error}</Alert>}
+              {options.map(([checked, set, title, text]) => (
+                <FormControlLabel
+                  key={title}
+                  sx={{ alignItems: 'flex-start', m: 0, gap: 1 }}
+                  control={<Checkbox checked={checked} onChange={(event) => set(event.target.checked)} sx={{ mt: -1 }} />}
+                  label={
+                    <Box>
+                      <Typography variant="body1">{title}</Typography>
+                      <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+                        {text}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              ))}
+              {hasPassword && (
+                <TextField
+                  type="password"
+                  label={t('Aktuelles Passwort')}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={busy}
+                />
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={close} disabled={busy}>
+                {t('Abbrechen')}
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                color="error"
+                disabled={busy || (hasPassword && !password) || !(sessions || appPasswords || links)}
+              >
+                {t('Jetzt absichern')}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </form>
+    </Dialog>
+  );
+}
+
+function ConfirmEmailDialog({
+  open,
+  email,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  email: string;
+  onClose: () => void;
+  onConfirm: (password: string) => Promise<string | null>;
+}) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const close = () => {
+    if (busy) return;
+    setPassword('');
+    setError('');
+    onClose();
+  };
+  return (
+    <Dialog open={open} onClose={close} fullWidth maxWidth="xs">
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!password || busy) return;
+          setBusy(true);
+          setError('');
+          const failure = await onConfirm(password);
+          setBusy(false);
+          if (failure) return setError(failure);
+          setPassword('');
+          onClose();
+        }}
+      >
+        <DialogTitle>{t('E-Mail-Adresse ändern')}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <DialogContentText>
+            {email
+              ? t(
+                  'Bestätige mit deinem Passwort, dass ab jetzt {email} zu deinem Konto gehört. Über diese Adresse lässt sich das Passwort zurücksetzen.',
+                  {
+                    email,
+                  }
+                )
+              : t('Bestätige mit deinem Passwort, dass bei deinem Konto keine E-Mail-Adresse mehr stehen soll.')}
+          </DialogContentText>
+          {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            type="password"
+            label={t('Aktuelles Passwort')}
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={busy}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={close} disabled={busy}>
+            {t('Abbrechen')}
+          </Button>
+          <Button type="submit" variant="contained" disabled={!password || busy}>
+            {t('Adresse ändern')}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+}
+
 function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const user = boot().user!;
   const [name, setName] = useState('');
   const [readOnly, setReadOnly] = useState(false);
   const [shared, setShared] = useState(user.role === 'guest');
+  const [manage, setManage] = useState(false);
   const [days, setDays] = useState(0);
   const [token, setToken] = useState<string | null>(null);
   const close = () => {
     setName('');
     setReadOnly(false);
+    setManage(false);
     setShared(user.role === 'guest');
     setDays(0);
     setToken(null);
@@ -550,7 +771,16 @@ function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClos
             </TextField>
             <FormControlLabel
               sx={{ alignItems: 'flex-start', m: 0, gap: 1 }}
-              control={<Checkbox checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} sx={{ mt: -1 }} />}
+              control={
+                <Checkbox
+                  checked={readOnly}
+                  onChange={(event) => {
+                    setReadOnly(event.target.checked);
+                    if (event.target.checked) setManage(false);
+                  }}
+                  sx={{ mt: -1 }}
+                />
+              }
               label={
                 <Box>
                   <Typography variant="body1">{t('Nur lesen')}</Typography>
@@ -574,6 +804,24 @@ function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClos
                 </Box>
               }
             />
+            {user.role === 'admin' && (
+              <FormControlLabel
+                sx={{ alignItems: 'flex-start', m: 0, gap: 1 }}
+                control={
+                  <Checkbox checked={manage} disabled={readOnly} onChange={(event) => setManage(event.target.checked)} sx={{ mt: -1 }} />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body1">{t('Darf die Verwaltung bedienen')}</Typography>
+                    <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+                      {t(
+                        'Nur für Skripte, die Personen, Einstellungen oder Sicherungen verwalten. Ohne den Haken kommt das App-Passwort an nichts unter Admin.'
+                      )}
+                    </Typography>
+                  </Box>
+                }
+              />
+            )}
           </Field>
         )}
       </DialogContent>
@@ -594,6 +842,7 @@ function AppPasswordDialog({ open, onClose, onCreated }: { open: boolean; onClos
                     name,
                     readOnly,
                     shared,
+                    ...(manage ? { admin: true } : {}),
                     expiresAt: days ? Date.now() + days * 24 * 60 * 60 * 1000 : null,
                   });
                   setToken(result.token);
@@ -1102,8 +1351,10 @@ export function AccountPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [dialog, setDialog] = useState<'password' | 'totp' | 'disable' | 'recovery' | 'app' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'password' | 'totp' | 'disable' | 'recovery' | 'app' | 'delete' | 'email' | 'secure' | null>(null);
   const prefs = usePrefs();
+  const [arranging, setArranging] = useState(false);
+  const { pages } = usePlugins();
   const control = useThemeControl();
   const supportsPasskeys = typeof window !== 'undefined' && browserSupportsWebAuthn() && window.isSecureContext;
 
@@ -1131,13 +1382,20 @@ export function AccountPage() {
     document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: 'start' });
   }, [ready]);
 
-  const saveProfile = async () => {
+  const saveProfile = async (password?: string) => {
+    const changed = email !== (account?.user.email ?? '');
+    if (changed && account?.security.hasPassword && password === undefined) {
+      setDialog('email');
+      return null;
+    }
     try {
-      await api.patch('/api/account', { name, email });
+      await api.patch('/api/account', { name, ...(changed ? { email, password } : {}) });
       toast(t('Gespeichert'));
       void load();
+      return null;
     } catch (error) {
-      toast(errorText(error));
+      if (password === undefined) toast(errorText(error));
+      return errorText(error);
     }
   };
 
@@ -1377,6 +1635,42 @@ export function AccountPage() {
 
             <Section title={t('Darstellung')} action={<ThemeToggleButton placement="bottom" />}>
               {!locked && <ThemeChoice />}
+              {!locked && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Box sx={{ flex: 1, minWidth: 220 }}>
+                    <Typography variant="subtitle2">{t('Navigation')}</Typography>
+                    <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                      {t('Leg fest, was in der Seitenleiste steht und in welcher Reihenfolge. Das gilt auf allen deinen Geräten.')}
+                    </Typography>
+                  </Box>
+                  <Button variant="tonal" onClick={() => setArranging(true)}>
+                    {t('Navigation anpassen')}
+                  </Button>
+                </Box>
+              )}
+              {arranging && (
+                <ArrangeDialog
+                  title={t('Navigation anpassen')}
+                  text={t(
+                    'Schieb die Einträge in deine Reihenfolge und blende aus, was du nicht brauchst. Mit dem Handy-Symbol wählst du bis zu vier Einträge für die untere Leiste.'
+                  )}
+                  entries={navEntries(account.user, pages)}
+                  value={account.prefs.nav ?? null}
+                  defaultBar={DEFAULT_BAR}
+                  onClose={() => setArranging(false)}
+                  onSave={async (nav) => {
+                    try {
+                      await api.patch('/api/account/prefs', { nav });
+                      boot().nav = nav;
+                      setAccount({ ...account, prefs: { ...account.prefs, nav } });
+                      setArranging(false);
+                      toast(nav ? t('Navigation gespeichert') : t('Navigation zurückgesetzt'));
+                    } catch (error) {
+                      toast(errorText(error));
+                    }
+                  }}
+                />
+              )}
               <Typography variant="subtitle2" sx={{ mt: 1 }}>
                 {t('Nur in diesem Browser')}
               </Typography>
@@ -1415,6 +1709,51 @@ export function AccountPage() {
                     <ToggleButton value={0.1}>{t('Kantig')}</ToggleButton>
                   </ToggleButtonGroup>
                 </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="subtitle2">{t('Schriftgröße')}</Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    fullWidth
+                    value={prefs.scale}
+                    onChange={(_event, value) => value !== null && setPrefs({ scale: value })}
+                    aria-label={t('Schriftgröße')}
+                  >
+                    <ToggleButton value={0.9}>{t('Klein')}</ToggleButton>
+                    <ToggleButton value={1}>{t('Normal')}</ToggleButton>
+                    <ToggleButton value={1.1}>{t('Groß')}</ToggleButton>
+                    <ToggleButton value={1.25}>{t('Sehr groß')}</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="subtitle2">{t('Zeilen in Listen')}</Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    fullWidth
+                    value={prefs.density}
+                    onChange={(_event, value) => value !== null && setPrefs({ density: value })}
+                    aria-label={t('Zeilen in Listen')}
+                  >
+                    <ToggleButton value="comfortable">{t('Luftig')}</ToggleButton>
+                    <ToggleButton value="compact">{t('Kompakt')}</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="subtitle2">{t('Kacheln in der Rasteransicht')}</Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    fullWidth
+                    value={prefs.tile}
+                    onChange={(_event, value) => value !== null && setPrefs({ tile: value })}
+                    aria-label={t('Kacheln in der Rasteransicht')}
+                  >
+                    <ToggleButton value={0.75}>{t('Klein')}</ToggleButton>
+                    <ToggleButton value={1}>{t('Mittel')}</ToggleButton>
+                    <ToggleButton value={1.35}>{t('Groß')}</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
                 <FormControlLabel
                   control={<Switch checked={prefs.trueBlack} onChange={(event) => setPrefs({ trueBlack: event.target.checked })} />}
                   label={
@@ -1429,6 +1768,44 @@ export function AccountPage() {
                   }
                   sx={{ alignItems: 'center', m: 0, gap: 1 }}
                 />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={prefs.backdrop === 'glow'}
+                      onChange={(event) => setPrefs({ backdrop: event.target.checked ? 'glow' : 'plain' })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {t('Farbschimmer im Hintergrund')}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                        {t('Legt einen weichen Verlauf in den Farben des Themes hinter die Oberfläche.')}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'center', m: 0, gap: 1 }}
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={prefs.motion === 'reduced'}
+                      onChange={(event) => setPrefs({ motion: event.target.checked ? 'reduced' : 'system' })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {t('Weniger Bewegung')}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                        {t('Schaltet Übergänge und Animationen ab, auch wenn dein Gerät sie erlaubt.')}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'center', m: 0, gap: 1 }}
+                />
               </Box>
             </Section>
 
@@ -1436,7 +1813,11 @@ export function AccountPage() {
 
             {account.pushEnabled && !locked && <PushSection account={account} onChanged={() => void load()} />}
 
-            <Section title={t('Sicherheit')} description={t('Je mehr du einrichtest, desto schwerer kommen Fremde an deine Dateien.')}>
+            <Section
+              id="sicherheit"
+              title={t('Sicherheit')}
+              description={t('Je mehr du einrichtest, desto schwerer kommen Fremde an deine Dateien.')}
+            >
               <Row
                 icon={<LockResetRounded />}
                 title={t('Passwort')}
@@ -1583,6 +1964,17 @@ export function AccountPage() {
                   ))}
                 </>
               )}
+              <Divider />
+              <Row
+                icon={<ShieldRounded />}
+                title={t('Konto absichern')}
+                text={t('Meldet andere Geräte ab, widerruft App-Passwörter und pausiert auf Wunsch deine Links, alles in einem Schritt.')}
+                action={
+                  <Button variant="tonal" onClick={() => setDialog('secure')}>
+                    {t('Absichern')}
+                  </Button>
+                }
+              />
             </Section>
 
             {!locked && (
@@ -1604,6 +1996,7 @@ export function AccountPage() {
                     text={[
                       `…${entry.hint}`,
                       entry.readOnly ? t('nur lesen') : null,
+                      entry.admin ? t('mit Verwaltung') : null,
                       entry.shared ? t('mit Teamordnern und Geteiltem') : null,
                       entry.expired ? t('abgelaufen') : null,
                       entry.expiresAt && !entry.expired ? t('gültig bis {date}', { date: formatDate(entry.expiresAt) }) : null,
@@ -1754,6 +2147,13 @@ export function AccountPage() {
         }}
       />
       <AppPasswordDialog open={dialog === 'app'} onClose={() => setDialog(null)} onCreated={() => void load()} />
+      <ConfirmEmailDialog open={dialog === 'email'} email={email} onClose={() => setDialog(null)} onConfirm={saveProfile} />
+      <SecureDialog
+        open={dialog === 'secure'}
+        hasPassword={Boolean(account?.security.hasPassword)}
+        onClose={() => setDialog(null)}
+        onDone={() => void load()}
+      />
       {account && (
         <DeleteAccountDialog
           open={dialog === 'delete'}

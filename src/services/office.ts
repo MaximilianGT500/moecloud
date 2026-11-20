@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { createWriteStream, openAsBlob } from 'node:fs';
 import { copyFile, mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,7 +32,7 @@ export const OFFICE_EXTENSIONS = [
 export const OFFICE_LIMIT = 100 * 1024 * 1024;
 const TIMEOUT = 120_000;
 const FAILURE_PAUSE = 5 * 60_000;
-const SERVICE_NAMES: Record<string, string> = { ppsx: 'pptx' };
+const SERVICE_NAMES: Record<string, string> = lookup({ ppsx: 'pptx' });
 const PATTERN = new RegExp(`\\.(${OFFICE_EXTENSIONS.join('|')})$`, 'i');
 
 const PROFILE = `<?xml version="1.0" encoding="UTF-8"?>

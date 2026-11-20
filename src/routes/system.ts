@@ -3,11 +3,16 @@ import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { config } from '../config.ts';
 import { run, value } from '../lib/db.ts';
-import { safeRedirect } from '../lib/http.ts';
-import { isLang } from '../lib/i18n.ts';
+import { notFound } from '../lib/errors.ts';
+import { safeRedirect, sendFile } from '../lib/http.ts';
+import { isLang, t } from '../lib/i18n.ts';
 import { setLanguageCookie } from '../lib/request.ts';
+import { BRANDING, brandingFile } from '../services/branding.ts';
 import * as settings from '../services/settings.ts';
 import { SERVICE_WORKER } from '../services/webpush.ts';
+
+const SHARE_FALLBACK_LIMIT = 256 * 1024 * 1024;
+const SHARE_ANONYMOUS_LIMIT = 1024 * 1024;
 
 export async function systemRoutes(app: FastifyInstance) {
   app.get('/healthz', { compress: false }, async (_request, reply) => {
@@ -39,9 +44,26 @@ export async function systemRoutes(app: FastifyInstance) {
     });
   }
 
+  app.get<{ Params: { kind: string } }>('/branding/:kind', { compress: false }, async (request, reply) => {
+    const kind = BRANDING.find((entry) => entry === request.params.kind);
+    const file = kind ? await brandingFile(kind) : null;
+    if (!file) throw notFound();
+    return sendFile(request, reply, {
+      path: file.path,
+      size: file.size,
+      type: 'image/webp',
+      etag: `b-${file.stamp}`,
+      modified: file.modified,
+      name: `${kind}.webp`,
+      disposition: 'inline',
+      cache: 'public, max-age=31536000, immutable',
+    });
+  });
+
   app.get('/manifest.webmanifest', async (_request, reply) => {
     const palette = settings.get('site.palette');
     const name = settings.get('site.name');
+    const lang = settings.get('site.language');
     return reply.type('application/manifest+json').send({
       name,
       short_name: name,
@@ -55,7 +77,36 @@ export async function systemRoutes(app: FastifyInstance) {
         { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
         { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
+      shortcuts: [
+        { name: t(lang, 'Notizen'), url: '/files/notes' },
+        { name: t(lang, 'Fotos'), url: '/files/photos' },
+        { name: t(lang, 'Zuletzt'), url: '/files/recent' },
+        { name: t(lang, 'Favoriten'), url: '/files/starred' },
+      ].map((entry) => ({ ...entry, icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] })),
+      share_target: {
+        action: '/share-target',
+        method: 'POST',
+        enctype: 'multipart/form-data',
+        params: { title: 'title', text: 'text', url: 'url', files: [{ name: 'files', accept: ['*/*'] }] },
+      },
     });
+  });
+
+  await app.register(async (plain) => {
+    plain.removeAllContentTypeParsers();
+    plain.addContentTypeParser('*', (request, payload, done) => {
+      const limit = request.auth?.session ? SHARE_FALLBACK_LIMIT : SHARE_ANONYMOUS_LIMIT;
+      let received = 0;
+      payload.on('data', (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > limit) payload.destroy(new Error('too-large'));
+      });
+      payload.on('end', () => done(null, undefined));
+      payload.on('error', (error) => done(error));
+    });
+    plain.post('/share-target', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (_request, reply) =>
+      reply.redirect('/files?geteilt=0', 303)
+    );
   });
 
   app.get<{ Params: { lang: string }; Querystring: { next?: string } }>('/lang/:lang', async (request, reply) => {

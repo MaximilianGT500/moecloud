@@ -1,5 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import {
+  allowedDomains,
+  confirmationWanted,
+  confirmEmail,
+  domainAllowed,
+  PENDING_APPROVAL,
+  PENDING_EMAIL,
+  sendConfirmation,
+} from '../services/confirmations.ts';
 import { HttpError, badRequest, forbidden, notFound, unauthorized } from '../lib/errors.ts';
 import { renderDocument } from '../lib/html.ts';
 import { isSecure, safeRedirect } from '../lib/http.ts';
@@ -7,7 +16,7 @@ import { t } from '../lib/i18n.ts';
 import { body, checkFormCsrf } from '../lib/request.ts';
 import { parse, displayName, email, password, username } from '../lib/validate.ts';
 import { randomId } from '../lib/crypto.ts';
-import { forgotPage, loginPage, registerPage, resetPage, secondFactorPage } from '../views/pages.ts';
+import { forgotPage, loginPage, messagePage, registerPage, resetPage, secondFactorPage } from '../views/pages.ts';
 import { audit } from '../services/audit.ts';
 import {
   finishSecondFactor,
@@ -29,7 +38,7 @@ import { authenticate, authenticationOptions } from '../services/passkeys.ts';
 import { clearSessionCookie, createSession, destroySession } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { isSetUp } from '../services/setup.ts';
-import { createUser, type UserRow } from '../services/users.ts';
+import { createUser, deleteUser, findByLogin, type UserRow } from '../services/users.ts';
 import { baseUrl } from '../services/links.ts';
 
 const PENDING_COOKIE = 'moe_2fa';
@@ -118,6 +127,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.redirect(next, 303);
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 400;
+      if (error instanceof HttpError && error.code === 'email_unconfirmed') {
+        const waiting = findByLogin(login);
+        if (waiting) {
+          await sendConfirmation(request, waiting).catch((failure: Error) =>
+            request.log.warn({ error: failure.message }, 'Mail zur Bestätigung fehlgeschlagen')
+          );
+        }
+      }
       return showLogin(request, reply, { next, login, error: message(request, error), status });
     }
   });
@@ -267,7 +284,23 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       checkFormCsrf(request, form._csrf);
       const input = parse(registerSchema, form);
+      const confirm = !invite && confirmationWanted();
+      if (confirm) {
+        if (!mailReady()) {
+          throw new HttpError(
+            503,
+            'Neue Konten lassen sich gerade nicht anlegen, weil der E-Mail-Versand fehlt. Sag der Verwaltung Bescheid'
+          );
+        }
+        if (!input.email) throw badRequest('Gib deine E-Mail-Adresse an. Dorthin schicken wir den Link zum Bestätigen');
+        if (!domainAllowed(input.email)) {
+          throw badRequest('Mit dieser E-Mail-Adresse kannst du hier kein Konto anlegen. Erlaubt sind Adressen von {domains}', {
+            domains: allowedDomains().join(', '),
+          });
+        }
+      }
       await checkPassword(input.password);
+      const approval = !invite && settings.get('auth.registration') === 'approval';
       const user = await createUser({
         username: input.username,
         name: input.name,
@@ -276,8 +309,25 @@ export async function authRoutes(app: FastifyInstance) {
         quota: invite?.quota_bytes ?? null,
         role: invite?.role === 'guest' ? 'guest' : 'user',
         language: request.lang,
-        pending: !invite && settings.get('auth.registration') === 'approval',
+        pending: (approval ? PENDING_APPROVAL : 0) | (confirm ? PENDING_EMAIL : 0),
       });
+      if (confirm) {
+        audit('registered', { actor: user.id, request, details: { invite: false, pending: approval, confirm: true } });
+        try {
+          await sendConfirmation(request, user);
+        } catch (error) {
+          request.log.warn({ error: (error as Error).message }, 'Mail zur Bestätigung fehlgeschlagen');
+          deleteUser(user.id);
+          throw new HttpError(502, 'Die E-Mail zum Bestätigen ließ sich nicht verschicken. Versuch es später noch einmal');
+        }
+        return showLogin(request, reply, {
+          next: '/files',
+          notice: t(
+            request.lang,
+            'Fast geschafft. Wir haben dir eine E-Mail geschickt, öffne den Link darin, um dein Konto zu bestätigen.'
+          ),
+        });
+      }
       if (user.pending) {
         audit('registered', { actor: user.id, request, details: { invite: false, pending: true } });
         notifyAdmins('admin_pending', { name: user.name, username: user.username }, '/admin/people');
@@ -308,6 +358,42 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
   });
+
+  app.get<{ Querystring: { token?: string } }>(
+    '/register/confirm',
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (request, reply) => {
+      if (!isSetUp()) return reply.redirect('/setup');
+      const result = confirmEmail(String(request.query.token ?? ''));
+      if (!result) {
+        return renderDocument(request, reply, {
+          title: t(request.lang, 'Link ungültig'),
+          status: 404,
+          body: messagePage(request, {
+            icon: 'linkOff',
+            title: t(request.lang, 'Dieser Link funktioniert nicht mehr'),
+            text: t(
+              request.lang,
+              'Er ist abgelaufen oder wurde schon benutzt. Melde dich mit deinem Passwort an, dann schicken wir dir bei Bedarf einen neuen.'
+            ),
+            action: { href: '/login', label: t(request.lang, 'Zur Anmeldung') },
+          }),
+        });
+      }
+      const { user, changed } = result;
+      if (changed) {
+        audit('email_confirmed', { actor: user.id, request, details: { username: user.username } });
+        notifyAdmins(user.pending ? 'admin_pending' : 'admin_user', { name: user.name, username: user.username }, '/admin/people');
+      }
+      return showLogin(request, reply, {
+        next: '/files',
+        login: user.username,
+        notice: user.pending
+          ? t(request.lang, 'Deine E-Mail-Adresse ist bestätigt. Dein Konto wartet jetzt auf die Freigabe durch die Verwaltung.')
+          : t(request.lang, 'Deine E-Mail-Adresse ist bestätigt. Du kannst dich jetzt anmelden.'),
+      });
+    }
+  );
 
   app.post('/logout', async (request, reply) => {
     const form = body<{ _csrf?: string }>(request);

@@ -1,6 +1,8 @@
 import { badRequest } from './errors.ts';
 
-const FORBIDDEN = /[/\\\u0000-\u001f\u007f]/;
+const FORBIDDEN = new RegExp(
+  `[/\\\\\\x00-\\x1f\\x7f${String.fromCharCode(0x202a)}-${String.fromCharCode(0x202e)}${String.fromCharCode(0x2066)}-${String.fromCharCode(0x2069)}]`
+);
 
 export function cleanName(input: unknown): string {
   const name = String(input ?? '')

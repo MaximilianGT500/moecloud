@@ -5,7 +5,7 @@ import { memories } from './library.ts';
 import { present, recent, resolveAccess, starred, teamOwners, type NodeRow } from './nodes.ts';
 import { listReminders } from './reminders.ts';
 import { presentTeam, teamsFor } from './teams.ts';
-import { storageOf, type UserRow } from './users.ts';
+import { prefsOf, storageOf, type UserRow } from './users.ts';
 
 const RECENT = 10;
 
@@ -34,6 +34,7 @@ export function homeFor(user: UserRow, date: string, offset: number) {
   return {
     name: user.name,
     guest,
+    layout: prefsOf(user).home,
     recent: present(latest, user, roleOf),
     starred: present(starred(user).slice(0, 8), user, roleOf),
     shared: present(shares, user, roleOf),

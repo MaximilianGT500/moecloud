@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { spawn } from 'node:child_process';
 import { config } from '../config.ts';
 
@@ -141,7 +142,7 @@ export async function videoFrame(path: string): Promise<Buffer> {
 
 const still = (decoder: string) => ['-f', 'image2', '-pattern_type', 'none', '-c:v', decoder];
 
-const FRAME_INPUT: Record<string, string[]> = {
+const FRAME_INPUT: Record<string, string[]> = lookup({
   'image/bmp': still('bmp'),
   'image/vnd.adobe.photoshop': still('psd'),
   'image/jp2': still('jpeg2000'),
@@ -159,7 +160,7 @@ const FRAME_INPUT: Record<string, string[]> = {
   'image/vnd.microsoft.icon': ['-f', 'ico'],
   'image/x-icon': ['-f', 'ico'],
   'image/jxl': [],
-};
+});
 
 export const canFrame = (type: string | null) => Object.hasOwn(FRAME_INPUT, type ?? '');
 

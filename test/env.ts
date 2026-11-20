@@ -16,7 +16,16 @@ if (server && isMainThread) {
   const client = new pg.Client({ connectionString: server });
   await client.connect();
   const stale = await client.query("SELECT datname FROM pg_database WHERE datname LIKE 'moecloud_test_%'");
-  for (const row of stale.rows) await client.query(`DROP DATABASE IF EXISTS "${row.datname}" WITH (FORCE)`);
+  for (const row of stale.rows) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await client.query(`DROP DATABASE IF EXISTS "${row.datname}" WITH (FORCE)`);
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  }
   await client.query(`CREATE DATABASE "${name}"`);
   await client.end();
   const url = new URL(server);

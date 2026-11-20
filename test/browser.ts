@@ -159,7 +159,8 @@ async function api<T>(page: Page, method: string, path: string, body?: unknown):
       const session = (await (await fetch('/api/session')).json()) as { csrf: string };
       const response = await fetch(path, {
         method,
-        headers: { 'content-type': 'application/json', 'x-csrf-token': session.csrf },
+        headers:
+          body === undefined ? { 'x-csrf-token': session.csrf } : { 'content-type': 'application/json', 'x-csrf-token': session.csrf },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       if (!response.ok) throw new Error(`${method} ${path}: ${response.status}`);
@@ -1199,7 +1200,8 @@ try {
     await editor.getByRole('combobox', { name: 'Stil' }).click();
     await page.getByRole('option', { name: /Farbtreu/ }).click();
     await editor.getByRole('textbox', { name: 'Dritte Farbe', exact: true }).fill('#7c3aed');
-    await editor.getByRole('button', { name: 'Serifen' }).click();
+    await editor.getByRole('combobox', { name: 'Schrift' }).click();
+    await page.getByRole('option', { name: 'Serifen' }).click();
     await waitFor('--moe-font', 'Iowan');
     await editor.getByLabel('Eigenes CSS (freiwillig)').fill('.MuiDialogTitle-root { letter-spacing: 0.02em; }');
     await page.waitForFunction(() => document.getElementById('moe-theme-css')?.textContent?.includes('letter-spacing'));
@@ -1408,8 +1410,9 @@ try {
     await options.filter({ hasText: 'Strand.jpg' }).first().waitFor();
     if ((await options.first().textContent())?.includes('Strand') !== true) throw new Error('Gefundene Dateien stehen nicht oben');
     await page.keyboard.press('Enter');
-    await page.waitForURL(/\/files\/folder\/\w+\?select=\w+/);
+    await page.waitForURL(/\/files\/folder\/\w+/);
     await item(page, 'Strand.jpg').waitFor();
+    await page.getByRole('row', { selected: true }).filter({ hasText: 'Strand.jpg' }).waitFor();
 
     await page.keyboard.press('Control+k');
     await box.fill('theme oz');
@@ -1720,7 +1723,7 @@ try {
     const office = await fakeCollabora(edited);
     try {
       await page.goto(`${base}/admin/settings`);
-      await page.getByLabel('Adresse von Collabora Online').fill(office.url);
+      await page.getByLabel('Eigene Adresse von Collabora').fill(office.url);
       await page.getByRole('button', { name: /Änderung(en)? speichern$/ }).click();
       await page.getByText(/Collabora antwortet\. 4 Dateiformate lassen sich bearbeiten, darunter docx, xlsx, pptx, odt\./).waitFor();
       await page.goto(`${base}/files`);
@@ -1766,6 +1769,8 @@ try {
       await page.getByRole('menuitem', { name: 'In Office bearbeiten', exact: true }).waitFor();
       await page.getByRole('menuitem', { name: 'Vorschau', exact: true }).waitFor();
       await page.keyboard.press('Escape');
+      await page.goto(`${base}/files`);
+      await item(page, 'Dokument.docx').waitFor();
       await api(page, 'POST', '/api/nodes/trash', { ids: [document.id] });
     } finally {
       await api(page, 'PATCH', '/api/admin/settings', { 'collabora.url': '' });
@@ -1982,6 +1987,570 @@ try {
     await api(page, 'PATCH', '/api/admin/settings', { 'auth.registration': 'closed' });
   });
 
+  await step('Ordnersymbol und Weblink', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Symbol', exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Symbol' }).getByRole('radio', { name: 'Arbeit' }).click();
+    await page.locator('[data-folder-icon=work]').first().waitFor({ state: 'attached' });
+    await item(page, 'Fotos').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Symbol', exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Symbol' }).getByRole('radio', { name: 'Fotos' }).click();
+    await page.locator('[data-folder-icon=photo]').first().waitFor({ state: 'attached' });
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Als Kacheln zeigen' }).click();
+    await page.locator('[data-folder-icon=photo]').first().waitFor();
+    await shot(page, 'ordner-symbole');
+    await page.getByRole('button', { name: 'Als Liste zeigen' }).click();
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Neuer Weblink' }).click();
+    const prompt = page.getByRole('dialog');
+    await prompt.getByLabel('Adresse').fill('https://moestudio.net/apps');
+    await prompt.getByRole('button', { name: 'Erstellen' }).click();
+    await item(page, 'moestudio.net apps.url').dblclick();
+    const card = page.locator('[data-weblink]');
+    await card.getByText('moestudio.net', { exact: true }).waitFor();
+    const href = await card.getByRole('link', { name: 'Link öffnen' }).getAttribute('href');
+    if (href !== 'https://moestudio.net/apps') throw new Error(`Unerwartetes Ziel: ${href}`);
+    const rel = await card.getByRole('link', { name: 'Link öffnen' }).getAttribute('rel');
+    if (!rel?.includes('noopener')) throw new Error('Der Weblink öffnet sich ohne noopener');
+    await shot(page, 'weblink');
+    await page.keyboard.press('Escape');
+    await card.waitFor({ state: 'detached' });
+  });
+
+  await step('Darstellung, Navigation und Startseite anpassen', async () => {
+    await page.goto(`${base}/account`);
+    await page.getByRole('group', { name: 'Schriftgröße' }).getByRole('button', { name: 'Groß', exact: true }).click();
+    await page.getByRole('group', { name: 'Zeilen in Listen' }).getByRole('button', { name: 'Kompakt' }).click();
+    await page.getByRole('group', { name: 'Kacheln in der Rasteransicht' }).getByRole('button', { name: 'Klein' }).click();
+    await page.getByRole('switch', { name: /Farbschimmer im Hintergrund/ }).check();
+    await page.getByRole('switch', { name: /Weniger Bewegung/ }).check();
+    const look = await page.evaluate(() => {
+      const root = document.documentElement;
+      return [
+        root.style.fontSize,
+        root.style.getPropertyValue('--moe-row'),
+        root.style.getPropertyValue('--moe-tile'),
+        root.dataset.backdrop,
+        root.dataset.motion,
+        getComputedStyle(document.body).backgroundImage.includes('radial-gradient'),
+      ].join('|');
+    });
+    if (look !== '110%|44px|0.75|glow|reduced|true') throw new Error(`Unerwartete Darstellung: ${look}`);
+    await page.getByText('Nur in diesem Browser', { exact: true }).scrollIntoViewIfNeeded();
+    await shot(page, 'darstellung');
+    await page.goto(`${base}/files`);
+    const row = await item(page, 'Dokumente').evaluate((node) => node.closest('[role=row]')!.getBoundingClientRect().height);
+    if (Math.round(row) !== 44) throw new Error(`Kompakte Zeilen sollen 44 px hoch sein, sind aber ${row}`);
+    await page.goto(`${base}/account`);
+    await page.getByRole('group', { name: 'Schriftgröße' }).getByRole('button', { name: 'Normal', exact: true }).click();
+    await page.getByRole('group', { name: 'Zeilen in Listen' }).getByRole('button', { name: 'Luftig' }).click();
+    await page.getByRole('group', { name: 'Kacheln in der Rasteransicht' }).getByRole('button', { name: 'Mittel' }).click();
+    await page.getByRole('switch', { name: /Farbschimmer im Hintergrund/ }).uncheck();
+    await page.getByRole('switch', { name: /Weniger Bewegung/ }).uncheck();
+
+    await page.getByRole('button', { name: 'Navigation anpassen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('switch', { name: '„Schlagwörter“ anzeigen' }).uncheck();
+    const up = dialog.getByRole('button', { name: '„Notizen“ nach oben' });
+    while (await up.isEnabled()) await up.click();
+    await dialog.getByRole('button', { name: '„Fotos“ auf dem Handy in der unteren Leiste' }).click();
+    await dialog.getByRole('button', { name: '„Notizen“ auf dem Handy in der unteren Leiste' }).click();
+    await shot(page, 'navigation');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await visible(page, 'Navigation gespeichert');
+    await inNavigation(page, 'Schlagwörter', false);
+    await inNavigation(page, 'Notizen', true);
+    const order = await page
+      .getByRole('navigation', { name: 'Hauptnavigation' })
+      .first()
+      .evaluate((nav) =>
+        [...nav.querySelectorAll('a')]
+          .map((link) => link.getAttribute('href'))
+          .slice(0, 3)
+          .join(' ')
+      );
+    if (order !== '/files /files/notes /files/home') throw new Error(`Unerwartete Reihenfolge in der Navigation: ${order}`);
+    const phoneContext = await context('dark', true);
+    const phone = await open(phoneContext, 'Handy');
+    await login(phone, 'emi');
+    const bar = await phone
+      .getByRole('navigation', { name: 'Hauptnavigation' })
+      .last()
+      .evaluate((nav) => [...nav.querySelectorAll('a')].map((link) => link.getAttribute('href')).join(' '));
+    if (bar !== '/files/notes /files/home /files /files/shared /account') throw new Error(`Unerwartete untere Leiste: ${bar}`);
+    await phoneContext.close();
+    await page.getByRole('button', { name: 'Navigation anpassen' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Zurücksetzen' }).click();
+    await visible(page, 'Navigation zurückgesetzt');
+    await inNavigation(page, 'Schlagwörter', true);
+
+    await page.goto(`${base}/files/home`);
+    await page.getByRole('heading', { name: 'Speicher', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Startseite anpassen' }).click();
+    const home = page.getByRole('dialog');
+    await home.getByRole('switch', { name: '„Speicher“ anzeigen' }).uncheck();
+    const first = home.getByRole('button', { name: '„Favoriten“ nach oben' });
+    while (await first.isEnabled()) await first.click();
+    await home.getByRole('button', { name: 'Speichern' }).click();
+    await home.waitFor({ state: 'detached' });
+    await page.getByRole('heading', { name: 'Speicher', exact: true }).waitFor({ state: 'detached' });
+    const top = await page.locator('#inhalt h2').first().textContent();
+    if (top !== 'Favoriten') throw new Error(`Oben soll „Favoriten“ stehen, dort steht „${top}“`);
+    await page.reload();
+    await page.getByRole('heading', { name: 'Favoriten', exact: true }).waitFor();
+    if (await page.getByRole('heading', { name: 'Speicher', exact: true }).count())
+      throw new Error('„Speicher“ ist nach dem Neuladen wieder da');
+    await page.getByRole('button', { name: 'Startseite anpassen' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Zurücksetzen' }).click();
+    await page.getByRole('heading', { name: 'Speicher', exact: true }).waitFor();
+  });
+
+  await step('Aufgaben aus Notizen und Vorschau daneben', async () => {
+    await page.goto(`${base}/files/notes`);
+    const list = page.getByRole('navigation', { name: 'Notizen' });
+    await list.getByRole('link', { name: 'Aufgaben' }).click();
+    await page.waitForURL('**/files/notes/tasks');
+    const tasks = page.locator('[data-note-tasks]');
+    await tasks.getByText('2 offen · eine erledigt', { exact: true }).waitFor();
+    await tasks.getByRole('checkbox', { name: 'Brot' }).click();
+    await tasks.getByText('Eine offen · 2 erledigt', { exact: true }).waitFor();
+    if (await tasks.getByRole('checkbox', { name: 'Brot' }).count()) throw new Error('Erledigtes soll aus der Liste verschwinden');
+    await tasks.getByRole('switch', { name: 'Erledigte zeigen' }).check();
+    await tasks.getByRole('checkbox', { name: 'Äpfel' }).waitFor();
+    await shot(page, 'aufgaben');
+    await tasks.getByRole('link', { name: /Wochenende/ }).click();
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('input[aria-label="Titel der Notiz"]')?.value === 'Wochenende'
+    );
+    await page.getByRole('button', { name: 'Beides', exact: true }).click();
+    const preview = page.locator('[data-note-preview]');
+    await preview.getByRole('heading', { name: 'Einkauf' }).waitFor();
+    const text = page.getByLabel('Text der Notiz');
+    if (!(await text.inputValue()).includes('- [x] Brot')) throw new Error('Die abgehakte Aufgabe steht nicht in der Notiz');
+    await text.focus();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type('\n\n### Später');
+    await preview.getByRole('heading', { name: 'Später' }).waitFor();
+    await page
+      .getByRole('status')
+      .filter({ hasText: /^Gespeichert/ })
+      .waitFor();
+    await shot(page, 'notiz-beides');
+    await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+    await preview.waitFor({ state: 'detached' });
+  });
+
+  await step('Tempo, Schlummern und oft Gehörtes', async () => {
+    await page.goto(`${base}/files/music`);
+    await visible(page, 'Morgens am Steg');
+    await page.getByRole('button', { name: 'Alle abspielen' }).click();
+    const player = page.getByRole('region', { name: 'Musik' });
+    await player.getByRole('button', { name: 'Warteschlange' }).click();
+    const panel = page.getByRole('presentation').filter({ hasText: 'Wiedergabe' }).last();
+    await panel.getByRole('button', { name: /^Tempo/ }).click();
+    await page.getByRole('menuitem', { name: '1,5×' }).click();
+    await panel.getByRole('button', { name: 'Tempo: 1,5×' }).waitFor();
+    const rate = await page.evaluate(() => JSON.parse(localStorage.getItem('moe-player') ?? '{}').rate);
+    if (rate !== 1.5) throw new Error(`Das Tempo wurde nicht gemerkt: ${rate}`);
+    await panel.getByRole('button', { name: 'Schlummern' }).click();
+    await page.getByRole('menuitem', { name: 'In 30 Minuten anhalten' }).click();
+    await panel.getByRole('button', { name: 'Noch 30 Minuten' }).waitFor();
+    await shot(page, 'musik-player');
+    await panel.getByRole('button', { name: 'Noch 30 Minuten' }).click();
+    await page.getByRole('menuitem', { name: 'Schlummern ausschalten' }).click();
+    await panel.getByRole('button', { name: 'Schlummern' }).waitFor();
+    await panel.getByRole('button', { name: 'Tempo: 1,5×' }).click();
+    await page.getByRole('menuitem', { name: 'Normal' }).click();
+    await page.keyboard.press('Escape');
+    const tracks = await api<{ items: { id: string; track: { title: string } }[] }>(page, 'GET', '/api/music');
+    const steg = tracks.items.find((entry) => entry.track.title === 'Morgens am Steg')!;
+    await api(page, 'POST', '/api/music/played', { id: steg.id });
+    await api(page, 'POST', '/api/music/played', { id: steg.id });
+    await page.getByLabel('Titel sortieren').click();
+    await page.getByRole('option', { name: 'Oft gehört' }).click();
+    await page
+      .getByText(/^\d+-mal gehört$/)
+      .first()
+      .waitFor();
+    const top = await page.getByRole('list', { name: 'Oft gehört' }).getByRole('listitem').first().textContent();
+    if (!top?.includes('Morgens am Steg')) throw new Error(`Oben soll „Morgens am Steg“ stehen: ${top}`);
+    await page.getByLabel('Titel sortieren').click();
+    await page.getByRole('option', { name: 'Nach Interpret' }).click();
+    await player.getByRole('button', { name: 'Player schließen' }).click();
+    await player.waitFor({ state: 'detached' });
+  });
+
+  await step('Link mit Beginn, Nachricht und eigenem Aussehen', async () => {
+    const root = (await api<{ user: { rootId: string } }>(page, 'GET', '/api/session')).user.rootId;
+    const listing = await api<{ items: { id: string; name: string }[] }>(page, 'GET', `/api/nodes/${root}/children`);
+    const photos = listing.items.find((entry) => entry.name === 'Fotos')!;
+    const created = await api<{ link: { id: string } }>(page, 'POST', `/api/nodes/${photos.id}/links`, { label: 'Für Mia' });
+    await page.goto(`${base}/files`);
+    await item(page, 'Fotos').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Teilen', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    const row = dialog.locator(`[data-link="${created.link.id}"]`);
+    await row.getByText('Für Mia', { exact: true }).waitFor();
+    await row.getByRole('button', { name: 'Einstellungen' }).click();
+    await row.getByLabel('Nachricht für Besucher (freiwillig)').fill('Hallo Mia, hier sind die Bilder vom Wochenende.');
+    await row.getByLabel('Aussehen der Seite').click();
+    await page.getByRole('option', { name: 'Ozean' }).click();
+    await row.getByLabel('Aussehen der Seite').scrollIntoViewIfNeeded();
+    await shot(page, 'link-gestalten');
+    await row.getByRole('button', { name: 'Speichern', exact: true }).click();
+    let link: { id: string; url: string; theme: string | null; message: string | null } | undefined;
+    for (let tries = 0; tries < 30; tries++) {
+      const shares = await api<{ links: { id: string; url: string; theme: string | null; message: string | null }[] }>(
+        page,
+        'GET',
+        `/api/nodes/${photos.id}/shares`
+      );
+      link = shares.links.find((entry) => entry.id === created.link.id);
+      if (link?.theme === 'ozean') break;
+      await page.waitForTimeout(200);
+    }
+    if (!link) throw new Error('Der Link „Für Mia“ fehlt');
+    if (link.theme !== 'ozean' || !link.message?.startsWith('Hallo Mia')) throw new Error(`Unerwarteter Link: ${JSON.stringify(link)}`);
+    await page.keyboard.press('Escape');
+
+    const guests = await context('light');
+    const guest = await open(guests, 'Gast');
+    await guest.goto(link.url);
+    await guest.locator('[data-share-message]').getByText('Hallo Mia, hier sind die Bilder vom Wochenende.').waitFor();
+    await guest.locator('[data-share-message]').getByText('Nachricht von Emi', { exact: false }).waitFor();
+    const theme = await guest.evaluate(() => JSON.parse(document.getElementById('moe-boot')!.textContent!).theme.id);
+    if (theme !== 'ozean') throw new Error(`Die Seite des Links nutzt das Theme „${theme}“`);
+    await shot(guest, 'link-nachricht');
+    await api(page, 'PATCH', `/api/links/${link.id}`, { startsAt: Date.now() + 3 * 86_400_000 });
+    const early = await guests.request.get(link.url, { headers: { accept: 'text/html' } });
+    if (early.status() !== 404) throw new Error(`Vor dem Beginn soll der Link 404 liefern, es kam ${early.status()}`);
+    if (!(await early.text()).includes('Dieser Link ist noch nicht freigeschaltet')) throw new Error('Die Seite nennt den Beginn nicht');
+    await guests.close();
+    await api(page, 'DELETE', `/api/links/${link.id}`);
+  });
+
+  await step('Logo, Anmeldeseite und Registrierung mit Bestätigung', async () => {
+    const logo = await sharp({ create: { width: 256, height: 256, channels: 4, background: { r: 14, g: 165, b: 233, alpha: 1 } } })
+      .png()
+      .toBuffer();
+    const backdrop = await sharp({
+      create: { width: 1600, height: 900, channels: 3, background: '#1e293b' },
+    })
+      .composite([
+        {
+          input: Buffer.from(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0ea5e9"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g)"/><circle cx="1250" cy="240" r="320" fill="#ffffff" fill-opacity="0.12"/><circle cx="300" cy="760" r="420" fill="#000000" fill-opacity="0.18"/></svg>'
+          ),
+        },
+      ])
+      .jpeg()
+      .toBuffer();
+    await page.goto(`${base}/admin/settings`);
+    await page.locator('[data-branding=logo] input[type=file]').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: logo });
+    await visible(page, 'Bild gespeichert');
+    await page.locator('[data-branding=logo] img').waitFor();
+    await page
+      .locator('[data-branding=background] input[type=file]')
+      .setInputFiles({ name: 'hintergrund.jpg', mimeType: 'image/jpeg', buffer: backdrop });
+    await page.locator('[data-branding=background] img').waitFor();
+    await page.getByLabel('Überschrift der Anmeldung').fill('Willkommen bei Emi');
+    await page.getByLabel('Begrüßung auf der Anmeldeseite').fill('Schön, dass du da bist. Deine Dateien warten schon.');
+    await page.getByRole('group', { name: 'Platz der Anmeldung' }).getByRole('button', { name: 'Rechts' }).click();
+    await page.getByRole('button', { name: /Änderung(en)? speichern$/ }).click();
+    await visible(page, 'Gespeichert');
+    await page.locator('[data-branding=logo]').scrollIntoViewIfNeeded();
+    await shot(page, 'anmeldeseite-einstellen');
+    const railLogo = await page.getByRole('navigation', { name: 'Hauptnavigation' }).first().locator('img').first().getAttribute('src');
+    if (!railLogo?.startsWith('/branding/logo?v=')) throw new Error(`In der Seitenleiste steht noch das alte Logo: ${railLogo}`);
+
+    const guests = await context('dark');
+    const guest = await open(guests, 'Gast');
+    await guest.goto(`${base}/login`);
+    await guest.getByRole('heading', { name: 'Willkommen bei Emi' }).waitFor();
+    await guest.getByText('Schön, dass du da bist. Deine Dateien warten schon.').waitFor();
+    const design = await guest.evaluate(() => {
+      const main = document.querySelector('main')!;
+      const card = document.querySelector('.auth__card')!.getBoundingClientRect();
+      return [
+        main.className,
+        getComputedStyle(main).backgroundImage.includes('/branding/background'),
+        card.left > window.innerWidth / 2,
+        document.querySelector<HTMLImageElement>('.auth__logo')?.naturalWidth ?? 0,
+      ].join('|');
+    });
+    if (design !== 'auth auth--image auth--right|true|true|256') throw new Error(`Unerwartete Anmeldeseite: ${design}`);
+    await shot(guest, 'anmeldung-gestaltet');
+
+    await api(page, 'PATCH', '/api/admin/settings', {
+      'auth.registration': 'open',
+      'auth.confirmEmail': true,
+      'auth.domains': 'example.com',
+    });
+    const quiet = await guests.newPage();
+    quiet.setDefaultTimeout(15_000);
+    await quiet.goto(`${base}/register`);
+    await quiet.fill('input[name=name]', 'Nora Winter');
+    await quiet.fill('input[name=username]', 'nora');
+    await quiet.fill('input[name=email]', 'nora@anderswo.test');
+    await quiet.fill('input[name=password]', password);
+    await quiet.click('button[type=submit]');
+    await quiet.getByText(/Erlaubt sind Adressen von example\.com/).waitFor();
+    await quiet.fill('input[name=email]', 'nora@example.com');
+    await quiet.fill('input[name=password]', password);
+    await quiet.click('button[type=submit]');
+    await quiet.getByText(/Wir haben dir eine E-Mail geschickt/).waitFor();
+    const mail = await smtp.mailTo('nora@example.com');
+    const confirm = /\/register\/confirm\?token=[0-9A-Za-z_-]+/.exec(mail)?.[0];
+    if (!confirm) throw new Error('In der E-Mail steht kein Link zum Bestätigen');
+    await quiet.fill('input[name=login]', 'nora');
+    await quiet.fill('input[name=password]', password);
+    await quiet.click('button[type=submit]');
+    await quiet.getByText(/Bestätige zuerst deine E-Mail-Adresse/).waitFor();
+    await quiet.close();
+    await page.goto(`${base}/admin/people`);
+    await visible(page, 'E-Mail nicht bestätigt');
+    await guest.goto(`${base}${confirm}`);
+    await guest.getByText('Deine E-Mail-Adresse ist bestätigt. Du kannst dich jetzt anmelden.').waitFor();
+    await guest.fill('input[name=password]', password);
+    await Promise.all([guest.waitForURL('**/files**'), guest.click('button[type=submit]')]);
+    await guests.close();
+
+    await api(page, 'PATCH', '/api/admin/settings', {
+      'auth.registration': 'closed',
+      'auth.confirmEmail': false,
+      'auth.domains': '',
+      'login.title': '',
+      'login.text': '',
+      'login.layout': 'center',
+    });
+    await api(page, 'DELETE', '/api/admin/branding/logo');
+    await api(page, 'DELETE', '/api/admin/branding/background');
+    const people = await api<{ items: { id: number; username: string }[] }>(page, 'GET', '/api/admin/users');
+    const nora = people.items.find((entry) => entry.username === 'nora');
+    if (nora) await api(page, 'DELETE', `/api/admin/users/${nora.id}`);
+  });
+
+  await step('Teilen aus anderen Apps in die Cloud', async () => {
+    await page.goto(`${base}/files`);
+    const manifest = await page.evaluate(async () => (await fetch('/manifest.webmanifest')).json());
+    if (manifest.share_target?.action !== '/share-target' || manifest.shortcuts?.length !== 4)
+      throw new Error(`Im Manifest fehlen Teilen-Ziel oder Kurzbefehle: ${JSON.stringify(manifest).slice(0, 200)}`);
+    await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 20_000 });
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === '/files' && !url.searchParams.has('geteilt')),
+      page.evaluate(() => {
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.enctype = 'multipart/form-data';
+        form.action = '/share-target';
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.name = 'files';
+        const transfer = new DataTransfer();
+        transfer.items.add(new File(['Aus einer anderen App geteilt'], 'geteilt aus der App.txt', { type: 'text/plain' }));
+        input.files = transfer.files;
+        form.append(input);
+        document.body.append(form);
+        form.submit();
+      }),
+    ]);
+    await item(page, 'geteilt aus der App.txt').waitFor();
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === '/files' && !url.searchParams.has('geteilt')),
+      page.evaluate(() => {
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.enctype = 'multipart/form-data';
+        form.action = '/share-target';
+        for (const [name, value] of [
+          ['title', 'MoeStudio'],
+          ['text', 'https://moestudio.net'],
+        ]) {
+          const field = document.createElement('input');
+          field.type = 'hidden';
+          field.name = name;
+          field.value = value;
+          form.append(field);
+        }
+        document.body.append(form);
+        form.submit();
+      }),
+    ]);
+    await visible(page, 'Weblink gespeichert');
+    await item(page, 'MoeStudio.url').waitFor();
+  });
+
+  await step('Sicherheitsprüfung, gesperrte Anmeldung und Konto absichern', async () => {
+    await page.goto(`${base}/admin/security`);
+    await page.getByRole('heading', { name: 'Sicherheit', exact: true }).waitFor();
+    await page.locator('[data-check="https"][data-level="hint"]').waitFor();
+    await page.locator('[data-check="admins"]').waitFor();
+    await page.getByLabel('Adresse für Meldungen').fill('sicherheit@example.com');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await visible(page, 'Gespeichert');
+    const contact = await page.evaluate(async () => (await fetch('/.well-known/security.txt')).text());
+    if (!contact.startsWith('Contact: mailto:sicherheit@example.com\n'))
+      throw new Error(`security.txt stimmt nicht: ${contact.slice(0, 120)}`);
+
+    const stranger = await context('light');
+    await stranger.request.get(`${base}/login`);
+    const csrf = (await stranger.cookies()).find((cookie) => cookie.name === 'moe_csrf')?.value ?? '';
+    for (let attempt = 0; attempt < 11; attempt++) {
+      await stranger.request.post(`${base}/login`, {
+        form: { _csrf: csrf, login: 'lea', password: `falsch-${attempt}-falsch`, next: '/files' },
+        maxRedirects: 0,
+      });
+    }
+    await stranger.close();
+    await page.getByRole('button', { name: 'Neu prüfen' }).click();
+    await page.getByText(/^Konto, gesperrt bis/).waitFor();
+    await shot(page, 'admin-security');
+    await page.getByRole('button', { name: 'Sperre für lea aufheben' }).click();
+    await visible(page, 'Sperre aufgehoben');
+    await page.getByText(/^Konto, gesperrt bis/).waitFor({ state: 'detached' });
+
+    const miaContext = await context('light');
+    const mia = await open(miaContext, 'Mia');
+    await login(mia, 'mia');
+    const elsewhere = await context('light');
+    await elsewhere.request.get(`${base}/login`);
+    const token2 = (await elsewhere.cookies()).find((cookie) => cookie.name === 'moe_csrf')?.value ?? '';
+    await elsewhere.request.post(`${base}/login`, { form: { _csrf: token2, login: 'mia', password, next: '/files' }, maxRedirects: 0 });
+    if ((await elsewhere.request.get(`${base}/api/session`)).status() !== 200) throw new Error('Das zweite Gerät ist nicht angemeldet');
+    await mia.goto(`${base}/account`);
+    await mia.getByLabel('E-Mail', { exact: true }).fill('mia.neu@example.com');
+    await mia.getByRole('button', { name: 'Speichern', exact: true }).first().click();
+    const confirm = mia.getByRole('dialog');
+    await confirm.getByRole('heading', { name: 'E-Mail-Adresse ändern' }).waitFor();
+    await confirm.getByLabel('Aktuelles Passwort').fill(password);
+    await confirm.getByRole('button', { name: 'Adresse ändern' }).click();
+    await confirm.waitFor({ state: 'detached' });
+    await mia.waitForFunction(async () => {
+      const session = (await (await fetch('/api/session')).json()) as { user: { email: string } };
+      return session.user.email === 'mia.neu@example.com';
+    });
+
+    await mia.getByRole('button', { name: 'App-Passwort erstellen' }).click();
+    const token = mia.getByRole('dialog');
+    await token.getByLabel('Name').fill('Altes Handy');
+    await token.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await token.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await token.waitFor({ state: 'detached' });
+    await mia
+      .getByText(/Altes Handy/)
+      .first()
+      .waitFor();
+
+    await mia.getByRole('button', { name: 'Absichern', exact: true }).click();
+    const secure = mia.getByRole('dialog');
+    await secure.getByRole('heading', { name: 'Konto absichern' }).waitFor();
+    await secure.getByLabel('Aktuelles Passwort').fill(password);
+    await shot(mia, 'account-secure');
+    await secure.getByRole('button', { name: 'Jetzt absichern' }).click();
+    await secure.getByText(/^Erledigt: \d+ Sitzungen beendet, 1 App-Passwörter widerrufen, 0 Links pausiert/).waitFor();
+    await secure.getByRole('button', { name: 'Fertig', exact: true }).click();
+    await secure.waitFor({ state: 'detached' });
+    await mia
+      .getByText(/Altes Handy/)
+      .first()
+      .waitFor({ state: 'detached' });
+    const kicked = await elsewhere.request.get(`${base}/api/session`);
+    if (kicked.status() !== 401) throw new Error(`Das zweite Gerät ist noch angemeldet (${kicked.status()})`);
+    await elsewhere.close();
+    await miaContext.close();
+  });
+
+  await step('Dateien prüfen, Verwaltung nur aus eigenen Netzen und Protokoll als CSV', async () => {
+    await page.goto(`${base}/admin/security`);
+    await page.getByRole('heading', { name: 'Dateien prüfen' }).waitFor();
+    await page.locator('[data-integrity="never"]').waitFor();
+    await page.locator('[data-check="integrity"][data-level="hint"]').waitFor();
+    await page.getByRole('button', { name: 'Jetzt prüfen' }).click();
+    await page.locator('[data-integrity="ok"]').waitFor({ timeout: 60_000 });
+    await page.getByText(/^Zuletzt geprüft am .+ gelesen, alles in Ordnung\.$/).waitFor();
+    await page.locator('[data-check="integrity"][data-level="ok"]').waitFor();
+    await page.getByLabel('Von selbst prüfen').click();
+    await page.getByRole('option', { name: 'Jeden Monat, nachts' }).click();
+    await visible(page, 'Gespeichert');
+
+    const { address } = await api<{ address: string }>(page, 'GET', '/api/admin/security');
+    const networks = page.getByLabel('Adressen und Netze');
+    const { csrf } = (await (await page.context().request.get(`${base}/api/session`)).json()) as { csrf: string };
+    const refused = await page.context().request.put(`${base}/api/admin/security/networks`, {
+      data: { networks: '192.0.2.0/24' },
+      headers: { 'x-csrf-token': csrf, origin: base },
+    });
+    const reason = refused.status() === 400 ? ((await refused.json()) as { error: { message: string } }).error.message : '';
+    if (!/steht nicht in der Liste, du würdest dich aussperren/.test(reason))
+      throw new Error(`Eine Liste ohne die eigene Adresse wurde nicht abgelehnt (${refused.status()} ${reason})`);
+    await networks.fill(`${address}\n192.0.2.0/24`);
+    await page.getByRole('button', { name: 'Netze speichern' }).click();
+    await visible(page, 'Die Verwaltung ist jetzt beschränkt');
+    await page.locator('[data-check="networks"][data-level="ok"]').waitFor();
+    await page.getByRole('heading', { name: 'Dateien prüfen' }).scrollIntoViewIfNeeded();
+    await shot(page, 'admin-integrity');
+    await networks.fill('');
+    await page.getByRole('button', { name: 'Netze speichern' }).click();
+    await visible(page, 'Die Verwaltung ist wieder von überall erreichbar');
+    await page.locator('[data-check="networks"]').waitFor({ state: 'detached' });
+    await api(page, 'PATCH', '/api/admin/settings', { 'integrity.schedule': 'off' });
+
+    await page.goto(`${base}/admin/audit`);
+    const download = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Als CSV laden' }).click();
+    const file = await download;
+    if (!/^moecloud-protokoll-\d{4}-\d{2}-\d{2}\.csv$/.test(file.suggestedFilename()))
+      throw new Error(`Die Datei heißt ${file.suggestedFilename()}`);
+    const csv = (await readFile(await file.path())).toString('utf8');
+    if (!csv.includes('"Zeit","Ereignis","Benutzername"') || !csv.includes('"integrity_checked"'))
+      throw new Error(`Im Protokoll fehlt etwas: ${csv.slice(0, 200)}`);
+  });
+
+  await step('Eigenes Passwort bei der ersten Anmeldung', async () => {
+    await page.goto(`${base}/admin/people`);
+    await page.getByRole('button', { name: 'Person anlegen' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/^Name/).fill('Emily Start');
+    await dialog.getByLabel('Benutzername').fill('emily-start');
+    const link = dialog.getByLabel('Link per E-Mail schicken, damit die Person ihr Passwort selbst wählt');
+    if ((await link.count()) > 0 && (await link.isChecked())) await link.uncheck();
+    await dialog.getByLabel(/^Passwort/).fill(password);
+    const wanted = dialog.getByLabel('Bei der nächsten Anmeldung ein eigenes Passwort verlangen');
+    if (!(await wanted.isChecked())) throw new Error('Der Passwortwechsel ist für neue Konten nicht vorgewählt');
+    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await visible(page, 'Emily Start ist angelegt');
+    await visible(page, 'Neues Passwort fällig');
+
+    const fresh = await context('light');
+    const start = await fresh.newPage();
+    start.setDefaultTimeout(15_000);
+    await start.goto(`${base}/login`);
+    await start.fill('input[name=login]', 'emily-start');
+    await start.fill('input[name=password]', password);
+    await Promise.all([start.waitForURL('**/passwort'), start.click('button[type=submit]')]);
+    await start.getByRole('heading', { name: 'Neues Passwort festlegen' }).waitFor();
+    await shot(start, 'password-change');
+    await start.goto(`${base}/files`);
+    await start.waitForURL('**/passwort');
+    await start.fill('input[name=current]', password);
+    await start.fill('input[name=password]', password);
+    await start.getByRole('button', { name: 'Passwort speichern' }).click();
+    await start.getByText('Das neue Passwort muss sich vom alten unterscheiden').waitFor();
+    await start.fill('input[name=current]', password);
+    await start.fill('input[name=password]', 'ein-ganz-eigenes-passwort');
+    await Promise.all([start.waitForURL('**/files**'), start.getByRole('button', { name: 'Passwort speichern' }).click()]);
+    await fresh.close();
+
+    await page.reload();
+    await visible(page, 'Emily Start');
+    await page.getByText('Neues Passwort fällig', { exact: true }).waitFor({ state: 'detached' });
+    const people = await api<{ items: { id: number; username: string }[] }>(page, 'GET', '/api/admin/users');
+    const emily = people.items.find((entry) => entry.username === 'emily-start');
+    if (emily) await api(page, 'DELETE', `/api/admin/users/${emily.id}`);
+  });
+
   await step('Ankündigung für alle', async () => {
     await api(page, 'PATCH', '/api/admin/settings', {
       'notice.text': 'Am Samstag ab 20 Uhr gibt es ein kurzes Update.',
@@ -2054,8 +2623,10 @@ try {
       },
     });
     await page.goto(`${base}/account`);
+    await page.getByRole('button', { name: 'Hinzufügen', exact: true }).waitFor();
+    const before = await page.getByRole('button', { name: 'Passkey entfernen' }).count();
     await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
-    await visible(page, 'Passkey hinzugefügt');
+    await page.getByRole('button', { name: 'Passkey entfernen' }).nth(before).waitFor();
     await dark.clearCookies();
     await page.goto(`${base}/login`);
     await Promise.all([page.waitForURL('**/files**'), page.getByRole('button', { name: 'Mit Passkey anmelden' }).click()]);

@@ -21,24 +21,35 @@ interface Discovery {
   at: number;
   ok: boolean;
   error: string | null;
+  secure: boolean;
   actions: Map<string, OfficeAction>;
 }
 
 let cache: Discovery | null = null;
 let pending: { url: string; promise: Promise<Discovery> } | null = null;
 
-export const officeUrl = () => settings.get('collabora.url').trim().replace(/\/+$/, '');
+const clean = (key: 'collabora.url' | 'collabora.internal') => settings.get(key).trim().replace(/\/+$/, '');
 
-export const officeEnabled = () => Boolean(officeUrl());
-
-export function officeOrigin() {
+function originOf(value: string) {
   try {
-    const url = new URL(officeUrl());
+    const url = new URL(value);
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : '';
   } catch {
     return '';
   }
 }
+
+export const officeUrl = () => clean('collabora.url');
+
+export const officeInternal = () => clean('collabora.internal');
+
+export const officeSource = () => (originOf(officeInternal()) ? officeInternal() : officeUrl());
+
+export const officeProxy = () => (!officeUrl() && originOf(officeInternal()) ? officeInternal() : '');
+
+export const officeEnabled = () => Boolean(originOf(officeSource()));
+
+export const officeOrigin = () => originOf(officeUrl());
 
 const decode = (value: string) =>
   value
@@ -76,20 +87,28 @@ async function load(url: string): Promise<Discovery> {
     if (xml.length > MAX_DISCOVERY) throw new Error('Antwort zu groß');
     const actions = parseDiscovery(xml);
     if (actions.size === 0) throw new Error('Die Antwort nennt keine Dateiformate');
-    return { url, at: Date.now(), ok: true, error: null, actions };
+    const sources = [...actions.values()].map((action) => action.edit ?? action.view ?? '');
+    return { url, at: Date.now(), ok: true, error: null, secure: sources.some((source) => /^https:/i.test(source)), actions };
   } catch (error) {
     const cause = (error as { cause?: { code?: string; message?: string } }).cause;
-    return { url, at: Date.now(), ok: false, error: cause?.code ?? cause?.message ?? (error as Error).message, actions: new Map() };
+    return {
+      url,
+      at: Date.now(),
+      ok: false,
+      error: cause?.code ?? cause?.message ?? (error as Error).message,
+      secure: false,
+      actions: new Map(),
+    };
   }
 }
 
 export async function discovery(force = false): Promise<Discovery | null> {
-  const url = officeUrl();
-  if (!url || !officeOrigin()) return null;
+  const url = officeSource();
+  if (!originOf(url)) return null;
   if (!force && cache && cache.url === url && Date.now() - cache.at < (cache.ok ? FRESH : RETRY)) return cache;
   if (!pending || pending.url !== url) {
     const promise = load(url).then((result) => {
-      if (officeUrl() === result.url) cache = result;
+      if (officeSource() === result.url) cache = result;
       if (pending?.promise === promise) pending = null;
       return result;
     });
@@ -104,8 +123,8 @@ export function forgetDiscovery() {
 }
 
 export function knownExtensions() {
-  const url = officeUrl();
-  if (!url) return [];
+  const url = officeSource();
+  if (!originOf(url)) return [];
   if (!cache || cache.url !== url || Date.now() - cache.at > FRESH) void discovery();
   return cache && cache.url === url && cache.ok
     ? [...cache.actions]
@@ -117,11 +136,13 @@ export function knownExtensions() {
 
 export async function officeState(force = false) {
   const found = await discovery(force);
-  if (!found) return { enabled: false, ok: false, error: null, extensions: [] as string[] };
+  if (!found) return { enabled: false, ok: false, error: null, builtIn: false, secure: false, extensions: [] as string[] };
   return {
     enabled: true,
     ok: found.ok,
     error: found.error,
+    builtIn: Boolean(officeProxy()),
+    secure: found.secure,
     extensions: [...found.actions]
       .filter(([, action]) => action.edit)
       .map(([extension]) => extension)
@@ -160,10 +181,26 @@ export async function openEditor(user: UserRow, nodeId: string, lang: string, ba
     origin,
     expires
   );
-  const office = new URL(officeUrl());
+  const builtIn = Boolean(officeProxy());
+  if (builtIn && found.secure && !origin.startsWith('https:')) {
+    throw new HttpError(
+      503,
+      'Office rechnet mit HTTPS, die Cloud läuft hier aber über HTTP. Die Verwaltung muss das bei Collabora anpassen',
+      'office_scheme'
+    );
+  }
+  if (builtIn && !found.secure && origin.startsWith('https:')) {
+    throw new HttpError(
+      503,
+      'Office rechnet mit HTTP, die Cloud läuft hier aber über HTTPS. Die Verwaltung muss das bei Collabora anpassen',
+      'office_scheme'
+    );
+  }
+  const office = new URL(builtIn ? origin : officeUrl());
   const target = new URL(source);
   target.protocol = office.protocol;
   target.host = office.host;
+  target.port = office.port;
   const host = (settings.get('collabora.host').trim() || base).replace(/\/+$/, '');
   target.searchParams.set('WOPISrc', `${host}/wopi/files/${node.id}`);
   target.searchParams.set('lang', lang === 'de' ? 'de' : 'en');

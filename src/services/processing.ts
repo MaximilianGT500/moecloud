@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { open } from 'node:fs/promises';
 import { all, one, run, tx } from '../lib/db.ts';
 import { canThumb, extensionOf, isHeif, isRaw, isTextual, kindOf, mimeOf, resolveType } from '../lib/mime.ts';
@@ -18,7 +19,7 @@ const TEXT_LIMIT = 1024 * 1024;
 const PREVIEW_REVISION = 2;
 const DOCUMENTS = new Set(['docx', 'odt', 'odp', 'ods', 'pptx', 'xlsx']);
 const EXIF_TAGS = ['DateTimeOriginal', 'CreateDate', 'Make', 'Model', 'LensModel', 'FNumber', 'ExposureTime', 'ISO', 'FocalLength'];
-const EXIF_CODES: Record<string, string> = {
+const EXIF_CODES: Record<string, string> = lookup({
   36867: 'DateTimeOriginal',
   36868: 'CreateDate',
   33434: 'ExposureTime',
@@ -26,7 +27,7 @@ const EXIF_CODES: Record<string, string> = {
   34855: 'ISO',
   37386: 'FocalLength',
   42036: 'LensModel',
-};
+});
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;

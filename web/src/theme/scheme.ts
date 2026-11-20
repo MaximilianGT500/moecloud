@@ -14,7 +14,7 @@ export const SEED_PRESETS = [
 export const THEME_STYLES = ['content', 'tonal', 'vibrant', 'expressive', 'fidelity', 'neutral', 'mono'] as const;
 export type ThemeStyle = (typeof THEME_STYLES)[number];
 
-export const THEME_FONTS = ['rounded', 'system', 'serif', 'mono'] as const;
+export const THEME_FONTS = ['rounded', 'system', 'serif', 'mono', 'geist', 'legible', 'fraunces'] as const;
 export type ThemeFont = (typeof THEME_FONTS)[number];
 
 export const THEME_CORNERS = [1, 0.5, 0.1] as const;
@@ -45,6 +45,9 @@ export const FONT_STACKS: Record<ThemeFont, string> = {
   system: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   serif: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif',
   mono: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  geist: '"Geist Variable", Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  legible: '"Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", Verdana, system-ui, -apple-system, "Segoe UI", sans-serif',
+  fraunces: '"Fraunces Variable", Fraunces, "Iowan Old Style", "Palatino Linotype", Georgia, serif',
 };
 
 export const ROLES = [

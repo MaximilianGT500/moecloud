@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { safeEqual } from './crypto.ts';
-import { forbidden, unauthorized } from './errors.ts';
+import { forbidden, HttpError, unauthorized } from './errors.ts';
 import { isSecure, sameOrigin } from './http.ts';
 import type { Lang } from './i18n.ts';
 import type { SessionRow } from '../services/sessions.ts';
@@ -10,6 +10,7 @@ export interface RequestAuth {
   user: UserRow;
   session: SessionRow | null;
   readOnly?: boolean;
+  app?: { id: string; admin: boolean };
 }
 
 declare module 'fastify' {
@@ -46,5 +47,7 @@ export function admin(request: FastifyRequest): UserRow {
   if (user.role !== 'admin') throw forbidden('Das dürfen nur Admins');
   return user;
 }
+
+export const sessionRequired = () => new HttpError(403, 'Das geht nur, wenn du im Browser angemeldet bist', 'session_required');
 
 export const body = <T = Record<string, unknown>>(request: FastifyRequest) => (request.body ?? {}) as T;

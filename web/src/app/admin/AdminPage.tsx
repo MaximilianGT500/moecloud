@@ -17,6 +17,7 @@ import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import ReceiptLongRounded from '@mui/icons-material/ReceiptLongRounded';
 import SettingsRounded from '@mui/icons-material/SettingsRounded';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import WebhookRounded from '@mui/icons-material/WebhookRounded';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
@@ -33,6 +34,7 @@ import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
 import { PluginsSection } from './Plugins';
 import { ScanSection } from './Scan';
+import { SecuritySection } from './Security';
 import { SettingsSection } from './Settings';
 import { SsoSection } from './Sso';
 import { loadSettings } from './shared';
@@ -42,6 +44,7 @@ import { WebhooksSection } from './Webhooks';
 
 type SectionKey =
   | 'overview'
+  | 'security'
   | 'people'
   | 'groups'
   | 'teams'
@@ -62,6 +65,7 @@ const LEGACY: Record<string, SectionKey> = { users: 'people', invites: 'invites'
 function sections(): { key: SectionKey; label: string; icon: ReactNode; group: number }[] {
   return [
     { key: 'overview', label: t('Übersicht'), icon: <DashboardRounded />, group: 0 },
+    { key: 'security', label: t('Sicherheit'), icon: <ShieldRounded />, group: 0 },
     { key: 'people', label: t('Personen'), icon: <PeopleRounded />, group: 1 },
     { key: 'groups', label: t('Gruppen'), icon: <GroupsRounded />, group: 1 },
     { key: 'teams', label: t('Teamordner'), icon: <FolderSharedRounded />, group: 1 },
@@ -213,6 +217,7 @@ export function AdminPage() {
             {current.label}
           </Typography>
           {section === 'overview' && <OverviewSection />}
+          {section === 'security' && <SecuritySection />}
           {section === 'people' && <PeopleSection />}
           {section === 'groups' && <GroupsSection />}
           {section === 'teams' && <TeamsSection />}

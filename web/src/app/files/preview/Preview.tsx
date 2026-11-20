@@ -19,6 +19,7 @@ const EpubPreview = lazy(() => import('./EpubPreview'));
 const OfficePreview = lazy(() => import('./OfficePreview'));
 const CalendarPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.CalendarPreview })));
 const ContactPreview = lazy(() => import('./PimPreview').then((module) => ({ default: module.ContactPreview })));
+const WeblinkPreview = lazy(() => import('./WeblinkPreview').then((module) => ({ default: module.WeblinkPreview })));
 
 const DOCUMENT_LIMIT = 40 * 1024 * 1024;
 const EMAIL_LIMIT = 25 * 1024 * 1024;
@@ -142,6 +143,12 @@ export function Preview({
       return (
         <Suspense fallback={loading}>
           <ContactPreview item={item} base={base} />
+        </Suspense>
+      );
+    case 'weblink':
+      return (
+        <Suspense fallback={loading}>
+          <WeblinkPreview item={item} base={base} />
         </Suspense>
       );
     case 'font':

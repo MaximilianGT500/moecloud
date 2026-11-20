@@ -13,6 +13,10 @@ test-results
 .env.*
 Dockerfile
 docker-compose*.yml
+compose.yaml
+docker/collabora.yml
+docker/office.yml
+docker/postgres.yml
 docker/Caddyfile
 .prettierrc.json
 install.sh

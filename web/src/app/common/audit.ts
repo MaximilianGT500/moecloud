@@ -23,6 +23,8 @@ export function auditLabel(action: string) {
       return t('Abmeldung');
     case 'password_changed':
       return t('Passwort geändert');
+    case 'email_changed':
+      return t('E-Mail-Adresse geändert');
     case 'password_reset_requested':
       return t('Neues Passwort angefordert');
     case 'password_reset':
@@ -43,6 +45,10 @@ export function auditLabel(action: string) {
       return t('App-Passwort widerrufen');
     case 'sessions_revoked':
       return t('Andere Geräte abgemeldet');
+    case 'account_secured':
+      return t('Konto abgesichert');
+    case 'lockout_released':
+      return t('Sperre aufgehoben');
     case 'sso_unlinked':
       return t('SSO-Verbindung getrennt');
     case 'account_exported':
@@ -59,6 +65,8 @@ export function auditLabel(action: string) {
       return t('Person geändert');
     case 'user_approved':
       return t('Konto freigegeben');
+    case 'email_confirmed':
+      return t('E-Mail-Adresse bestätigt');
     case 'user_deleted':
       return t('Person gelöscht');
     case 'user_disabled':
@@ -83,6 +91,10 @@ export function auditLabel(action: string) {
       return t('Einladung gelöscht');
     case 'settings_changed':
       return t('Einstellungen geändert');
+    case 'audit_exported':
+      return t('Protokoll als CSV geladen');
+    case 'integrity_checked':
+      return t('Dateien geprüft');
     case 'mail_changed':
       return t('E-Mail-Versand geändert');
     case 'sso_changed':
@@ -187,6 +199,15 @@ export function auditDetail(entry: AuditEntry) {
       return [text('name'), typeof d.size === 'number' ? formatBytes(d.size) : ''].filter(Boolean).join(' · ');
     case 'backup_failed':
       return text('error');
+    case 'audit_exported':
+      return typeof d.rows === 'number' ? tn(d.rows, '{count} Zeile', '{count} Zeilen') : '';
+    case 'integrity_checked':
+      return [
+        typeof d.checked === 'number' ? tn(d.checked, '{count} Datei', '{count} Dateien') : '',
+        Number(d.missing) + Number(d.damaged) > 0 ? t('{count} nicht in Ordnung', { count: Number(d.missing) + Number(d.damaged) }) : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'virus_found':
       return [text('name'), text('signature')].filter(Boolean).join(' · ');
     case 'virus_released':

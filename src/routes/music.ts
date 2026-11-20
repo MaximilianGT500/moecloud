@@ -9,9 +9,11 @@ import {
   deletePlaylist,
   exportM3u,
   importM3u,
+  clearPlays,
   listPlaylists,
   listTracks,
   playlistContent,
+  recordPlay,
   removeFromPlaylist,
   showPlaylist,
   updatePlaylist,
@@ -23,6 +25,17 @@ const name = z.string().max(500);
 
 export async function musicRoutes(app: FastifyInstance) {
   app.get('/api/music', async (request) => listTracks(me(request)));
+
+  app.post('/api/music/played', { config: { rateLimit: { max: 600, timeWindow: '1 hour' } } }, async (request) => {
+    const input = parse(z.object({ id }), request.body);
+    recordPlay(me(request), input.id);
+    return { ok: true };
+  });
+
+  app.delete('/api/music/played', async (request) => {
+    clearPlays(me(request));
+    return { ok: true };
+  });
 
   app.get('/api/playlists', async (request) => ({ items: listPlaylists(me(request)) }));
 

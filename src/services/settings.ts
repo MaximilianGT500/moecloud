@@ -1,6 +1,7 @@
 import { all, run } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
 import type { Lang } from '../lib/i18n.ts';
+import type { IntegrityResult, IntegritySchedule } from './integrity.ts';
 import defaultPalette from '../lib/default-palette.json' with { type: 'json' };
 
 export type Palette = { dark: Record<string, string>; light: Record<string, string> };
@@ -13,7 +14,7 @@ export interface ThemeSpec {
   style: 'content' | 'tonal' | 'vibrant' | 'expressive' | 'fidelity' | 'neutral' | 'mono';
   secondary: string | null;
   tertiary: string | null;
-  font: 'rounded' | 'system' | 'serif' | 'mono';
+  font: 'rounded' | 'system' | 'serif' | 'mono' | 'geist' | 'legible' | 'fraunces';
   corners: 1 | 0.5 | 0.1;
 }
 
@@ -42,9 +43,12 @@ const envPort = Number(env.CLAMAV_PORT);
 const smtpPort = Number(env.SMTP_PORT);
 const smtpSecurity = (['tls', 'starttls', 'none'] as const).find((value) => value === env.SMTP_SECURITY);
 
+const webUrl = (value: string | undefined) => (/^https?:\/\/[^/\s]+/.test(value ?? '') ? value!.trim().replace(/\/+$/, '') : '');
+
 const DEFAULTS = {
   'site.name': 'MoeCloud',
   'site.url': '',
+  'site.origins': [] as string[],
   'site.seed': '#8b5cf6',
   'site.palette': defaultPalette as Palette,
   'theme.site': null as SiteTheme | null,
@@ -62,14 +66,24 @@ const DEFAULTS = {
   'auth.passkeys': true,
   'auth.require2fa': 'off' as SecondFactorPolicy,
   'auth.passwordMin': 10,
+  'auth.sessionDays': 30,
+  'auth.sessionMaxDays': 30,
   'auth.passwordBreach': false,
+  'auth.confirmEmail': false,
+  'auth.domains': '',
+  'site.logo': '',
+  'login.background': '',
+  'login.title': '',
+  'login.text': '',
+  'login.layout': 'center' as 'center' | 'left' | 'right',
   'report.weekly': false,
   'report.sent': '',
   'storage.defaultQuota': 0,
   'accounts.starter': '',
   'accounts.inactiveDays': 0,
-  'collabora.url': '',
-  'collabora.host': '',
+  'collabora.url': webUrl(env.COLLABORA_URL),
+  'collabora.internal': webUrl(env.COLLABORA_INTERNAL_URL),
+  'collabora.host': webUrl(env.COLLABORA_WOPI_URL),
   'storage.maxUpload': 0,
   'storage.blockedTypes': '',
   'storage.trashDays': 30,
@@ -130,6 +144,10 @@ const DEFAULTS = {
   'push.vapid': null as { publicKey: string; privateKey: string } | null,
   'preview.revision': 1,
   'metrics.token': '',
+  'security.contact': '',
+  'security.adminNetworks': '',
+  'integrity.schedule': 'off' as IntegritySchedule,
+  'integrity.last': null as IntegrityResult | null,
   'setup.done': false,
   'setup.code': '',
   'secret.key': '',
@@ -201,13 +219,23 @@ export const PUBLIC_KEYS = [
   'auth.passkeys',
   'auth.require2fa',
   'auth.passwordMin',
+  'auth.sessionDays',
+  'auth.sessionMaxDays',
   'accounts.inactiveDays',
   'auth.passwordBreach',
+  'auth.confirmEmail',
+  'auth.domains',
+  'site.logo',
+  'login.background',
+  'login.title',
+  'login.text',
+  'login.layout',
   'report.weekly',
   'storage.defaultQuota',
   'storage.maxUpload',
   'storage.blockedTypes',
   'collabora.url',
+  'collabora.internal',
   'collabora.host',
   'storage.trashDays',
   'storage.versions',

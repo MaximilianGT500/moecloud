@@ -4,6 +4,8 @@ import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import Slider from '@mui/material/Slider';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -16,7 +18,9 @@ import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
 import QueueMusicRounded from '@mui/icons-material/QueueMusicRounded';
 import RepeatOneRounded from '@mui/icons-material/RepeatOneRounded';
 import RepeatRounded from '@mui/icons-material/RepeatRounded';
+import BedtimeRounded from '@mui/icons-material/BedtimeRounded';
 import ShuffleRounded from '@mui/icons-material/ShuffleRounded';
+import SpeedRounded from '@mui/icons-material/SpeedRounded';
 import SkipNextRounded from '@mui/icons-material/SkipNextRounded';
 import SkipPreviousRounded from '@mui/icons-material/SkipPreviousRounded';
 import VolumeOffRounded from '@mui/icons-material/VolumeOffRounded';
@@ -34,8 +38,11 @@ import {
   next,
   prefetchInfo,
   previous,
+  RATES,
   remove,
   seek,
+  setRate,
+  setSleep,
   setVolume,
   toggle,
   toggleShuffle,
@@ -179,6 +186,78 @@ function Modes({ player }: { player: PlayerState }) {
   );
 }
 
+const rateLabel = (rate: number) => `${rate.toLocaleString(document.documentElement.lang || 'de')}×`;
+
+function Extras({ player }: { player: PlayerState }) {
+  const [menu, setMenu] = useState<{ kind: 'rate' | 'sleep'; anchor: HTMLElement } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const until = player.sleep && 'until' in player.sleep ? player.sleep.until : null;
+  useEffect(() => {
+    if (!until) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(timer);
+  }, [until]);
+  const minutes = until ? Math.max(1, Math.ceil((until - now) / 60_000)) : 0;
+  const sleepText = !player.sleep
+    ? t('Schlummern')
+    : until
+      ? tn(minutes, 'Noch eine Minute', 'Noch {count} Minuten')
+      : t('Bis zum Ende des Titels');
+  const pick = (choice: number | 'track' | null) => {
+    setSleep(choice);
+    setMenu(null);
+  };
+  return (
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 1 }}>
+      <Button
+        size="small"
+        variant={player.rate === 1 ? 'text' : 'tonal'}
+        startIcon={<SpeedRounded />}
+        aria-haspopup="menu"
+        aria-label={t('Tempo: {rate}', { rate: rateLabel(player.rate) })}
+        onClick={(event) => setMenu({ kind: 'rate', anchor: event.currentTarget })}
+      >
+        {player.rate === 1 ? t('Tempo') : rateLabel(player.rate)}
+      </Button>
+      <Button
+        size="small"
+        variant={player.sleep ? 'tonal' : 'text'}
+        startIcon={<BedtimeRounded />}
+        aria-haspopup="menu"
+        onClick={(event) => setMenu({ kind: 'sleep', anchor: event.currentTarget })}
+      >
+        {sleepText}
+      </Button>
+      <Menu open={menu?.kind === 'rate'} anchorEl={menu?.anchor} onClose={() => setMenu(null)}>
+        {RATES.map((rate) => (
+          <MenuItem
+            key={rate}
+            selected={rate === player.rate}
+            onClick={() => {
+              setRate(rate);
+              setMenu(null);
+            }}
+          >
+            {rate === 1 ? t('Normal') : rateLabel(rate)}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Menu open={menu?.kind === 'sleep'} anchorEl={menu?.anchor} onClose={() => setMenu(null)}>
+        {[15, 30, 45, 60, 90].map((choice) => (
+          <MenuItem key={choice} onClick={() => pick(choice)}>
+            {t('In {count} Minuten anhalten', { count: choice })}
+          </MenuItem>
+        ))}
+        <MenuItem selected={Boolean(player.sleep && 'track' in player.sleep)} onClick={() => pick('track')}>
+          {t('Am Ende des Titels anhalten')}
+        </MenuItem>
+        {player.sleep && <MenuItem onClick={() => pick(null)}>{t('Schlummern ausschalten')}</MenuItem>}
+      </Menu>
+    </Box>
+  );
+}
+
 function QueuePanel({ player, small, onClose }: { player: PlayerState; small: boolean; onClose: () => void }) {
   const track = player.queue[player.index];
   useEffect(() => {
@@ -228,6 +307,7 @@ function QueuePanel({ player, small, onClose }: { player: PlayerState; small: bo
             <Modes player={player} />
             <Controls player={player} large />
           </Box>
+          <Extras player={player} />
         </Box>
       )}
       <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 1, borderTop: `1px solid ${c.outlineVariant}` }}>

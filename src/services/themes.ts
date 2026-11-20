@@ -9,7 +9,7 @@ import type { CustomTheme, Palette, SiteTheme, ThemeSpec } from './settings.ts';
 import { prefsOf, updatePrefs, type UserRow } from './users.ts';
 
 export const THEME_STYLES = ['content', 'tonal', 'vibrant', 'expressive', 'fidelity', 'neutral', 'mono'] as const;
-export const THEME_FONTS = ['rounded', 'system', 'serif', 'mono'] as const;
+export const THEME_FONTS = ['rounded', 'system', 'serif', 'mono', 'geist', 'legible', 'fraunces'] as const;
 export const THEME_FORMAT = 1;
 const MAX_CUSTOM = 50;
 const MAX_CSS = 20_000;
@@ -19,6 +19,9 @@ export const FONT_STACKS: Record<ThemeSpec['font'], string> = {
   system: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   serif: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif',
   mono: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  geist: '"Geist Variable", Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  legible: '"Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", Verdana, system-ui, -apple-system, "Segoe UI", sans-serif',
+  fraunces: '"Fraunces Variable", Fraunces, "Iowan Old Style", "Palatino Linotype", Georgia, serif',
 };
 
 interface BuiltinTheme extends ThemeSpec {
@@ -107,6 +110,18 @@ function builtinName(lang: Lang, theme: BuiltinTheme) {
       return t(lang, 'Graphit');
     case 'tinte':
       return t(lang, 'Tinte');
+    case 'nordlicht':
+      return t(lang, 'Nordlicht');
+    case 'mitternacht':
+      return t(lang, 'Mitternacht');
+    case 'lagune':
+      return t(lang, 'Lagune');
+    case 'zitrone':
+      return t(lang, 'Zitrone');
+    case 'rosenholz':
+      return t(lang, 'Rosenholz');
+    case 'klarblick':
+      return t(lang, 'Klarblick');
     default:
       return theme.name;
   }

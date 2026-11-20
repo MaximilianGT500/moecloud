@@ -189,4 +189,41 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'POST') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname !== '/share-target') return;
+  event.respondWith(
+    (async () => {
+      let state = '1';
+      try {
+        const form = await event.request.formData();
+        const cache = await caches.open('moe-share');
+        for (const key of await cache.keys()) await cache.delete(key);
+        const files = form.getAll('files').filter((entry) => typeof entry !== 'string');
+        let count = 0;
+        for (const file of files.slice(0, 50)) {
+          await cache.put(
+            '/__share/file/' + count,
+            new Response(file, {
+              headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Name': encodeURIComponent(file.name || 'Datei') },
+            })
+          );
+          count += 1;
+        }
+        const meta = {
+          title: String(form.get('title') || ''),
+          text: String(form.get('text') || ''),
+          url: String(form.get('url') || ''),
+          files: count,
+        };
+        await cache.put('/__share/meta', new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } }));
+      } catch (error) {
+        state = '0';
+      }
+      return Response.redirect('/files?geteilt=' + state, 303);
+    })()
+  );
+});
 `;

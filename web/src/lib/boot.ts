@@ -1,5 +1,6 @@
 export interface SiteInfo {
   name: string;
+  logo?: string | null;
   url: string;
   seed: string;
   palette?: unknown;
@@ -21,7 +22,7 @@ export interface ThemeBoot {
   style: 'content' | 'tonal' | 'vibrant' | 'expressive' | 'fidelity' | 'neutral' | 'mono';
   secondary: string | null;
   tertiary: string | null;
-  font: 'rounded' | 'system' | 'serif' | 'mono';
+  font: 'rounded' | 'system' | 'serif' | 'mono' | 'geist' | 'legible' | 'fraunces';
   corners: 1 | 0.5 | 0.1;
 }
 
@@ -93,6 +94,7 @@ export interface Boot {
   user?: SessionUser;
   teams?: number;
   start?: 'files' | 'home';
+  nav?: { order: string[]; hidden: string[]; bar?: string[] } | null;
   storage?: Storage;
   webdav?: string;
   unread?: number;

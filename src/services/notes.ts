@@ -204,6 +204,75 @@ export async function readNote(user: UserRow, id: string) {
   return { note: await show(user, node, categoryOf(user, node)), content, base: node.sha256 ?? '' };
 }
 
+const TASK = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s+(.*)$/;
+const MAX_TASK_NOTES = 400;
+
+async function textOf(node: NodeRow) {
+  if (!node.sha256 || node.size === 0) return '';
+  const handle = await open(blobPath(node.sha256), 'r');
+  try {
+    return (await handle.readFile()).toString('utf8').replace(/^\uFEFF/, '');
+  } finally {
+    await handle.close();
+  }
+}
+
+export interface NoteTask {
+  line: number;
+  text: string;
+  done: boolean;
+}
+
+export async function listTasks(user: UserRow) {
+  const { items } = await listNotes(user);
+  const notes: { id: string; title: string; category: string; modifiedAt: number; base: string; tasks: NoteTask[] }[] = [];
+  let open = 0;
+  let done = 0;
+  for (const item of items.slice(0, MAX_TASK_NOTES)) {
+    const node = getNode(item.id);
+    if (!node || node.trashed_at !== null) continue;
+    let text = '';
+    try {
+      if (node.sha256) assertNotInfected(node.sha256);
+      text = await textOf(node);
+    } catch {
+      continue;
+    }
+    if (!text.includes('[')) continue;
+    const tasks: NoteTask[] = [];
+    let fenced = false;
+    for (const [line, raw] of text.split('\n').entries()) {
+      if (/^\s*(```|~~~)/.test(raw)) fenced = !fenced;
+      if (fenced) continue;
+      const match = TASK.exec(raw.replace(/\r$/, ''));
+      if (!match) continue;
+      const isDone = match[2] !== ' ';
+      tasks.push({ line, text: match[3].trim().slice(0, 300), done: isDone });
+      if (isDone) done++;
+      else open++;
+    }
+    if (tasks.length) {
+      notes.push({ id: item.id, title: item.title, category: item.category, modifiedAt: item.modifiedAt, base: node.sha256 ?? '', tasks });
+    }
+  }
+  return { notes, open, done, more: items.length > MAX_TASK_NOTES };
+}
+
+export async function toggleNoteTask(user: UserRow, id: string, line: number, expected: string) {
+  const { node } = noteNode(user, id, 'edit');
+  if (node.sha256) assertNotInfected(node.sha256);
+  const lines = (await textOf(node)).split('\n');
+  const current = lines[line];
+  const match = current === undefined ? null : TASK.exec(current.replace(/\r$/, ''));
+  if (!match || match[3].trim().slice(0, 300) !== expected) {
+    throw new HttpError(409, 'Die Notiz hat sich geändert. Die Aufgaben wurden neu geladen', 'note_conflict');
+  }
+  const ending = current.endsWith('\r') ? '\r' : '';
+  lines[line] = `${match[1]}[${match[2] === ' ' ? 'x' : ' '}] ${match[3]}${ending}`;
+  const saved = await saveNote(user, id, lines.join('\n'), node.sha256 ?? '');
+  return { note: saved.note, base: saved.base, done: match[2] === ' ' };
+}
+
 export async function saveNote(user: UserRow, id: string, content: string, base: string | undefined) {
   const { node } = noteNode(user, id, 'edit');
   if (base !== undefined && base !== (node.sha256 ?? '')) {

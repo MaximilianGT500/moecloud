@@ -133,11 +133,14 @@ postgres_enabled() { case "$(env_get COMPOSE_FILE)" in *postgres*) return 0 ;; *
 
 office_enabled() { case "$(env_get COMPOSE_FILE)" in *office*) return 0 ;; *) return 1 ;; esac; }
 
+collabora_enabled() { case "$(env_get COMPOSE_FILE)" in *collabora*) return 0 ;; *) return 1 ;; esac; }
+
 compose_files() {
   local files="docker-compose.yml"
   if clamav_enabled; then files="$files:docker/clamav.yml"; fi
   if [ "$1" = "postgres" ]; then files="$files:docker/postgres.yml"; fi
   if office_enabled; then files="$files:docker/office.yml"; fi
+  if collabora_enabled; then files="$files:docker/collabora.yml"; fi
   if [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
 }
 
@@ -183,6 +186,11 @@ status() {
     printf '  %-16s %s\n' "Office-Vorschau" "LibreOffice, $(state_of office)"
   else
     printf '  %-16s %s\n' "Office-Vorschau" "nicht eingerichtet"
+  fi
+  if collabora_enabled; then
+    printf '  %-16s %s\n' "Office bearbeiten" "Collabora Online, $(state_of collabora)"
+  else
+    printf '  %-16s %s\n' "Office bearbeiten" "nicht eingerichtet"
   fi
   if [ "$tag" != "latest" ]; then
     printf '  %-16s %s\n' "Updates" "bleiben beim Image $tag, siehe MOECLOUD_TAG in $DIR/.env"
@@ -272,6 +280,19 @@ doctor() {
     case "$(state_of office)" in
       healthy | running) ok "Die Office-Vorschau läuft" ;;
       *) warn "Die Office-Vorschau läuft nicht. Mehr zeigt: sudo moecloud logs office" ;;
+    esac
+  fi
+  if collabora_enabled; then
+    case "$(state_of collabora)" in
+      healthy | running) ok "Collabora Online läuft" ;;
+      *) warn "Collabora Online läuft nicht. Mehr zeigt: sudo moecloud logs collabora" ;;
+    esac
+    case "$(env_get PUBLIC_URL)" in
+      https://*)
+        if [ -z "$(env_get OFFICE_HTTPS)" ] && [ -z "$(env_get DOMAIN)" ]; then
+          warn "MoeCloud läuft über HTTPS, Collabora weiß davon nichts. Trag OFFICE_HTTPS=true in $DIR/.env ein und starte mit sudo moecloud start neu."
+        fi
+        ;;
     esac
   fi
   if [ "$state" = "healthy" ]; then
@@ -451,6 +472,52 @@ fetch_office() {
   mv "$DIR/docker/office.yml.neu" "$DIR/docker/office.yml"
 }
 
+fetch_collabora() {
+  [ -f "$DIR/docker/collabora.yml" ] && return 0
+  mkdir -p "$DIR/docker"
+  curl -fsSL --retry 3 --max-time 60 "https://raw.githubusercontent.com/${REPO}/main/docker/collabora.yml" -o "$DIR/docker/collabora.yml.neu" ||
+    fail "docker/collabora.yml ließ sich nicht von GitHub laden."
+  mv "$DIR/docker/collabora.yml.neu" "$DIR/docker/collabora.yml"
+}
+
+collabora() {
+  local previous files
+  previous="$(env_get COMPOSE_FILE)"
+  case "${1:-}" in
+    on)
+      collabora_enabled && fail "Collabora Online ist schon eingerichtet."
+      fetch_collabora
+      env_set COMPOSE_FILE "${previous:-docker-compose.yml}:docker/collabora.yml"
+      case "$(env_get PUBLIC_URL)" in https://*) env_set OFFICE_HTTPS true ;; esac
+      if ! compose pull collabora; then
+        restore_files "$previous"
+        fail "Das Image von Collabora Online ließ sich nicht laden. MoeCloud läuft unverändert weiter."
+      fi
+      compose up -d --remove-orphans
+      wait_ready
+      ok "Collabora Online ist eingerichtet"
+      printf 'Office-Dokumente öffnest du jetzt per Doppelklick. Den Stand zeigt Admin › Einstellungen › Office.\n'
+      ;;
+    off)
+      collabora_enabled || fail "Collabora Online ist nicht eingerichtet."
+      files="${previous//:docker\/collabora.yml/}"
+      if [ -z "$files" ] || [ "$files" = "docker-compose.yml" ]; then env_unset COMPOSE_FILE; else env_set COMPOSE_FILE "$files"; fi
+      compose up -d --remove-orphans
+      wait_ready
+      ok "Collabora Online ist ausgeschaltet"
+      ;;
+    "")
+      if collabora_enabled; then
+        printf 'Collabora Online läuft in einem eigenen Container (%s), MoeCloud reicht den Editor unter seiner Adresse durch.\n' "$(state_of collabora)"
+        printf 'Ausschalten mit: sudo moecloud collabora off\n'
+      else
+        printf 'Collabora Online ist nicht eingerichtet. Einschalten mit: sudo moecloud collabora on\n'
+      fi
+      ;;
+    *) fail "Möglich sind: moecloud collabora, moecloud collabora on und moecloud collabora off" ;;
+  esac
+}
+
 office() {
   local previous files
   previous="$(env_get COMPOSE_FILE)"
@@ -516,6 +583,7 @@ help() {
     "moecloud restart [dienst]" "MoeCloud oder einen anderen Dienst neu starten" \
     "moecloud database [postgres|sqlite]" "Datenbank zeigen oder zwischen SQLite und PostgreSQL umziehen" \
     "moecloud office [on|off]" "Vorschau für PowerPoint, OpenDocument und ältere Office-Dateien" \
+    "moecloud collabora [on|off]" "Office-Dokumente im Browser bearbeiten, mit Collabora Online" \
     "moecloud plugins install <zip>" "Plugin aus einem ZIP-Archiv auf diesem Rechner einspielen" \
     "moecloud uninstall" "Container entfernen, deine Daten bleiben"
   printf '\nIm Container:\n'
@@ -531,6 +599,7 @@ case "$command" in
   auto-update) auto_update "$@" ;;
   database) database "$@" ;;
   office) office "$@" ;;
+  collabora) collabora "$@" ;;
   plugins) plugins "$@" ;;
   logs)
     service="moecloud"

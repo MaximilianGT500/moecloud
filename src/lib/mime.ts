@@ -1,9 +1,10 @@
+import { lookup } from './lookup.ts';
 import mime from 'mime-types';
 
 export type Kind =
   'folder' | 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'document' | 'spreadsheet' | 'presentation' | 'archive' | 'other';
 
-const RAW: Record<string, string> = {
+const RAW: Record<string, string> = lookup({
   dng: 'image/x-adobe-dng',
   cr2: 'image/x-canon-cr2',
   cr3: 'image/x-canon-cr3',
@@ -30,9 +31,9 @@ const RAW: Record<string, string> = {
   x3f: 'image/x-sigma-x3f',
   iiq: 'image/x-phaseone-iiq',
   gpr: 'image/x-gopro-gpr',
-};
+});
 
-const OVERRIDES: Record<string, string> = {
+const OVERRIDES: Record<string, string> = lookup({
   ...RAW,
   ts: 'text/typescript',
   tsx: 'text/typescript',
@@ -75,7 +76,7 @@ const OVERRIDES: Record<string, string> = {
   m4a: 'audio/mp4',
   flac: 'audio/flac',
   mkv: 'video/x-matroska',
-};
+});
 
 const CODE = new Set([
   'js',
@@ -162,11 +163,11 @@ export function mimeOf(name: string): string {
   return OVERRIDES[ext] || mime.lookup(name) || 'application/octet-stream';
 }
 
-const SNIFFABLE: Record<string, readonly string[] | null> = {
+const SNIFFABLE: Record<string, readonly string[] | null> = lookup({
   'application/octet-stream': null,
   'application/postscript': ['application/pdf'],
   'text/typescript': ['video/mp2t'],
-};
+});
 
 export const canSniff = (name: string, type: string | null) => (type || mimeOf(name)) in SNIFFABLE;
 

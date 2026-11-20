@@ -26,6 +26,8 @@ export interface TrackInfo {
 
 export interface TrackView extends Presented {
   track: TrackInfo;
+  plays: number;
+  playedAt: number | null;
 }
 
 export interface PlaylistRow {
@@ -65,13 +67,47 @@ function metas(nodes: NodeRow[]) {
   return found;
 }
 
+const isAudio = (node: NodeRow) => {
+  if (node.type !== 'file') return false;
+  const type = typeOf(node, null);
+  return kindOf(node.name, type) === 'audio' && !type.endsWith('mpegurl');
+};
+
+function playsOf(user: UserRow) {
+  const rows = all<{ node_id: string; count: number; played_at: number }>(
+    'SELECT node_id, count, played_at FROM plays WHERE user_id = ?',
+    user.id
+  );
+  return new Map(rows.map((row) => [row.node_id, row]));
+}
+
 function showTracks(user: UserRow, nodes: NodeRow[], own = false): TrackView[] {
   const meta = metas(nodes);
+  const played = playsOf(user);
   const role = own ? () => 'owner' as const : (node: NodeRow) => resolveAccess(user, node.id)?.role ?? 'view';
   return present(nodes, user, role).map((item, index) => ({
     ...item,
     track: trackInfo(nodes[index], meta.get(nodes[index].sha256 ?? '') ?? {}),
+    plays: Number(played.get(nodes[index].id)?.count ?? 0),
+    playedAt: played.get(nodes[index].id) ? Number(played.get(nodes[index].id)!.played_at) : null,
   }));
+}
+
+export function recordPlay(user: UserRow, id: string, now = Date.now()) {
+  const { node } = requireAccess(user, id);
+  if (!isAudio(node) || node.trashed_at) throw badRequest('Das ist kein Musikstück');
+  run(
+    `INSERT INTO plays (user_id, node_id, count, played_at) VALUES (?, ?, 1, ?)
+     ON CONFLICT (user_id, node_id) DO UPDATE SET count = plays.count + 1, played_at = excluded.played_at`,
+    user.id,
+    node.id,
+    now
+  );
+  publish([user.id], 'plays', { id: node.id });
+}
+
+export function clearPlays(user: UserRow) {
+  run('DELETE FROM plays WHERE user_id = ?', user.id);
 }
 
 export function listTracks(user: UserRow) {
@@ -139,12 +175,6 @@ export function playlistContent(user: UserRow, id: string) {
   const nodes = members(user, playlist);
   return { playlist: showPlaylist(user, playlist, nodes), items: showTracks(user, nodes), nodes };
 }
-
-const isAudio = (node: NodeRow) => {
-  if (node.type !== 'file') return false;
-  const type = typeOf(node, null);
-  return kindOf(node.name, type) === 'audio' && !type.endsWith('mpegurl');
-};
 
 function audioOf(user: UserRow, ids: string[]) {
   const found: NodeRow[] = [];

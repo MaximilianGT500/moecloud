@@ -2,6 +2,123 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.0] · 2026-11-20
+
+Diese Version bringt eine Compose-Datei, die alles mitstartet, und macht MoeCloud zu deiner Cloud: zwanzig Themes, sieben Schriften, eine Darstellung nach Maß, eine Navigation und eine Startseite in deiner Reihenfolge, Symbole für Ordner und eine Anmeldeseite mit eigenem Logo und Hintergrund. Dazu kommen Weblinks, eine Übersicht aller Aufgaben aus deinen Notizen, Tempo und Schlummern im Player, Links mit Beginn, Nachricht und eigenem Aussehen, Registrierung mit bestätigter E-Mail-Adresse und das Teilen aus anderen Apps in die Cloud. Außerdem ist MoeCloud mit einer eigenen Testreihe auf Sicherheit geprüft: Was dabei aufgefallen ist, ist behoben, und unter **Admin › Sicherheit** siehst du, wie es um deine eigene Cloud steht. Dort prüfst du auch, ob jede gespeicherte Datei noch unversehrt ist, und beschränkst die Verwaltung auf deine eigenen Netze.
+
+### Neu
+
+- **Alles in einem**: Die neue [`compose.yaml`](compose.yaml) startet MoeCloud zusammen mit Collabora Online, der Office-Vorschau und ClamAV. Nach `docker compose up -d` ist alles verbunden, ohne dass du etwas einträgst. Die `docker-compose.yml` bleibt die schlanke Grundlage für das Installationsskript und für alle, die nur einzelne Dienste dazunehmen
+- **Office unter der Adresse der Cloud**: MoeCloud reicht den Editor von Collabora Online jetzt selbst durch, nur an Angemeldete und ohne die Verwaltungsseiten von Collabora. Collabora braucht damit keine eigene Domain, kein eigenes Zertifikat und keinen Port nach außen. Wer beides lieber trennt, gibt Collabora wie bisher eine eigene Adresse
+- **Collabora mit dem Skript**: `--collabora`, `--office` und `--all` beim Installieren, `sudo moecloud collabora on` und `off` danach, dazu die Ergänzung `docker/collabora.yml` für die schlanke Compose-Datei
+- **Acht neue Themes**: Nordlicht, Mitternacht, Lagune, Zitrone, Sand, Rosenholz, Espresso und Klarblick. Damit sind zwanzig dabei
+- **Drei neue Schriften** für eigene Themes: die klare Geist, die gut lesbare Atkinson Hyperlegible und die elegante Fraunces. Alle liegen in MoeCloud selbst
+- **Darstellung nach Maß** unter **Konto › Darstellung**: Schriftgröße in vier Stufen, luftige oder kompakte Zeilen, kleine, mittlere oder große Kacheln, ein Farbschimmer im Hintergrund und weniger Bewegung, jeweils pro Browser
+- **Navigation anpassen**: Du bringst die Einträge der Seitenleiste in deine Reihenfolge, blendest aus, was du nicht brauchst, und wählst bis zu vier Einträge für die untere Leiste auf dem Handy. Das gilt für dein Konto auf allen Geräten
+- **Startseite anpassen**: Die Bereiche der Startseite lassen sich umsortieren und ausblenden
+- **Ordnersymbole**: **Symbol** im Menü eines Ordners setzt eines von 28 Symbolen hinein, zusammen mit der Farbe oder ohne
+- **Logo und Anmeldeseite** unter **Admin › Einstellungen**: eigenes Logo für Anmeldeseite und Seitenleiste, Hintergrundbild, Überschrift, Begrüßung und die Anmeldung links, in der Mitte oder rechts
+- **Weblinks**: **Neu › Neuer Weblink** legt eine Adresse als kleine Datei ab. Ein Doppelklick zeigt, wohin sie führt, und öffnet sie in einem neuen Tab. Verknüpfungen von Windows (`.url`) und macOS (`.webloc`) liest MoeCloud ebenfalls
+- **Aufgaben** in den Notizen: eine Übersicht aller Zeilen zum Abhaken aus allen Notizen, mit Haken direkt in der Liste
+- **Notizen nebeneinander**: **Beides** zeigt auf breiten Bildschirmen den Text links und die gestaltete Vorschau rechts
+- **Tempo und Schlummern** im Player: Wiedergabe zwischen 0,75× und 2×, und ein Schlummern, das nach 15 bis 90 Minuten oder am Ende des Titels leise ausblendet
+- **Zuletzt und oft gehört**: MoeCloud zählt deine Wiedergaben, und **Titel sortieren** stellt die zuletzt gehörten, die häufigsten oder die neuesten Titel nach oben
+- **Links mit Beginn**: **Gilt ab** schaltet einen Link erst an einem bestimmten Tag frei. Vorher sehen Besucher, ab wann er gilt
+- **Nachricht und Aussehen für Links**: eine Nachricht für Besucher über dem Inhalt und ein eigenes Theme für die Seite des Links
+- **Registrierung mit bestätigter E-Mail-Adresse**: Wer sich selbst registriert, klickt erst auf einen Link in einer E-Mail. Unbestätigte Konten verschwinden nach 48 Stunden von selbst
+- **Registrierung nur für bestimmte Domains**: MoeCloud nimmt auf Wunsch nur E-Mail-Adressen etwa von `firma.de` an und bestätigt sie dann immer
+- **Teilen in die Cloud**: Als App installiert, steht MoeCloud im Teilen-Menü anderer Apps. Dateien landen in deinen Dateien, Adressen werden zu Weblinks, Text zur Notiz
+- **Kurzbefehle** am Symbol der installierten App für Notizen, Fotos, Zuletzt und Favoriten
+- **Sicherheitsprüfung** unter **Admin › Sicherheit**: MoeCloud prüft die Einstellungen, die über die Sicherheit entscheiden, und stellt Dringendes nach oben. Dazu gehören HTTPS, der zweite Faktor der Admins, die Registrierung, die Regeln für Passwörter, App-Passwörter mit Zugriff auf die Verwaltung, Links ohne Schutz, Virenscan, Sicherungen und Updates
+- **Gesperrte Anmeldungen freigeben**: Dieselbe Seite zeigt, welches Konto und welche Adresse nach zu vielen Fehlversuchen gerade gesperrt ist, und gibt die Anmeldung mit einem Klick wieder frei
+- **Konto absichern** unter **Konto › Sicherheit**: meldet alle anderen Geräte ab, widerruft alle App-Passwörter und pausiert auf Wunsch die eigenen Links, in einem Schritt und nur mit dem Passwort
+- **Hinweise bei Änderungen am Konto**: Ein neues Passwort, ein neues App-Passwort, ein Passkey oder eine abgeschaltete Authenticator-App melden sich in der Glocke und per E-Mail
+- **Kontakt für Sicherheitsmeldungen**: Mit einer Adresse unter **Admin › Sicherheit** legt MoeCloud `/.well-known/security.txt` an. `/.well-known/change-password` führt Passwortmanager zur richtigen Stelle
+- **Passwort für Links erzeugen**: Der Würfel im Passwortfeld erzeugt ein zufälliges Passwort und kopiert es
+- **Dateien prüfen** unter **Admin › Sicherheit**: MoeCloud liest jede gespeicherte Datei und vergleicht sie mit ihrer Prüfsumme. Fehlt eine Datei auf der Platte oder stimmt ihr Inhalt nicht mehr, nennt die Seite die betroffenen Dateien und wem sie gehören. Auf Wunsch läuft die Prüfung jede Woche oder jeden Monat nachts und meldet sich bei den Admins, auch als Webhook. Auf der Kommandozeile macht `check --deep` dasselbe
+- **Verwaltung nur aus bestimmten Netzen**: Mit einer Liste von Adressen und Netzen unter **Admin › Sicherheit** bleibt die Verwaltung von überall sonst zu, auch für Admins und ihre App-Passwörter. MoeCloud nimmt keine Liste an, die dich selbst aussperrt, und `admin-networks clear` hebt sie auf der Kommandozeile wieder auf
+- **Eigenes Passwort bei der nächsten Anmeldung**: Admins verlangen bei einem Konto, dass die Person ihr Passwort bei der nächsten Anmeldung selbst neu festlegt. Bei neuen Konten mit Passwort ist das vorgewählt, beim Import aus CSV gilt es auf Wunsch für alle, und auf der Kommandozeile setzt es `reset-password --change`. Bis dahin öffnet die Anmeldung nur die Seite für das neue Passwort
+- **Regeln für Sitzungen** unter **Admin › Einstellungen**: nach wie vielen Tagen ohne Nutzung MoeCloud abmeldet und nach wie vielen Tagen spätestens eine neue Anmeldung fällig ist, auch bei täglicher Nutzung. Beides steht wie bisher auf 30 Tagen
+- **Protokoll als CSV**: **Admin › Protokoll** lädt die Ereignisse mit dem gewählten Filter als CSV-Datei. Zellen, die eine Tabellenkalkulation als Formel lesen würde, sind entschärft
+
+### Sicherheit
+
+Für diese Version gibt es eine eigene Testreihe mit 114 Tests in elf Dateien (`test/sec-*.test.ts`). Sie prüft jede einzelne Route ohne Anmeldung, mit fremdem Konto, als Gast und ohne Formular-Kennzeichen, dazu öffentliche Links, hochgeladene Inhalte, Weiterleitungen, Anfragen ins eigene Netz, Pfade, WebDAV und eingeschleuste Eingaben. Dabei ist Folgendes aufgefallen und behoben:
+
+- **Weiterleitung auf fremde Seiten**: Ein Ziel wie `/⇥/boese.example` mit Tabulator, Zeilenumbruch oder Rückstrich führte nach der Anmeldung auf eine fremde Seite. Ziele werden jetzt wie im Browser gelesen und müssen auf der eigenen Adresse bleiben
+- **App-Passwörter konnten das ganze Konto übernehmen**: Mit einem App-Passwort ließen sich bisher die E-Mail-Adresse ändern, weitere App-Passwörter anlegen, Passkeys und die Authenticator-App verwalten und als Admin die ganze Verwaltung bedienen. Das alles geht jetzt nur noch im Browser. Die Verwaltung bedient ein App-Passwort nur, wenn du beim Anlegen **Darf die Verwaltung bedienen** ankreuzt
+- **E-Mail-Adresse ändern verlangt das Passwort**: Wer kurz an einen offenen Browser kam, konnte bisher die Adresse ändern und sich darüber ein neues Passwort schicken lassen. Die alte Adresse bekommt außerdem einen Hinweis
+- **Personensuche verriet E-Mail-Adressen**: Die Suche fand Personen auch über Teile der Adresse, die sich so Stück für Stück erraten ließ. Sie findet jetzt nur noch die ganze Adresse. Gastkonten, die nichts teilen können, bekommen kein Verzeichnis mehr
+- **Links gesperrter Konten liefen weiter**: Öffentliche Links gelten nicht mehr, solange das Konto dahinter gesperrt oder abgelaufen ist oder wer den Link angelegt hat, den Ordner nicht mehr bearbeiten darf. Die Freigabe zeigt dann **Ohne Zugriff, außer Kraft**
+- **Admins konnten fremde Links umbauen**, etwa das Passwort entfernen. Die Verwaltung kann fremde Links weiterhin löschen, aber nicht mehr ändern
+- **Die Passwortseite eines Links nannte den Dateinamen**. Sie zeigt jetzt nur noch die Beschriftung, die du dem Link gibst
+- **Links nur zum Hochladen** verrieten, wie viele Dateien schon im Ordner liegen
+- **Serverfehler durch besondere Eingaben**: Eine Suche mit einem Null-Zeichen, der Filter `kind=__proto__` und Dateien mit Namen wie `a.constructor` führten zu einem Fehler 500. Der letzte Fall ließ sich auch über einen Link zum Hochladen auslösen
+- **Gesperrte Dateiendungen** ließen sich mit einem Punkt am Ende umgehen (`a.exe.`)
+- **Zurücksetzen des Passworts ohne eingetragene Adresse der Cloud**: Der Link in der E-Mail folgte der Adresse aus der Anfrage. Ohne eingetragene Adresse nimmt MoeCloud jetzt nur Adressen, über die sich schon ein Admin angemeldet hat
+- **WebDAV**: Sehr große, absichtlich kaputte Anfragen hielten den Server sekundenlang auf, und die Tabelle der Sperren konnte beliebig wachsen
+
+Dazu kommen Härtungen ohne bekannten Schaden: Jede Route unter `/api/` verlangt die Anmeldung jetzt an einer zentralen Stelle, bevor sie Eingaben prüft, und `/api/admin/` zusätzlich die Admin-Rolle. Namen mit unsichtbaren Zeichen, die die Schreibrichtung drehen und so eine Endung verstecken, werden abgelehnt. Die Vorschau von E-Mails entfernt Skripte, Formulare und eingebettete Seiten, bevor der Inhalt in den abgeschotteten Rahmen kommt. Antworten der API tragen `Cache-Control: no-store`, und Seiten aus E-Books laufen auch direkt geöffnet abgeschottet.
+
+### Verbessert
+
+- Die Schrift eines Themes wählst du im Editor aus einer Liste, jede in ihrer eigenen Schrift
+- Wiedergabelisten und Profilbilder aktualisieren sich in anderen offenen Fenstern sofort
+- Der Datenexport enthält die Zählung der Wiedergaben und bei Links Beginn und Nachricht
+- Die Verwaltung zeigt bei wartenden Konten, ob die E-Mail-Adresse schon bestätigt ist, und gibt Konten auch ohne Bestätigung frei
+- Per E-Mail verschickte Links nennen den Beginn, wenn sie erst später gelten
+- **Admin › Einstellungen › Office** warnt, wenn Collabora mit HTTP rechnet und die Cloud über HTTPS läuft oder umgekehrt
+
+### Behoben
+
+- Office: Nennt Collabora in seiner Auskunft einen anderen Port als die eingetragene Adresse, gilt für den Editor jetzt der Port der eingetragenen Adresse
+- Umbenennen, neue Textdatei und neuer Weblink: Wer gleich nach dem Öffnen tippt, behält seine Eingabe. Vorher konnte die Vorauswahl im Namensfeld sie teilweise überschreiben
+
+### API
+
+- Ordnersymbole: `PUT /api/nodes/icon` mit JSON `{ "ids": [], "icon" }`, Ordner tragen das Feld `icon`
+- Links: `POST /api/nodes/:id/links` und `PATCH /api/links/:id` nehmen `startsAt`, `message` und `theme` an, Links bringen dazu `scheduled` mit. Vor dem Beginn antwortet `/s/:token` mit 404
+- Musik: `GET /api/music` nennt `plays` und `playedAt`, `POST /api/music/played` zählt eine Wiedergabe, `DELETE /api/music/played` leert die Zählung
+- Notizen: `GET /api/notes/tasks` und `POST /api/notes/:id/tasks`
+- Konto: `PATCH /api/account/prefs` nimmt `nav` und `home` an, `GET /api/home` nennt `layout`
+- Verwaltung: `PUT` und `DELETE /api/admin/branding/logo` und `/background`, die Bilder liegen unter `/branding/logo` und `/branding/background`. Die Einstellungen kennen `login.title`, `login.text`, `login.layout`, `auth.confirmEmail`, `auth.domains` und `collabora.internal`, Personen bringen `unconfirmed` mit
+- Office: `GET /api/admin/office` nennt `builtIn` und `secure`. Passen HTTP und HTTPS nicht zusammen, antwortet das Öffnen mit `503` und dem Code `office_scheme`
+- Registrierung: `GET /register/confirm?token=…` bestätigt eine E-Mail-Adresse
+- Das Manifest nennt `shortcuts` und `share_target`, `POST /share-target` nimmt Geteiltes an
+- Sicherheit: `GET /api/admin/security` liefert die Prüfung mit `items`, `counts`, `lockouts` und `stats`, `POST /api/admin/security/unlock` gibt eine gesperrte Anmeldung frei. Die Einstellungen kennen `security.contact`
+- Konto: `POST /api/account/secure` mit JSON `{ "password", "sessions", "appPasswords", "links" }` sichert ein Konto ab. `PATCH /api/account` verlangt für eine neue E-Mail-Adresse das Feld `password` und antwortet sonst mit `400` und dem Code `password_required`
+- App-Passwörter: `POST /api/account/app-passwords` nimmt `admin` an, App-Passwörter bringen das Feld `admin` mit. Ohne das Recht antwortet `/api/admin/` mit `403` und dem Code `app_password_scope`. Was nur im Browser geht, antwortet einem App-Passwort mit `403` und dem Code `session_required`: E-Mail-Adresse und Passwort ändern, App-Passwörter anlegen oder fremde widerrufen, Passkeys, Authenticator-App, Sitzungen, SSO-Verbindung und das Löschen des Kontos. Das eigene App-Passwort kann sich weiterhin selbst widerrufen
+- Links bringen das Feld `blocked` mit, mit `account`, `access` oder `null`. `PATCH`, `DELETE` und die Aufrufe eines fremden Links antworten Admins mit `404`, zum Löschen bleibt `DELETE /api/admin/links/:id`
+- `GET /api/users/search` findet E-Mail-Adressen nur noch ganz und antwortet Gastkonten mit `403`
+- Anfragen ohne Anmeldung bekommen auf jeder Route unter `/api/` ein `401`, auch mit ungültigem Körper. Ein Null-Zeichen in Adresse oder Körper führt zu `400`
+- Dateien prüfen: `GET /api/admin/integrity` nennt `running`, `last` und `schedule`, `POST` startet die Prüfung, `DELETE` bricht sie ab. Die Einstellungen kennen `integrity.schedule` mit `off`, `weekly` oder `monthly`, Webhooks das Ereignis `files_damaged`
+- Verwaltung nur aus bestimmten Netzen: `PUT /api/admin/security/networks` mit JSON `{ "networks" }`, `GET /api/admin/security` nennt `networks` und `address`. Von anderen Adressen antwortet `/api/admin/` mit `403` und dem Code `admin_network`
+- Passwortwechsel: `POST /api/admin/users`, `PATCH /api/admin/users/:id` und `POST /api/admin/users/import` nehmen `mustChange` an, Personen bringen das Feld mit. Solange der Wechsel aussteht, antwortet die API einer Anmeldung im Browser mit `403` und dem Code `password_change_required`. Offen bleiben `GET /api/session`, das dann `mustChangePassword` nennt, `POST /api/account/password` und das Abmelden. App-Passwörter arbeiten weiter
+- Sitzungen: Die Einstellungen kennen `auth.sessionDays` und `auth.sessionMaxDays`
+- Protokoll: `GET /api/admin/audit/export` liefert die Ereignisse als CSV, mit `user` und `action` wie die Liste
+- Alle anderen Adressen und Felder bleiben, wie sie sind
+
+### Kleinigkeiten
+
+- Die Datenbank bekommt Stand 11. Vorher legt MoeCloud wie gewohnt eine Sicherung an
+- Neue Umgebungsvariablen: `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `COLLABORA_WOPI_URL`, für das mitgelieferte Collabora außerdem `OFFICE_HTTPS`, `COLLABORA_TAG` und `OFFICE_DICTIONARIES`
+- 397 neue Texte mit englischer Übersetzung
+- 542 Tests statt 391, auf SQLite und auf PostgreSQL
+
+### Update von 1.6.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Spalten für Ordnersymbole und für Beginn, Nachricht und Theme von Links an, dazu die Tabellen für die Zählung der Wiedergaben und für die Bestätigung von E-Mail-Adressen und das Feld für einen fälligen Passwortwechsel. An deinen Dateien ändert sich nichts.
+
+**App-Passwörter**: Bestehende App-Passwörter von Admins behalten den Zugriff auf die Verwaltung, damit Skripte weiterlaufen. Sie tragen unter **Konto › WebDAV und App-Passwörter** den Zusatz **mit Verwaltung**, und **Admin › Sicherheit** zählt sie auf. Widerruf, was kein Skript braucht, und leg für Laufwerke und Apps ein neues ohne dieses Recht an. Skripte, die über ein App-Passwort die E-Mail-Adresse oder das Passwort eines Kontos geändert haben, müssen das jetzt im Browser tun.
+
+**Links**: Öffentliche Links von gesperrten oder abgelaufenen Konten gelten ab dem Update nicht mehr, bis das Konto wieder freigegeben ist.
+
+Für bestehende Installationen ändert sich nichts von selbst: Die `docker-compose.yml` bleibt schlank, und Collabora, die Office-Vorschau und ClamAV starten nur, wenn du sie dazunimmst. Wer Collabora schon unter einer eigenen Adresse betreibt, behält diese Einrichtung.
+
+Geprüft sind die Wege zu Collabora mit Tests und einem nachgebauten Collabora, mit einem echten Collabora-Server und einem echten Start in Docker noch nicht. Das Teilen aus anderen Apps ist mit einem nachgestellten Aufruf im Browser geprüft, auf einem echten Handy noch nicht.
+
 ## [1.6.0] · 2026-11-19
 
 Diese Version macht MoeCloud zum Ort für gemeinsame Arbeit: Teamordner mit eigenem Speicher, Gastkonten für Leute von außen, Office-Dokumente, die du mit Collabora Online im Browser bearbeitest, und Abläufe, die neue Dateien von selbst benennen, einsortieren und umwandeln. Dazu kommen Notizen, ein Bereich für Musik mit Wiedergabelisten, eine Startseite, Profilbilder, Nutzungsbedingungen mit Zustimmung und einiges für die Verwaltung.
@@ -597,6 +714,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.7.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.7.0
 [1.6.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.6.0
 [1.5.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.1
 [1.5.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.0

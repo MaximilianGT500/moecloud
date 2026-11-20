@@ -15,6 +15,16 @@ export const messagesFor = (lang: Lang) => (lang === 'en' ? english : null);
 export const longDate = (lang: Lang, time: number) =>
   new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'long' }).format(new Date(time));
 
+export const longDateTime = (lang: Lang, time: number) =>
+  new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'de-DE', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(time));
+
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
 export function sizeIn(lang: Lang, bytes: number) {

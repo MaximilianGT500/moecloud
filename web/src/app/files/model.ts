@@ -52,6 +52,11 @@ export interface SharedLink {
   maxDownloads?: number | null;
   paused?: boolean;
   exhausted?: boolean;
+  startsAt?: number | null;
+  scheduled?: boolean;
+  blocked?: 'account' | 'access' | null;
+  message?: string | null;
+  theme?: string | null;
   createdAt: number;
   node?: Item;
 }

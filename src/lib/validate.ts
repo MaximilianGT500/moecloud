@@ -13,6 +13,13 @@ export function parse<T extends z.ZodType>(schema: T, input: unknown): z.infer<T
 
 export const id = z.string().regex(/^[0-9A-Za-z]{8,40}$/, 'Ungültige Kennung');
 
+export function intOf(value: unknown): number {
+  const text = typeof value === 'string' ? value.trim() : value;
+  if (typeof text !== 'number' && (typeof text !== 'string' || !/^-?\d{1,16}$/.test(text))) return Number.NaN;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
+}
+
 export const ids = z.array(id).min(1, 'Wähle mindestens ein Element aus').max(1000, 'Höchstens 1000 Elemente auf einmal');
 
 export const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Die Farbe muss als Hex-Wert wie #8b5cf6 angegeben werden');
@@ -24,7 +31,12 @@ export const username = z
   .max(32, 'Der Benutzername darf höchstens 32 Zeichen haben')
   .regex(/^[a-zA-Z0-9._-]+$/, 'Der Benutzername darf nur Buchstaben, Ziffern, Punkt, Minus und Unterstrich enthalten');
 
-export const displayName = z.string().trim().min(1, 'Gib einen Namen ein').max(80, 'Der Name darf höchstens 80 Zeichen haben');
+export const displayName = z
+  .string()
+  .trim()
+  .min(1, 'Gib einen Namen ein')
+  .max(80, 'Der Name darf höchstens 80 Zeichen haben')
+  .refine((value) => !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value), 'Der Name darf keine Steuerzeichen enthalten');
 
 export const email = z
   .string()

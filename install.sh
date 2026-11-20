@@ -10,6 +10,8 @@ LOG="${MOECLOUD_LOG:-/var/log/moecloud-install.log}"
 REF="${MOECLOUD_REF:-main}"
 DOMAIN=""
 CLAMAV=""
+OFFICE=""
+COLLABORA=""
 DATABASE=""
 PORT=""
 AUTO_UPDATE=""
@@ -82,6 +84,11 @@ Optionen:
   --port <port>       Port ohne Domain (Standard 3000)
   --clamav            ClamAV als Virenscan mitstarten (braucht etwa 3 GB Arbeitsspeicher)
   --no-clamav         ClamAV nicht einrichten
+  --collabora         Office-Dokumente im Browser bearbeiten, mit Collabora Online
+  --no-collabora      Collabora Online nicht einrichten
+  --office            Vorschau für PowerPoint, OpenDocument und ältere Office-Dateien
+  --no-office         Die Office-Vorschau nicht einrichten
+  --all               Alles mitstarten: ClamAV, Collabora Online und die Office-Vorschau
   --postgres          PostgreSQL als Datenbank mitstarten statt SQLite
   --sqlite            SQLite als Datenbank nehmen (Standard)
   --auto-update       Updates jede Nacht automatisch einspielen
@@ -114,6 +121,15 @@ while [ $# -gt 0 ]; do
       ;;
     --clamav) CLAMAV="yes" ;;
     --no-clamav) CLAMAV="no" ;;
+    --collabora) COLLABORA="yes" ;;
+    --no-collabora) COLLABORA="no" ;;
+    --office) OFFICE="yes" ;;
+    --no-office) OFFICE="no" ;;
+    --all)
+      CLAMAV="yes"
+      COLLABORA="yes"
+      OFFICE="yes"
+      ;;
     --postgres) DATABASE="postgres" ;;
     --sqlite) DATABASE="sqlite" ;;
     --version)
@@ -394,6 +410,7 @@ fetch_files() {
   download docker/clamav.yml "$DIR/docker/clamav.yml"
   download_optional docker/postgres.yml "$DIR/docker/postgres.yml"
   download_optional docker/office.yml "$DIR/docker/office.yml"
+  download_optional docker/collabora.yml "$DIR/docker/collabora.yml"
   download install.sh "$DIR/install.sh"
   chmod 700 "$DIR/install.sh"
   download docker/moecloud-host "$BIN"
@@ -522,6 +539,23 @@ settings() {
   if [ "$CLAMAV" = "yes" ] && [ "$MEMORY" -lt 3000 ]; then
     warn "Mit $MEMORY MB wird es für ClamAV eng. Läuft der Server voll, schalte den Virenscan wieder ab."
   fi
+  if [ -z "$COLLABORA" ]; then
+    if [ "$YES" -eq 1 ]; then
+      COLLABORA="no"
+    else
+      say "Mit Collabora Online bearbeitest du Word, Excel und PowerPoint direkt im Browser, auch zu mehreren."
+      say "Das Image ist groß, und der Dienst braucht eigenen Arbeitsspeicher."
+      if confirm "Collabora Online einrichten?" "$([ "$MEMORY" -ge 3500 ] && echo j || echo n)"; then COLLABORA="yes"; else COLLABORA="no"; fi
+    fi
+  fi
+  if [ -z "$OFFICE" ]; then
+    if [ "$YES" -eq 1 ]; then
+      OFFICE="no"
+    else
+      say "Die Office-Vorschau zeigt PowerPoint, OpenDocument und ältere Office-Dateien und wandelt Dokumente in PDFs um."
+      if confirm "Office-Vorschau einrichten?" "$([ "$MEMORY" -ge 1800 ] && echo j || echo n)"; then OFFICE="yes"; else OFFICE="no"; fi
+    fi
+  fi
   if [ -z "$DATABASE" ]; then
     if [ "$YES" -eq 1 ]; then
       DATABASE="sqlite"
@@ -593,6 +627,14 @@ install() {
   fi
   local files="docker-compose.yml"
   [ "$CLAMAV" = "yes" ] && files="$files:docker/clamav.yml"
+  if [ "$OFFICE" = "yes" ]; then
+    [ -f "$DIR/docker/office.yml" ] || fail "docker/office.yml ließ sich nicht von GitHub laden."
+    files="$files:docker/office.yml"
+  fi
+  if [ "$COLLABORA" = "yes" ]; then
+    [ -f "$DIR/docker/collabora.yml" ] || fail "docker/collabora.yml ließ sich nicht von GitHub laden."
+    files="$files:docker/collabora.yml"
+  fi
   if [ "$DATABASE" = "postgres" ]; then
     files="$files:docker/postgres.yml"
     [ -n "$(env_get POSTGRES_PASSWORD)" ] || env_set POSTGRES_PASSWORD "$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
@@ -614,6 +656,9 @@ install() {
   link="$(setup_link)"
   if [ "$DATABASE" = "postgres" ]; then
     say "PostgreSQL läuft als eigener Dienst, seine Daten liegen in $DIR/postgres."
+  fi
+  if [ "$COLLABORA" = "yes" ]; then
+    say "Collabora Online läuft mit. Nach der Einrichtung öffnest du Office-Dokumente per Doppelklick, den Stand zeigt Admin › Einstellungen › Office."
   fi
   if [ -n "$DOMAIN" ]; then
     say "Zeigt $DOMAIN auf diesen Server und sind die Ports 80 und 443 offen, holt Caddy das Zertifikat beim ersten Aufruf."

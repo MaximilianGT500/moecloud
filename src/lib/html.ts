@@ -6,6 +6,7 @@ import * as settings from '../services/settings.ts';
 import { baseUrl } from '../services/links.ts';
 import { mailReady } from '../services/mail.ts';
 import { unreadCount } from '../services/notify.ts';
+import { brandingUrl } from '../services/branding.ts';
 import { effectiveTheme, themeBoot, themeCss, type EffectiveTheme } from '../services/themes.ts';
 import { entryTags, type Entry } from './assets.ts';
 import { escapeHtml, serializeJson } from './http.ts';
@@ -31,6 +32,7 @@ const themeOf = (request: FastifyRequest) => effectiveTheme(request.auth?.user, 
 export function siteInfo(request: FastifyRequest, theme: EffectiveTheme = themeOf(request)) {
   return {
     name: settings.get('site.name'),
+    logo: brandingUrl('logo'),
     url: baseUrl(request),
     seed: theme.spec.seed,
     palette: theme.palette,
@@ -80,7 +82,11 @@ function head(request: FastifyRequest, title: string, extra = '', withTokens = t
 <link rel="manifest" href="/manifest.webmanifest">
 ${extra}<script nonce="${nonce}">${THEME_SCRIPT}</script>
 <style nonce="${nonce}">${baseCss(palette, withTokens)}${themeCss(theme)}.noscript{font-family:system-ui,sans-serif;padding:24px;max-width:560px;margin:0 auto;line-height:1.5}</style>
-<style nonce="${nonce}" id="moe-theme-css">${theme.css}</style>`;
+<style nonce="${nonce}" id="moe-theme-css">${theme.css}</style>${
+    withTokens && brandingUrl('background')
+      ? `\n<style nonce="${nonce}">.auth--image{--auth-image:url("${escapeHtml(brandingUrl('background')!)}")}</style>`
+      : ''
+  }`;
 }
 
 function missingBuild(request: FastifyRequest) {
@@ -95,6 +101,7 @@ export interface AppPage {
   data?: Record<string, unknown>;
   status?: number;
   extraHead?: string;
+  theme?: EffectiveTheme;
 }
 
 export function renderApp(request: FastifyRequest, reply: FastifyReply, page: AppPage) {
@@ -102,7 +109,7 @@ export function renderApp(request: FastifyRequest, reply: FastifyReply, page: Ap
   reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-store');
   if (!tags) return reply.code(503).send(missingBuild(request));
   const auth = request.auth;
-  const theme = themeOf(request);
+  const theme = page.theme ?? themeOf(request);
   const boot = {
     page: page.entry,
     lang: request.lang,

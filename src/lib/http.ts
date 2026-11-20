@@ -45,9 +45,18 @@ export function sameOrigin(request: FastifyRequest): boolean {
 
 export const isSecure = (request: FastifyRequest) => request.protocol === 'https';
 
+const REDIRECT_BASE = 'http://moecloud.invalid';
+
 export function safeRedirect(target: unknown, fallback = '/files'): string {
-  if (typeof target !== 'string' || !target.startsWith('/') || target.startsWith('//') || target.startsWith('/\\')) return fallback;
-  return target;
+  if (typeof target !== 'string' || target.length > 2000 || !target.startsWith('/')) return fallback;
+  if (/[\u0000-\u0020\u007f-\u009f\u2028\u2029\\]/.test(target) || target.startsWith('//')) return fallback;
+  try {
+    const url = new URL(target, REDIRECT_BASE);
+    if (url.origin !== REDIRECT_BASE || url.pathname.startsWith('//')) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
 }
 
 export interface FileResponse {

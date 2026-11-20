@@ -5,11 +5,14 @@ import { all, closeDatabase, databaseInfo, isLockError, openDatabase, run, stamp
 import { copyDatabase } from './src/lib/copy.ts';
 import { schemaVersion } from './src/lib/schema.ts';
 import { isPostgresUrl, redactUrl } from './src/lib/postgres.ts';
+import { parseNetworks } from './src/lib/networks.ts';
 import { hashPassword, randomId } from './src/lib/crypto.ts';
 import { audit } from './src/services/audit.ts';
 import { blobPath, ensureDirs } from './src/services/blobs.ts';
 import { resetTotp } from './src/services/auth.ts';
 import { runMaintenance } from './src/services/jobs.ts';
+import { newProgress, recordIntegrity, verifyBlobs } from './src/services/integrity.ts';
+import { formatBytes } from './src/services/uploads.ts';
 import { deliver, mailReady } from './src/services/mail.ts';
 import { detectTools } from './src/services/media.ts';
 import { addExample, installPlugin, listExamples, removePlugin } from './src/services/plugin-install.ts';
@@ -84,13 +87,17 @@ function help() {
   const lines: [string, string][] = [
     ['users', 'Alle Konten anzeigen'],
     ['create-admin <name> [--email] [--name]', 'Admin-Konto mit neuem Passwort anlegen'],
-    ['reset-password <name>', 'Neues Passwort setzen und alle Sitzungen beenden'],
+    [
+      'reset-password <name> [--change]',
+      'Neues Passwort setzen und alle Sitzungen beenden, mit --change nur bis zur nächsten Anmeldung gültig',
+    ],
     ['reset-2fa <name> [--passkeys]', 'Authenticator-App entfernen, mit --passkeys auch alle Passkeys'],
     ['setup-link [--new]', 'Link für die Einrichtung anzeigen, mit --new einen neuen Code erzeugen'],
     ['backup [ordner]', 'Datenbank sichern, ohne den Server anzuhalten'],
     ['cleanup', 'Papierkorb, Uploads und verwaiste Dateien aufräumen'],
-    ['check', 'Prüfen, ob alle Dateien auf der Platte liegen'],
+    ['check [--deep]', 'Prüfen, ob alle Dateien auf der Platte liegen, mit --deep auch, ob ihr Inhalt stimmt'],
     ['maintenance <on|off> [text]', 'Wartungsmodus ein- oder ausschalten'],
+    ['admin-networks [clear]', 'Netze zeigen, aus denen die Verwaltung erreichbar ist, mit clear die Beschränkung aufheben'],
     ['scan-test', 'Verbindung zu ClamAV prüfen'],
     ['scan [--all]', 'Ungeprüfte Dateien mit ClamAV prüfen, mit --all alle'],
     ['mail-test <adresse>', 'Test-E-Mail schicken'],
@@ -189,9 +196,11 @@ async function main() {
     case 'reset-password': {
       const user = requireUser(positional()[0]);
       const password = generated();
-      run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(password), user.id);
+      const change = args.includes('--change');
+      run('UPDATE users SET password_hash = ?, must_change = ? WHERE id = ?', await hashPassword(password), change ? 1 : 0, user.id);
       destroyUserSessions(user.id);
       out(`Neues Passwort für „${user.username}“: ${password}`);
+      if (change) out('Bei der nächsten Anmeldung verlangt MoeCloud ein eigenes Passwort.');
       break;
     }
     case 'reset-2fa': {
@@ -231,6 +240,24 @@ async function main() {
       break;
     }
     case 'check': {
+      if (args.includes('--deep')) {
+        const progress = newProgress();
+        out(`Lese ${progress.total} Dateien (${formatBytes(progress.totalBytes)}), das kann dauern.`);
+        const result = await verifyBlobs('cli', progress);
+        recordIntegrity(result);
+        for (const problem of result.problems) {
+          const names = problem.examples.map((example) => `„${example.name}“ von ${example.owner}`).join(', ');
+          out(`${problem.kind === 'missing' ? 'Fehlt' : 'Beschädigt'}: ${problem.sha256}${names ? ` (${names})` : ''}`);
+        }
+        const bad = result.missing + result.damaged;
+        out(
+          bad
+            ? `${result.missing} von ${result.checked} Dateien fehlen, ${result.damaged} sind beschädigt.`
+            : `Alle ${result.checked} Dateien sind da und unversehrt.`
+        );
+        if (bad) process.exitCode = 2;
+        break;
+      }
       const rows = all<{ sha256: string }>('SELECT sha256 FROM blobs WHERE refs > 0');
       let missing = 0;
       for (const row of rows) {
@@ -251,6 +278,24 @@ async function main() {
       if (text.length) settings.set('maintenance.message', text.join(' '));
       audit('maintenance', { details: { enabled: state === 'on', via: 'cli' } });
       out(state === 'on' ? 'Der Wartungsmodus ist an. Nur Admins kommen hinein.' : 'Der Wartungsmodus ist aus.');
+      break;
+    }
+    case 'admin-networks': {
+      const [action] = positional();
+      if (action && action !== 'clear') fail('Gib clear an oder lass die Angabe weg.');
+      if (action === 'clear') {
+        settings.set('security.adminNetworks', '');
+        audit('settings_changed', { details: { keys: ['security.adminNetworks'], via: 'cli' } });
+        out('Die Verwaltung ist wieder von überall erreichbar.');
+        break;
+      }
+      const entries = parseNetworks(settings.get('security.adminNetworks')).entries;
+      if (entries.length) {
+        out(`Die Verwaltung ist nur erreichbar aus: ${entries.join(', ')}`);
+        out(`Aufheben mit: ${command} admin-networks clear`);
+      } else {
+        out('Die Verwaltung ist von überall erreichbar.');
+      }
       break;
     }
     case 'scan-test': {

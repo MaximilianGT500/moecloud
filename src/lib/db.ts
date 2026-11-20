@@ -242,7 +242,12 @@ function statement(sql: string) {
 }
 
 const bind = (params: Param[]): SQLInputValue[] =>
-  params.map((value) => (value === undefined ? null : typeof value === 'boolean' ? (value ? 1 : 0) : value));
+  params.map((value) => {
+    if (value === undefined) return null;
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number' && (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER)) return null;
+    return value;
+  });
 
 function pg() {
   if (!postgres) throw new Error('Datenbank ist nicht geöffnet');

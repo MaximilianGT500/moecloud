@@ -114,6 +114,17 @@ export function createAppTheme({ palette, corners }: ThemeOptions) {
               scrollBehavior: 'auto !important',
             },
           },
+          'html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after': {
+            animationDuration: '0.01ms !important',
+            animationIterationCount: '1 !important',
+            transitionDuration: '0.01ms !important',
+            scrollBehavior: 'auto !important',
+          },
+          'html[data-backdrop="glow"]': { '--moe-chrome': 'transparent' },
+          'html[data-backdrop="glow"] body': {
+            backgroundImage: `radial-gradient(70% 55% at 90% -10%, ${mix(c.primary, 18)}, transparent 70%), radial-gradient(60% 50% at -5% 105%, ${mix(c.tertiary, 14)}, transparent 70%)`,
+            backgroundAttachment: 'fixed',
+          },
         },
       },
       MuiPaper: {

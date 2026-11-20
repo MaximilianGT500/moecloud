@@ -43,4 +43,11 @@ export class Limiter {
   reset(key: string) {
     this.buckets.delete(key);
   }
+
+  entries() {
+    const now = Date.now();
+    return [...this.buckets]
+      .filter(([, bucket]) => bucket.count >= this.max && bucket.reset > now)
+      .map(([key, bucket]) => ({ key, until: bucket.reset }));
+  }
 }

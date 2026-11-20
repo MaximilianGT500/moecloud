@@ -43,6 +43,7 @@ export interface AdminUser {
   avatar?: string | null;
   disabled: boolean;
   pending?: boolean;
+  unconfirmed?: boolean;
   quota: number | null;
   effectiveQuota: number | null;
   used: number;
@@ -50,6 +51,7 @@ export interface AdminUser {
   passkeys: number;
   needs2fa: boolean;
   hasPassword: boolean;
+  mustChange?: boolean;
   createdAt: number;
   lastLoginAt: number | null;
   sessions: number;
@@ -183,6 +185,7 @@ function UserDialog({
     quota: null as number | null,
     disabled: false,
     sendLink: false,
+    mustChange: true,
     expires: '',
   };
   const [form, setForm] = useState(empty);
@@ -202,6 +205,7 @@ function UserDialog({
         quota: user?.quota ?? null,
         disabled: user?.disabled ?? false,
         sendLink: !user && mail,
+        mustChange: user ? Boolean(user.mustChange) : true,
         expires: dayValue(user?.expiresAt ?? null),
       });
     }
@@ -222,6 +226,7 @@ function UserDialog({
           disabled: form.disabled,
           ...(form.expires !== dayValue(user.expiresAt) ? { expiresAt: endOfDay(form.expires) } : {}),
           ...(form.password ? { password: form.password } : {}),
+          ...(canChange && form.mustChange !== Boolean(user.mustChange) ? { mustChange: form.mustChange } : {}),
         });
         toast(t('Gespeichert'));
       } else {
@@ -232,7 +237,7 @@ function UserDialog({
           role: form.role,
           quota: form.quota,
           ...(form.expires ? { expiresAt: endOfDay(form.expires) } : {}),
-          ...(linkMode ? { sendLink: true } : { password: form.password }),
+          ...(linkMode ? { sendLink: true } : { password: form.password, mustChange: form.mustChange }),
         });
         toast(
           result.sent
@@ -250,6 +255,7 @@ function UserDialog({
   };
 
   const self = user?.id === me.id;
+  const canChange = !self && !linkMode && (user ? user.hasPassword || Boolean(form.password) : true);
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <Box
@@ -326,13 +332,22 @@ function UserDialog({
               type="password"
               autoComplete="new-password"
               value={form.password}
-              onChange={(event) => set({ password: event.target.value })}
+              onChange={(event) =>
+                set({ password: event.target.value, ...(user && !form.password && event.target.value ? { mustChange: true } : {}) })
+              }
               required={!user}
               helperText={
                 user
                   ? t('Setzt du ein neues Passwort, wird die Person überall abgemeldet.')
                   : t('Mindestens {count} Zeichen. Gib es der Person auf einem sicheren Weg.', { count: passwordMin })
               }
+            />
+          )}
+          {canChange && (
+            <FormControlLabel
+              sx={{ gridColumn: '1 / -1', m: 0, gap: 1 }}
+              control={<Switch checked={form.mustChange} onChange={(event) => set({ mustChange: event.target.checked })} />}
+              label={t('Bei der nächsten Anmeldung ein eigenes Passwort verlangen')}
             />
           )}
           {user && !self && (
@@ -463,6 +478,7 @@ const IMPORT_EXAMPLE =
 function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: boolean; onClose: () => void; onDone: () => void }) {
   const [csv, setCsv] = useState('');
   const [sendLinks, setSendLinks] = useState(true);
+  const [mustChange, setMustChange] = useState(true);
   const [lines, setLines] = useState<ImportLine[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -476,7 +492,12 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
   const send = async (apply: boolean) => {
     setBusy(true);
     try {
-      const result = await api.post<{ lines: ImportLine[]; created: number }>('/api/admin/users/import', { csv, sendLinks, apply });
+      const result = await api.post<{ lines: ImportLine[]; created: number }>('/api/admin/users/import', {
+        csv,
+        sendLinks,
+        mustChange,
+        apply,
+      });
       setLines(result.lines);
       if (apply) {
         setDone(true);
@@ -554,6 +575,11 @@ function ImportDialog({ open, mail, onClose, onDone }: { open: boolean; mail: bo
               label={
                 mail ? t('Wer kein Passwort hat, bekommt einen Link per E-Mail') : t('Ohne E-Mail-Versand braucht jede Person ein Passwort')
               }
+            />
+            <FormControlLabel
+              disabled={busy}
+              control={<Switch checked={mustChange} onChange={(event) => setMustChange(event.target.checked)} />}
+              label={t('Passwörter aus der Datei gelten nur bis zur ersten Anmeldung')}
             />
           </>
         ) : (
@@ -749,6 +775,7 @@ export function PeopleSection() {
                     <Typography variant="caption" component="p">
                       @{user.username}
                       {user.email ? ` · ${user.email}` : ''} · {t('registriert {date}', { date: formatDate(user.createdAt) })}
+                      {user.unconfirmed ? ` · ${t('E-Mail-Adresse noch nicht bestätigt')}` : ''}
                     </Typography>
                   </Box>
                   <Button size="small" onClick={() => void reject(user)} aria-label={t('Anfrage von {name} ablehnen', { name: user.name })}>
@@ -812,7 +839,13 @@ export function PeopleSection() {
                           <Chip size="small" label={t('Admin')} sx={{ bgcolor: c.tertiaryContainer, color: c.onTertiaryContainer }} />
                         )}
                         {user.role === 'guest' && <Chip size="small" variant="outlined" label={t('Gast')} />}
-                        {user.pending && <Chip size="small" label={t('Wartet auf Freigabe')} color="secondary" />}
+                        {user.pending && (
+                          <Chip
+                            size="small"
+                            label={user.unconfirmed ? t('E-Mail nicht bestätigt') : t('Wartet auf Freigabe')}
+                            color="secondary"
+                          />
+                        )}
                         {user.disabled && (
                           <Chip size="small" label={t('Gesperrt')} sx={{ bgcolor: c.errorContainer, color: c.onErrorContainer }} />
                         )}
@@ -821,6 +854,7 @@ export function PeopleSection() {
                         ) : user.expiresAt ? (
                           <Chip size="small" variant="outlined" label={t('Bis {date}', { date: formatDay(user.expiresAt) })} />
                         ) : null}
+                        {user.mustChange && <Chip size="small" variant="outlined" label={t('Neues Passwort fällig')} />}
                         {(user.totp || user.passkeys > 0) && (
                           <Chip size="small" label={user.totp ? '2FA' : t('Passkey')} variant="outlined" />
                         )}

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Address, Email } from 'postal-mime';
 import { badRequest, notFound } from '../lib/errors.ts';
+import { defuse } from '../lib/defuse.ts';
 import { escapeHtml } from '../lib/http.ts';
 import { blobPath } from './blobs.ts';
 import type { NodeRow } from './nodes.ts';
@@ -118,7 +119,7 @@ export async function emailBody(node: NodeRow) {
     const data = bytesOf(attachment.content);
     if (data.length <= INLINE_LIMIT) images.set(key, `data:${attachment.mimeType};base64,${data.toString('base64')}`);
   }
-  const html = email.html.replace(/\bcid:([^"'\s)>]+)/gi, (_match, id: string) => {
+  const html = defuse(email.html).replace(/\bcid:([^"'\s)>]+)/gi, (_match, id: string) => {
     let key = id.toLowerCase();
     try {
       key = decodeURIComponent(id).toLowerCase();

@@ -6,6 +6,8 @@ import { contentUrl, thumbUrl, type Item } from './kinds';
 import { loadPosition, storePosition } from './playback';
 
 export type Repeat = 'off' | 'all' | 'one';
+export type Sleep = { until: number } | { track: true } | null;
+export const RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 export interface TrackInfo {
   title: string;
@@ -23,6 +25,8 @@ export interface PlayerState {
   repeat: Repeat;
   shuffle: boolean;
   volume: number;
+  rate: number;
+  sleep: Sleep;
   info: Record<string, TrackInfo>;
 }
 
@@ -55,6 +59,8 @@ function restore(): PlayerState {
     repeat: 'off',
     shuffle: false,
     volume: 1,
+    rate: 1,
+    sleep: null,
     info: {},
   };
   try {
@@ -70,6 +76,7 @@ function restore(): PlayerState {
       repeat: saved.repeat === 'all' || saved.repeat === 'one' ? saved.repeat : 'off',
       shuffle: Boolean(saved.shuffle),
       volume: Math.min(1, Math.max(0, Number(saved.volume ?? 1))),
+      rate: RATES.find((rate) => rate === Number(saved.rate)) ?? 1,
     };
   } catch {
     return empty;
@@ -81,6 +88,8 @@ let audio: HTMLAudioElement | null = null;
 let loaded: string | null = null;
 let lastSaved = 0;
 let lastRemote = 0;
+let counted: string | null = null;
+let sleepTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
 function persist() {
@@ -89,8 +98,8 @@ function persist() {
       localStorage.removeItem(STORAGE);
       return;
     }
-    const { queue, original, index, time, repeat, shuffle, volume } = state;
-    localStorage.setItem(STORAGE, JSON.stringify({ queue, original, index, time, repeat, shuffle, volume }));
+    const { queue, original, index, time, repeat, shuffle, volume, rate } = state;
+    localStorage.setItem(STORAGE, JSON.stringify({ queue, original, index, time, repeat, shuffle, volume, rate }));
   } catch {
     return;
   }
@@ -162,6 +171,7 @@ function ensure() {
     patch({ time: element.currentTime }, now - lastSaved > 5000);
     if (now - lastSaved > 5000) lastSaved = now;
     remember();
+    count(element);
     if (navigator.mediaSession?.setPositionState && Number.isFinite(element.duration) && element.duration > 0) {
       try {
         navigator.mediaSession.setPositionState({
@@ -182,6 +192,11 @@ function ensure() {
   });
   element.addEventListener('ended', () => {
     remember(true);
+    count(element, true);
+    if (state.sleep && 'track' in state.sleep) {
+      patch({ playing: false, time: 0, sleep: null });
+      return;
+    }
     if (state.index < state.queue.length - 1) jump(state.index + 1);
     else if (state.repeat === 'all' && state.queue.length) jump(0);
     else patch({ playing: false, time: 0 });
@@ -224,13 +239,25 @@ function ensure() {
   return element;
 }
 
+function count(element: HTMLAudioElement, ended = false) {
+  const track = current();
+  if (!track || counted === track.id || loaded !== track.id) return;
+  const length = Number.isFinite(element.duration) ? element.duration : 0;
+  if (!ended && element.currentTime < 30 && (length <= 0 || element.currentTime < length / 2)) return;
+  counted = track.id;
+  api.post('/api/music/played', { id: track.id }).catch(() => undefined);
+}
+
 function load(autoplay: boolean, at = 0) {
   const track = current();
   const element = ensure();
   if (!track) return;
   loaded = track.id;
+  counted = null;
   element.src = contentUrl(track);
-  element.loop = state.repeat === 'one';
+  element.defaultPlaybackRate = state.rate;
+  element.playbackRate = state.rate;
+  element.loop = state.repeat === 'one' && !(state.sleep && 'track' in state.sleep);
   patch({ time: at, duration: 0 }, false);
   void fetchInfo(track);
   describe(track);
@@ -330,9 +357,56 @@ export function setVolume(volume: number) {
   patch({ volume: value });
 }
 
+export function setRate(rate: number) {
+  const value = RATES.find((entry) => entry === rate) ?? 1;
+  if (audio) {
+    audio.defaultPlaybackRate = value;
+    audio.playbackRate = value;
+  }
+  patch({ rate: value });
+}
+
+function fadeOut() {
+  const element = audio;
+  if (!element || element.paused) {
+    patch({ sleep: null });
+    return;
+  }
+  const volume = state.volume;
+  let step = 0;
+  const timer = setInterval(() => {
+    step += 1;
+    element.volume = Math.max(0, volume * (1 - step / 20));
+    if (step < 20) return;
+    clearInterval(timer);
+    element.pause();
+    element.volume = volume;
+    patch({ sleep: null });
+  }, 150);
+}
+
+export function setSleep(choice: number | 'track' | null) {
+  if (sleepTimer) clearTimeout(sleepTimer);
+  sleepTimer = null;
+  if (choice === null) {
+    if (audio) audio.loop = state.repeat === 'one';
+    patch({ sleep: null }, false);
+    return;
+  }
+  if (choice === 'track') {
+    if (audio) audio.loop = false;
+    patch({ sleep: { track: true } }, false);
+    return;
+  }
+  const minutes = Math.min(600, Math.max(1, choice));
+  if (audio) audio.loop = state.repeat === 'one';
+  sleepTimer = setTimeout(fadeOut, minutes * 60_000);
+  patch({ sleep: { until: Date.now() + minutes * 60_000 } }, false);
+}
+
 export function cycleRepeat() {
   const repeat: Repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
-  if (audio) audio.loop = repeat === 'one';
+  if (audio) audio.loop = repeat === 'one' && !(state.sleep && 'track' in state.sleep);
   patch({ repeat });
 }
 
@@ -386,7 +460,9 @@ export function clear() {
   }
   loaded = null;
   if (navigator.mediaSession) navigator.mediaSession.metadata = null;
-  patch({ queue: [], original: null, index: 0, playing: false, time: 0, duration: 0, shuffle: false });
+  if (sleepTimer) clearTimeout(sleepTimer);
+  sleepTimer = null;
+  patch({ queue: [], original: null, index: 0, playing: false, time: 0, duration: 0, shuffle: false, sleep: null });
 }
 
 export function forget(ids: string[]) {

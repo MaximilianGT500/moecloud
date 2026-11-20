@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { rm } from 'node:fs/promises';
 import type { Sharp } from 'sharp';
 import { randomId } from '../lib/crypto.ts';
@@ -23,13 +24,13 @@ export type Output = (typeof OUTPUTS)[number] | 'tiff';
 
 const MAX_BYTES = 300 * 1024 * 1024;
 const MAX_PIXELS = 100_000_000;
-const WRITABLE: Record<string, Output> = {
+const WRITABLE: Record<string, Output> = lookup({
   'image/jpeg': 'jpeg',
   'image/png': 'png',
   'image/webp': 'webp',
   'image/avif': 'avif',
   'image/tiff': 'tiff',
-};
+});
 const EXTENSIONS: Record<Output, string> = { jpeg: 'jpg', png: 'png', webp: 'webp', avif: 'avif', tiff: 'tif' };
 
 export const formatOf = (type: string | null): Output | null => (type ? (WRITABLE[type] ?? null) : null);

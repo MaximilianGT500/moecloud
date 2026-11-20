@@ -51,7 +51,9 @@ interface ColorRequest {
   title: string;
   value: string | null;
   required?: boolean;
-  options: { key: string; label: string; color: string }[];
+  group?: string;
+  none?: { label: string; icon?: ReactNode };
+  options: { key: string; label: string; color: string; icon?: ReactNode }[];
   resolve: (value: string | null | undefined) => void;
 }
 
@@ -100,7 +102,7 @@ function PromptBody({ request }: { request: PromptRequest }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       const element = input.current;
-      if (!element) return;
+      if (!element || document.activeElement === element) return;
       element.focus();
       if (request.select) element.setSelectionRange(request.select[0], request.select[1]);
       else element.select();
@@ -204,10 +206,15 @@ export function DialogHost() {
           <DialogContent>
             <Box
               role="radiogroup"
-              aria-label={t('Farbe')}
+              aria-label={request.group ?? t('Farbe')}
               sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 1.5, pt: 0.5 }}
             >
-              {[...(request.required ? [] : [{ key: '', label: t('Keine Farbe'), color: '' }]), ...request.options].map((option) => {
+              {[
+                ...(request.required
+                  ? []
+                  : [{ key: '', label: request.none?.label ?? t('Keine Farbe'), color: '', icon: request.none?.icon }]),
+                ...request.options,
+              ].map((option) => {
                 const active = (request.value ?? '') === option.key;
                 return (
                   <Tooltip key={option.key || 'none'} title={option.label}>
@@ -222,13 +229,13 @@ export function DialogHost() {
                       sx={{
                         aspectRatio: '1',
                         borderRadius: `${radius.full}px`,
-                        bgcolor: option.color || c.surfaceContainerHighest,
-                        color: option.color ? c.surface : c.onSurfaceVariant,
+                        bgcolor: option.color || (active && option.icon ? c.secondaryContainer : c.surfaceContainerHighest),
+                        color: option.color ? c.surface : active && option.icon ? c.onSecondaryContainer : c.onSurfaceVariant,
                         boxShadow: active ? `0 0 0 3px ${c.surface}, 0 0 0 5px ${c.onSurface}` : 'none',
                         '&.Mui-focusVisible': { boxShadow: `0 0 0 3px ${c.surface}, 0 0 0 5px ${c.primary}` },
                       }}
                     >
-                      {active ? <CheckRounded /> : option.color ? null : <FormatColorResetRounded />}
+                      {option.icon ?? (active ? <CheckRounded /> : option.color ? null : <FormatColorResetRounded />)}
                     </ButtonBase>
                   </Tooltip>
                 );

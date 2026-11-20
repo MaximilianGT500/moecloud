@@ -115,6 +115,12 @@ export function accountData(user: UserRow) {
         .map((row) => path(row.node_id))
         .filter(Boolean),
     })),
+    plays: all<{ node_id: string; count: number; played_at: number }>(
+      'SELECT node_id, count, played_at FROM plays WHERE user_id = ? ORDER BY played_at DESC',
+      user.id
+    )
+      .map((row) => ({ path: path(row.node_id), count: Number(row.count), playedAt: iso(row.played_at) }))
+      .filter((row) => row.path),
     links: named(
       all<{
         node_id: string;
@@ -126,8 +132,10 @@ export function accountData(user: UserRow) {
         views: number;
         downloads: number;
         created_at: number;
+        starts_at: number | null;
+        message: string | null;
       }>(
-        'SELECT node_id, label, password_hash, expires_at, upload_only, allow_upload, views, downloads, created_at FROM links WHERE owner_id = ? ORDER BY created_at',
+        'SELECT node_id, label, password_hash, expires_at, upload_only, allow_upload, views, downloads, created_at, starts_at, message FROM links WHERE owner_id = ? ORDER BY created_at',
         user.id
       )
     ).map((row) => ({
@@ -140,6 +148,8 @@ export function accountData(user: UserRow) {
       downloads: row.downloads,
       createdAt: iso(row.created_at),
       expiresAt: iso(row.expires_at),
+      startsAt: iso(row.starts_at),
+      message: row.message,
     })),
     shares: [
       ...named(

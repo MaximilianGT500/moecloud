@@ -49,6 +49,7 @@ import { ShortcutsDialog } from '../common/Shortcuts';
 import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { api, logout } from '../../lib/api';
 import { boot, type PluginPage, type SessionUser, type Storage } from '../../lib/boot';
+import { arrange, BAR_SLOTS } from '../common/Arrange';
 import { language, t } from '../../lib/i18n';
 import { c, curve, mix, radius } from '../../theme/tokens';
 import { NotificationBell } from './Notifications';
@@ -92,7 +93,21 @@ const TEAMS: NavItem = {
   activeIcon: <FolderSharedRounded />,
 };
 
-function railItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
+export const NAV_LOCKED = ['files', 'admin'];
+export const DEFAULT_BAR = ['home', 'files', 'photos', 'shared'];
+
+export const navEntries = (user: SessionUser, pages: PluginPage[]) =>
+  allItems(user, pages).map((item) => ({
+    key: item.key as string,
+    label: item.label,
+    icon: item.icon,
+    locked: NAV_LOCKED.includes(item.key),
+    bar: item.key !== 'admin',
+  }));
+
+const railItems = (user: SessionUser, pages: PluginPage[]) => arrange(allItems(user, pages), boot().nav, NAV_LOCKED);
+
+function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
   if (boot().setup2fa) return [];
   const guest = user.role === 'guest';
   const teams = guest || (boot().teams ?? 0) > 0;
@@ -268,7 +283,7 @@ function RailItems({ items, active, onNavigate }: { items: NavItem[]; active: De
   );
 }
 
-function bottomItems(): NavItem[] {
+function bottomItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
   if (boot().setup2fa) {
     return [{ key: 'account', href: '/account', label: t('Ich'), icon: <AccountCircleOutlined />, activeIcon: <AccountCircleRounded /> }];
   }
@@ -279,6 +294,15 @@ function bottomItems(): NavItem[] {
     icon: <AccountCircleOutlined />,
     activeIcon: <AccountCircleRounded />,
   };
+  const chosen = boot().nav?.bar ?? [];
+  if (chosen.length) {
+    const visible = new Map(railItems(user, pages).map((item) => [item.key as string, item]));
+    const picked = chosen
+      .map((key) => visible.get(key))
+      .filter((item): item is NavItem => Boolean(item))
+      .slice(0, BAR_SLOTS);
+    if (picked.length) return [...picked, account];
+  }
   const shared: NavItem = {
     key: 'shared',
     href: '/files/shared',
@@ -606,7 +630,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
           alignItems: 'center',
           gap: 1,
           py: 2,
-          bgcolor: c.surface,
+          bgcolor: `var(--moe-chrome, ${c.surface})`,
           overflow: 'hidden',
         }}
       >
@@ -652,7 +676,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            bgcolor: c.surface,
+            bgcolor: { xs: c.surface, md: `var(--moe-chrome, ${c.surface})` },
           }}
         >
           {topBar}
@@ -725,7 +749,7 @@ export function AppShell({ active, topBar, railAction, mobileAction, aside, stor
           px: 0.5,
         }}
       >
-        {bottomItems().map((item) => (
+        {bottomItems(user, pages).map((item) => (
           <NavButton key={item.key} item={item} active={item.key === active} compact onNavigate={onNavigate} />
         ))}
       </Box>

@@ -4,6 +4,7 @@ import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import { api, errorText } from '../../lib/api';
@@ -22,6 +23,7 @@ const GROUPS: Record<string, string[]> = {
     'login_failed',
     'logout',
     'password_changed',
+    'email_changed',
     'password_reset_requested',
     'password_reset',
     'totp_enabled',
@@ -32,6 +34,8 @@ const GROUPS: Record<string, string[]> = {
     'app_password_created',
     'app_password_removed',
     'sessions_revoked',
+    'account_secured',
+    'lockout_released',
     'sso_unlinked',
     'account_exported',
   ],
@@ -63,6 +67,8 @@ const GROUPS: Record<string, string[]> = {
   ],
   system: [
     'settings_changed',
+    'audit_exported',
+    'integrity_checked',
     'mail_changed',
     'sso_changed',
     'scan_changed',
@@ -124,6 +130,14 @@ export function AuditSection() {
     if (group) params.set('action', GROUPS[group].join(','));
     if (person) params.set('user', String(person));
     return `/api/admin/audit?${params}`;
+  };
+
+  const exportUrl = () => {
+    const params = new URLSearchParams();
+    if (group) params.set('action', GROUPS[group].join(','));
+    if (person) params.set('user', String(person));
+    const text = params.toString();
+    return `/api/admin/audit/export${text ? `?${text}` : ''}`;
   };
 
   useEffect(() => {
@@ -190,6 +204,9 @@ export function AuditSection() {
             </MenuItem>
           ))}
         </TextField>
+        <Button component="a" href={exportUrl()} download startIcon={<DownloadRounded />} sx={{ ml: { sm: 'auto' }, alignSelf: 'center' }}>
+          {t('Als CSV laden')}
+        </Button>
       </Box>
       {!entries ? (
         <Loading />

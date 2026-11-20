@@ -129,7 +129,7 @@ const BY_EXTENSION: Record<string, keyof typeof LANGUAGES> = {
 };
 
 export function highlight(code: string, extension: string) {
-  const language = BY_EXTENSION[extension];
+  const language = Object.hasOwn(BY_EXTENSION, extension) ? BY_EXTENSION[extension] : null;
   if (!language) return null;
   return hljs.highlight(code, { language, ignoreIllegals: true }).value;
 }

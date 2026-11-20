@@ -7,7 +7,7 @@ import { contentDisposition, PDF_CSP, sendFile } from '../lib/http.ts';
 import { t } from '../lib/i18n.ts';
 import { inlineType } from '../lib/mime.ts';
 import { me } from '../lib/request.ts';
-import { id, ids, parse } from '../lib/validate.ts';
+import { id, ids, intOf, parse } from '../lib/validate.ts';
 import { forNode, forUser, record } from '../services/activity.ts';
 import { isZip, listArchive, openEntry } from '../services/archive.ts';
 import { EPUB_CSP, epubFile, epubInfo } from '../services/epub.ts';
@@ -52,8 +52,10 @@ import {
   children,
   assertSpace,
   setColor,
+  setIcon,
   folderSize,
   FOLDER_COLORS,
+  FOLDER_ICONS,
   type NodeRow,
 } from '../services/nodes.ts';
 import { notifyAdmins } from '../services/notify.ts';
@@ -390,7 +392,7 @@ export async function fileRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Querystring: { date?: string; offset?: string } }>('/api/home', async (request) =>
-    homeFor(me(request), String(request.query.date ?? ''), Number(request.query.offset ?? 0))
+    homeFor(me(request), String(request.query.date ?? ''), intOf(request.query.offset ?? 0))
   );
 
   app.get('/api/recent', async (request) => {
@@ -625,6 +627,12 @@ export async function fileRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.put('/api/nodes/icon', async (request) => {
+    const input = parse(z.object({ ids, icon: z.enum(FOLDER_ICONS).nullable() }), request.body);
+    setIcon(me(request), input.ids, input.icon);
+    return { ok: true };
+  });
+
   app.get<IdParams>('/api/nodes/:id/activity', async (request) => {
     const user = me(request);
     const access = requireAccess(user, request.params.id);
@@ -632,7 +640,7 @@ export async function fileRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Querystring: { before?: string } }>('/api/activity', async (request) => {
-    const before = Number(request.query.before);
+    const before = intOf(request.query.before);
     return forUser(me(request).id, Number.isSafeInteger(before) && before > 0 ? before : undefined);
   });
 
@@ -688,15 +696,15 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { at?: string; seq?: string } }>('/api/photos', async (request) => {
     const user = me(request);
-    const at = Number(request.query.at);
-    const seq = Number(request.query.seq);
+    const at = intOf(request.query.at);
+    const seq = intOf(request.query.seq);
     const page = photos(user, Number.isFinite(at) && Number.isFinite(seq) && request.query.at ? { at, seq } : null);
     return { items: present(page.nodes, user), next: page.next };
   });
 
   app.get<{ Querystring: { date?: string; offset?: string } }>('/api/photos/memories', async (request) => {
     const user = me(request);
-    const groups = memories(user, String(request.query.date ?? ''), Number(request.query.offset ?? 0));
+    const groups = memories(user, String(request.query.date ?? ''), intOf(request.query.offset ?? 0));
     return { groups: groups.map((group) => ({ year: group.year, items: present(group.nodes, user) })) };
   });
 
@@ -707,7 +715,7 @@ export async function fileRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { id: string; index: string } }>('/api/nodes/:id/email/attachments/:index', async (request, reply) =>
-    sendEmailAttachment(reply, requireAccess(me(request), request.params.id).node, Number(request.params.index))
+    sendEmailAttachment(reply, requireAccess(me(request), request.params.id).node, intOf(request.params.index))
   );
 
   app.post('/api/storage/duplicates', async (request) => {

@@ -115,3 +115,6 @@ jobs:
           docker compose -f docker-compose.yml config --quiet
           COMPOSE_PROFILES=caddy docker compose -f docker-compose.yml -f docker/clamav.yml config --quiet
           POSTGRES_PASSWORD=geheim docker compose -f docker-compose.yml -f docker/clamav.yml -f docker/postgres.yml config --quiet
+          docker compose -f docker-compose.yml -f docker/clamav.yml -f docker/office.yml -f docker/collabora.yml config --quiet
+          docker compose -f compose.yaml config --quiet
+          DOMAIN=cloud.example.com COMPOSE_PROFILES=caddy POSTGRES_PASSWORD=geheim docker compose -f compose.yaml -f docker/postgres.yml config --quiet

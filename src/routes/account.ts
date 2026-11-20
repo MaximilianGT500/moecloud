@@ -2,13 +2,14 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { run, one } from '../lib/db.ts';
-import { hashPassword, verifyPassword } from '../lib/crypto.ts';
-import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.ts';
+import { verifyPassword } from '../lib/crypto.ts';
+import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized } from '../lib/errors.ts';
+import { Limiter } from '../lib/limiter.ts';
 import { publish } from '../lib/events.ts';
 import { t } from '../lib/i18n.ts';
 import { contentDisposition, sendFile } from '../lib/http.ts';
-import { me, setLanguageCookie } from '../lib/request.ts';
-import { displayName, email, parse, password } from '../lib/validate.ts';
+import { me, sessionRequired, setLanguageCookie } from '../lib/request.ts';
+import { displayName, email, intOf, parse, password } from '../lib/validate.ts';
 import { audit, listAudit, SECURITY_ACTIONS } from '../services/audit.ts';
 import { avatarFile, readLimited, removeAvatar, setAvatar } from '../services/avatars.ts';
 import {
@@ -22,24 +23,36 @@ import {
   secondFactorRequired,
   verifySecondFactor,
 } from '../services/auth.ts';
-import { mailReady } from '../services/mail.ts';
+import { deliver, mailReady } from '../services/mail.ts';
 import { oidcEnabled, unlink } from '../services/oidc.ts';
-import { clearNotifications, listNotifications, markRead, unreadCount } from '../services/notify.ts';
+import { clearNotifications, listNotifications, markRead, notify, unreadCount } from '../services/notify.ts';
 import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword } from '../services/apppasswords.ts';
 import { deletePasskey, listPasskeys, presentPasskey, register, registrationOptions, renamePasskey } from '../services/passkeys.ts';
 import { deleteOwnAccount, selfDeleteAllowed } from '../services/accounts.ts';
 import { forgetOtherDevices } from '../services/devices.ts';
 import { exportName, exportStream } from '../services/export.ts';
+import { changeOwnPassword } from '../services/ownpassword.ts';
 import { clearSessionCookie, describeSession, destroySession, destroyUserSessions, listSessions } from '../services/sessions.ts';
 import * as settings from '../services/settings.ts';
 import { validZone } from '../services/notify.ts';
-import { checkPassword, passwordMin } from '../services/passwords.ts';
+import { passwordMin } from '../services/passwords.ts';
 import { pushUrl, sendPush } from '../services/push.ts';
 import { listSubscriptions, removeSubscription, saveSubscription, sendWebPush, vapidKeys } from '../services/webpush.ts';
-import { getUser, keyOf, prefsOf, publicUser, storageOf, updatePrefs, type PushTarget, type UserPrefs } from '../services/users.ts';
+import {
+  getUser,
+  keyOf,
+  preferredLanguage,
+  prefsOf,
+  publicUser,
+  storageOf,
+  updatePrefs,
+  type PushTarget,
+  type UserPrefs,
+} from '../services/users.ts';
 import { activePlugins } from '../services/plugins.ts';
 
 const shownPrefs = ({ push, ...prefs }: UserPrefs) => prefs;
+const keyList = z.array(z.string().min(1).max(80)).max(60);
 const shownPush = (target: PushTarget | null) => (target ? { kind: target.kind, url: target.url, hasToken: Boolean(target.token) } : null);
 
 function session(request: FastifyRequest) {
@@ -52,12 +65,15 @@ const profileSchema = z.object({
   name: displayName.optional(),
   email: email.optional(),
   language: z.enum(['de', 'en']).optional(),
+  password: z.string().max(512).optional(),
 });
+
+const confirmations = new Limiter(10, 10 * 60 * 1000);
 
 export async function accountRoutes(app: FastifyInstance) {
   app.get('/api/session', async (request) => {
     const user = me(request);
-    return { user: publicUser(user), csrf: request.auth?.session?.csrf ?? request.csrf };
+    return { user: publicUser(user), csrf: request.auth?.session?.csrf ?? request.csrf, mustChangePassword: Boolean(user.must_change) };
   });
 
   app.put('/api/account/avatar', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (request) => {
@@ -78,7 +94,7 @@ export async function accountRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/api/avatars/:id', { compress: false }, async (request, reply) => {
     me(request);
-    const owner = getUser(Number(request.params.id));
+    const owner = getUser(intOf(request.params.id));
     const file = owner ? await avatarFile(owner) : null;
     if (!file) throw notFound();
     return sendFile(request, reply, {
@@ -127,10 +143,46 @@ export async function accountRoutes(app: FastifyInstance) {
     const user = me(request);
     const input = parse(profileSchema, request.body);
     if (input.email !== undefined && input.email !== (user.email ?? '')) {
+      if (!request.auth?.session) throw sessionRequired();
+      if (user.password_hash) {
+        const attempt = String(user.id);
+        confirmations.check(attempt);
+        if (!input.password) {
+          throw new HttpError(400, 'Gib dein aktuelles Passwort ein, um die E-Mail-Adresse zu ändern', 'password_required');
+        }
+        if (!(await verifyPassword(user.password_hash, input.password))) {
+          confirmations.hit(attempt);
+          throw new HttpError(400, 'Das aktuelle Passwort stimmt nicht', 'password_required');
+        }
+      }
       const key = input.email ? keyOf(input.email) : null;
       if (key && one('SELECT 1 FROM users WHERE email_key = ? AND id != ?', key, user.id))
         throw conflict('Die E-Mail-Adresse wird schon genutzt');
       run('UPDATE users SET email = ?, email_key = ? WHERE id = ?', input.email || null, key, user.id);
+      audit('email_changed', { actor: user.id, request });
+      notify(user.id, 'account_change', { change: 'email' }, '/account', { email: false });
+      if (user.email && mailReady()) {
+        const lang = preferredLanguage(user);
+        const site = settings.get('site.name');
+        await deliver(user.email, {
+          lang,
+          title: t(lang, 'Die E-Mail-Adresse deines Kontos wurde geändert'),
+          lines: [
+            input.email
+              ? t(lang, 'Für dein Konto „{name}“ bei {site} gilt jetzt die Adresse {email}.', {
+                  name: user.username,
+                  site,
+                  email: input.email,
+                })
+              : t(lang, 'Bei deinem Konto „{name}“ bei {site} ist jetzt keine E-Mail-Adresse mehr hinterlegt.', {
+                  name: user.username,
+                  site,
+                }),
+            t(lang, 'An diese alte Adresse schickt MoeCloud ab jetzt nichts mehr.'),
+          ],
+          note: t(lang, 'Warst du das nicht, dann melde dich sofort bei der Verwaltung.'),
+        }).catch((error: Error) => request.log.warn({ error: error.message }, 'Hinweis zur geänderten Adresse nicht zugestellt'));
+      }
     }
     if (input.name) run('UPDATE users SET name = ? WHERE id = ?', input.name, user.id);
     if (input.language) {
@@ -150,13 +202,7 @@ export async function accountRoutes(app: FastifyInstance) {
   app.post('/api/account/password', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request, reply) => {
     const user = me(request);
     const input = parse(z.object({ current: z.string().max(512).optional().default(''), next: password }), request.body);
-    if (user.password_hash && !(await verifyPassword(user.password_hash, input.current)))
-      throw badRequest('Das aktuelle Passwort stimmt nicht');
-    await checkPassword(input.next);
-    run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(input.next), user.id);
-    destroyUserSessions(user.id, request.auth?.session?.id);
-    forgetOtherDevices(request, reply, user);
-    audit('password_changed', { actor: user.id, request });
+    await changeOwnPassword(request, reply, user, input.current, input.next);
     return { ok: true };
   });
 
@@ -179,6 +225,10 @@ export async function accountRoutes(app: FastifyInstance) {
             .nullable(),
           zone: z.string().max(64).refine(validZone, 'Diese Zeitzone kennt MoeCloud nicht'),
           start: z.enum(['files', 'home']),
+          nav: z
+            .object({ order: keyList, hidden: keyList, bar: keyList.max(4, 'In die untere Leiste passen höchstens vier Einträge') })
+            .nullable(),
+          home: z.object({ order: keyList, hidden: keyList }).nullable(),
         })
         .partial(),
       request.body
@@ -265,7 +315,7 @@ export async function accountRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Querystring: { before?: string } }>('/api/account/security', async (request) => {
-    const before = Number(request.query.before);
+    const before = intOf(request.query.before);
     return listAudit({ user: me(request).id, actions: SECURITY_ACTIONS, before: before > 0 ? before : undefined, limit: 30 });
   });
 
@@ -291,6 +341,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const { code } = parse(z.object({ code: z.string().max(20) }), request.body);
     const codes = enableTotp(getUser(me(request).id)!, code);
     audit('totp_enabled', { actor: me(request).id, request });
+    notify(me(request).id, 'account_change', { change: 'totp_on' }, '/account#sicherheit');
     return { recoveryCodes: codes };
   });
 
@@ -298,6 +349,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const { code } = parse(z.object({ code: z.string().max(20) }), request.body);
     disableTotp(request, me(request), code);
     audit('totp_disabled', { actor: me(request).id, request });
+    notify(me(request).id, 'account_change', { change: 'totp_off' }, '/account#sicherheit');
     return { ok: true };
   });
 
@@ -319,6 +371,7 @@ export async function accountRoutes(app: FastifyInstance) {
     );
     const passkey = await register(request, me(request), session(request).id, input.response as never, input.name);
     audit('passkey_added', { actor: me(request).id, request, details: { name: passkey.name } });
+    notify(me(request).id, 'account_change', { change: 'passkey_added' }, '/account#sicherheit');
     return { passkey: presentPasskey(passkey) };
   });
 
@@ -337,6 +390,7 @@ export async function accountRoutes(app: FastifyInstance) {
     }
     deletePasskey(user, request.params.id);
     audit('passkey_removed', { actor: me(request).id, request });
+    notify(user.id, 'account_change', { change: 'passkey_removed' }, '/account#sicherheit');
     return { ok: true };
   });
 
@@ -346,12 +400,23 @@ export async function accountRoutes(app: FastifyInstance) {
         name: z.string().trim().min(1, 'Gib dem App-Passwort einen Namen').max(60),
         readOnly: z.boolean().optional(),
         shared: z.boolean().optional(),
+        admin: z.boolean().optional(),
         expiresAt: z.number().int().positive().nullable().optional(),
       }),
       request.body
     );
     const { token, row } = createAppPassword(me(request), input.name, input);
-    audit('app_password_created', { actor: me(request).id, request, details: { name: row.name, readOnly: row.scope === 'read' } });
+    audit('app_password_created', {
+      actor: me(request).id,
+      request,
+      details: { name: row.name, readOnly: row.scope === 'read', ...(row.scope === 'admin' ? { admin: true } : {}) },
+    });
+    notify(
+      me(request).id,
+      'account_change',
+      { change: row.scope === 'admin' ? 'app_password_admin' : 'app_password', name: row.name },
+      '/account#sicherheit'
+    );
     return { token, item: presentAppPassword(row) };
   });
 
@@ -397,6 +462,39 @@ export async function accountRoutes(app: FastifyInstance) {
     await deleteOwnAccount(request, user, input);
     clearSessionCookie(request, reply);
     return { ok: true };
+  });
+
+  app.post('/api/account/secure', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request, reply) => {
+    const user = me(request);
+    const current = session(request);
+    const input = parse(
+      z.object({
+        password: z.string().max(512).optional(),
+        sessions: z.boolean().default(true),
+        appPasswords: z.boolean().default(true),
+        links: z.boolean().default(false),
+      }),
+      request.body
+    );
+    if (user.password_hash) {
+      const attempt = String(user.id);
+      confirmations.check(attempt);
+      if (!(await verifyPassword(user.password_hash, input.password ?? ''))) {
+        confirmations.hit(attempt);
+        throw new HttpError(400, 'Das aktuelle Passwort stimmt nicht', 'password_required');
+      }
+    }
+    const done = { sessions: 0, appPasswords: 0, links: 0 };
+    if (input.sessions) {
+      done.sessions = Number(destroyUserSessions(user.id, current.id).changes);
+      forgetOtherDevices(request, reply, user);
+      run('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL', user.id);
+    }
+    if (input.appPasswords) done.appPasswords = Number(run('DELETE FROM app_passwords WHERE user_id = ?', user.id).changes);
+    if (input.links) done.links = Number(run('UPDATE links SET paused = 1 WHERE created_by = ? AND paused = 0', user.id).changes);
+    audit('account_secured', { actor: user.id, request, details: done });
+    notify(user.id, 'account_change', { change: 'secured' }, '/account#sitzungen');
+    return done;
   });
 
   app.delete('/api/account/session', async (request) => {

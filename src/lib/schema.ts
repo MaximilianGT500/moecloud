@@ -634,6 +634,32 @@ const MIGRATIONS = [
   );
   CREATE INDEX playlist_items_node ON playlist_items(node_id);
   `,
+  `
+  ALTER TABLE nodes ADD COLUMN icon TEXT;
+  ALTER TABLE links ADD COLUMN starts_at INTEGER;
+  ALTER TABLE links ADD COLUMN message TEXT;
+  ALTER TABLE links ADD COLUMN theme TEXT;
+  CREATE TABLE plays (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    count INTEGER NOT NULL DEFAULT 0,
+    played_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, node_id)
+  );
+  CREATE INDEX plays_recent ON plays(user_id, played_at);
+  CREATE INDEX plays_node ON plays(node_id);
+  CREATE TABLE email_confirmations (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX email_confirmations_user ON email_confirmations(user_id);
+  `,
+  `
+  UPDATE app_passwords SET scope = 'admin' WHERE scope = 'full' AND user_id IN (SELECT id FROM users WHERE role = 'admin');
+  ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

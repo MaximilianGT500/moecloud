@@ -2,8 +2,13 @@ import { config } from '../config.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { renderApp, renderDocument } from '../lib/html.ts';
 import { t } from '../lib/i18n.ts';
-import { legalPage } from '../views/pages.ts';
-import { notFound } from '../lib/errors.ts';
+import { changePasswordPage, legalPage, messagePage } from '../views/pages.ts';
+import { plainAddress } from '../lib/networks.ts';
+import { adminReachable } from '../services/adminnet.ts';
+import { HttpError, notFound } from '../lib/errors.ts';
+import { parse, password } from '../lib/validate.ts';
+import { z } from 'zod';
+import { changeOwnPassword } from '../services/ownpassword.ts';
 import { baseUrl } from '../services/links.ts';
 import * as settings from '../services/settings.ts';
 import { isSetUp } from '../services/setup.ts';
@@ -38,6 +43,7 @@ export function userBoot(request: FastifyRequest) {
     user: publicUser(user),
     teams: pending ? 0 : teamsFor(user).length,
     start: prefsOf(user).start,
+    nav: prefsOf(user).nav,
     storage: storageOf(user),
     webdav: `${baseUrl(request)}/dav/`,
     setup2fa: pending,
@@ -94,6 +100,20 @@ export async function pageRoutes(app: FastifyInstance) {
     const user = requirePageUser(request, reply);
     if (!user) return reply;
     if (user.role !== 'admin') throw notFound();
+    if (!adminReachable(request.ip)) {
+      return renderDocument(request, reply, {
+        title: t(request.lang, 'Verwaltung'),
+        status: 403,
+        body: messagePage(request, {
+          icon: 'lock',
+          title: t(request.lang, 'Von hier aus nicht erreichbar'),
+          text: t(request.lang, 'Die Verwaltung ist auf bestimmte Netze beschränkt, und deine Adresse {address} gehört nicht dazu.', {
+            address: plainAddress(request.ip),
+          }),
+          action: { label: t(request.lang, 'Zu den Dateien'), href: '/files' },
+        }),
+      });
+    }
     return renderApp(request, reply, { entry: 'admin', title: t(request.lang, 'Verwaltung'), data: userBoot(request) });
   };
   app.get('/admin', adminPage);
@@ -143,6 +163,39 @@ export async function pageRoutes(app: FastifyInstance) {
     if (termsPending(user)) {
       acceptTerms(user);
       audit('terms_accepted', { actor: user.id, request, details: { version: settings.get('terms.version') } });
+    }
+    return reply.redirect('/files', 303);
+  });
+
+  const changePage = (request: FastifyRequest, reply: FastifyReply, error: string | null = null, status = 200) =>
+    renderDocument(request, reply, {
+      title: t(request.lang, 'Neues Passwort festlegen'),
+      status,
+      body: changePasswordPage(request, { csrf: request.auth!.session!.csrf, name: request.auth!.user.name, error }),
+    });
+
+  app.get('/passwort', async (request, reply) => {
+    const user = requirePageUser(request, reply);
+    if (!user) return reply;
+    if (!user.must_change) return reply.redirect('/account#sicherheit');
+    return changePage(request, reply);
+  });
+
+  app.post('/passwort', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request, reply) => {
+    const user = requirePageUser(request, reply);
+    if (!user) return reply;
+    if (!user.must_change) return reply.redirect('/account#sicherheit', 303);
+    const form = (request.body ?? {}) as Record<string, string | undefined>;
+    try {
+      checkFormCsrf(request, form._csrf);
+      const input = parse(z.object({ current: z.string().max(512), next: password }), {
+        current: String(form.current ?? ''),
+        next: String(form.password ?? ''),
+      });
+      await changeOwnPassword(request, reply, user, input.current, input.next);
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      return changePage(request, reply, t(request.lang, error.message, error.params), error.status);
     }
     return reply.redirect('/files', 303);
   });

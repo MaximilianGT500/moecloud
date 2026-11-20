@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import InputBase from '@mui/material/InputBase';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -28,7 +31,7 @@ import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
 import TitleRounded from '@mui/icons-material/TitleRounded';
 import { api, ApiError, csrfToken, errorText } from '../../lib/api';
 import { formatRelative, splitExtension } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { navigate } from '../../lib/router';
 import { c, layer, mix, radius } from '../../theme/tokens';
@@ -54,6 +57,175 @@ interface NoteList {
 type Status = 'saved' | 'dirty' | 'saving' | 'failed' | 'conflict';
 
 const hrefOf = (id: string | null) => (id ? `/files/notes/${id}` : '/files/notes');
+const TASKS = 'tasks';
+
+type NoteMode = 'write' | 'read' | 'both';
+const MODE_KEY = 'moe-note-mode';
+
+function storedMode(): NoteMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'both' ? 'both' : 'write';
+  } catch {
+    return 'write';
+  }
+}
+
+interface TaskNote {
+  id: string;
+  title: string;
+  category: string;
+  modifiedAt: number;
+  tasks: { line: number; text: string; done: boolean }[];
+}
+
+interface TaskList {
+  notes: TaskNote[];
+  open: number;
+  done: number;
+  more: boolean;
+}
+
+function Tasks({ wide, onBack }: { wide: boolean; onBack: () => void }) {
+  const [data, setData] = useState<TaskList | null>(null);
+  const [all, setAll] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = () =>
+    api
+      .get<TaskList>('/api/notes/tasks')
+      .then(setData)
+      .catch((error) => {
+        setData((current) => current ?? { notes: [], open: 0, done: 0, more: false });
+        toast(errorText(error));
+      });
+
+  useEffect(() => {
+    void load();
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
+
+  useLive((event) => {
+    if (event !== 'reconnect' && event !== 'change') return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void load(), 600);
+  });
+
+  const toggle = async (note: TaskNote, task: TaskNote['tasks'][number]) => {
+    const key = `${note.id}:${task.line}`;
+    if (busy) return;
+    setBusy(key);
+    try {
+      await api.post(`/api/notes/${note.id}/tasks`, { line: task.line, text: task.text });
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      await load();
+      setBusy(null);
+    }
+  };
+
+  if (!data) return <Box sx={{ flex: 1 }} />;
+  const notes = data.notes
+    .map((note) => ({ ...note, tasks: all ? note.tasks : note.tasks.filter((task) => !task.done) }))
+    .filter((note) => note.tasks.length > 0);
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }} data-note-tasks>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: { xs: 0.5, md: 2.5 }, pt: 0.5, flexWrap: 'wrap' }}>
+        {!wide && (
+          <Tooltip title={t('Zu den Notizen')}>
+            <IconButton aria-label={t('Zu den Notizen')} onClick={onBack}>
+              <ArrowBackRounded />
+            </IconButton>
+          </Tooltip>
+        )}
+        <Box sx={{ flex: 1, minWidth: 0, px: { xs: 0.5, md: 1 } }}>
+          <Typography variant="h6" component="h2">
+            {t('Aufgaben')}
+          </Typography>
+          <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+            {[tn(data.open, 'Eine offen', '{count} offen'), data.done > 0 ? tn(data.done, 'eine erledigt', '{count} erledigt') : null]
+              .filter(Boolean)
+              .join(' · ')}
+          </Typography>
+        </Box>
+        <FormControlLabel
+          control={<Switch checked={all} onChange={(event) => setAll(event.target.checked)} />}
+          label={<Typography variant="body2">{t('Erledigte zeigen')}</Typography>}
+          sx={{ mr: 1 }}
+        />
+      </Box>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: { md: 'auto' }, px: { xs: 2, md: 3.5 }, pb: 4, pt: 1 }}>
+        {notes.length === 0 && (
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant, maxWidth: 520 }}>
+            {data.open + data.done === 0
+              ? t(
+                  'Noch keine Aufgaben. Setz in einer Notiz „- [ ] “ vor eine Zeile oder nimm den Knopf „Aufgabe zum Abhaken“, dann steht sie hier.'
+                )
+              : t('Alles erledigt.')}
+          </Typography>
+        )}
+        {notes.map((note) => (
+          <Box key={note.id} sx={{ mb: 2.5 }}>
+            <ButtonBase
+              component="a"
+              href={hrefOf(note.id)}
+              onClick={(event: MouseEvent) => {
+                event.preventDefault();
+                navigate(hrefOf(note.id));
+              }}
+              sx={{
+                borderRadius: `${radius.sm}px`,
+                px: 0.5,
+                mx: -0.5,
+                justifyContent: 'flex-start',
+                gap: 1,
+                '&:hover': { bgcolor: mix(c.onSurface, 6) },
+              }}
+            >
+              <Typography variant="subtitle2" component="h3">
+                {note.title}
+              </Typography>
+              {note.category && (
+                <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                  {note.category}
+                </Typography>
+              )}
+            </ButtonBase>
+            <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+              {note.tasks.map((task) => (
+                <Box component="li" key={task.line} sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox size="small" checked={task.done} disabled={busy !== null} onChange={() => void toggle(note, task)} />
+                    }
+                    label={
+                      <Typography
+                        variant="body2"
+                        sx={{ overflowWrap: 'anywhere', textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.6 : 1 }}
+                      >
+                        {task.text}
+                      </Typography>
+                    }
+                    sx={{ alignItems: 'flex-start', m: 0, '& .MuiFormControlLabel-label': { pt: '7px' } }}
+                  />
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        ))}
+        {data.more && (
+          <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+            {t('Durchsucht sind die 400 zuletzt geänderten Notizen.')}
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+}
 
 function statusText(status: Status) {
   if (status === 'saving') return t('Speichert …');
@@ -106,7 +278,15 @@ function Editor({ id, onChanged, onGone }: { id: string; onChanged: () => void; 
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [status, setStatus] = useState<Status>('saved');
-  const [mode, setMode] = useState<'write' | 'read'>('write');
+  const [mode, setModeState] = useState<NoteMode>(storedMode);
+  const setMode = (next: NoteMode) => {
+    setModeState(next);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      return;
+    }
+  };
   const [missing, setMissing] = useState(false);
   const [fresh, setFresh] = useState(false);
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -228,7 +408,13 @@ function Editor({ id, onChanged, onGone }: { id: string; onChanged: () => void; 
     setFresh(false);
   }, [fresh, note]);
 
-  const html = useMemo(() => (mode === 'read' ? renderMarkdown(text, { tasks: canWrite }) : ''), [mode, text, canWrite]);
+  const split = mode === 'both' && wide;
+  const writing = mode !== 'read';
+  const shownText = useDeferredValue(text);
+  const html = useMemo(
+    () => (mode === 'read' || split ? renderMarkdown(shownText, { tasks: canWrite }) : ''),
+    [mode, split, shownText, canWrite]
+  );
 
   if (missing) {
     return (
@@ -325,16 +511,21 @@ function Editor({ id, onChanged, onGone }: { id: string; onChanged: () => void; 
         <ToggleButtonGroup
           exclusive
           size="small"
-          value={mode}
+          value={mode === 'both' && !wide ? 'write' : mode}
           aria-label={t('Ansicht der Notiz')}
-          onChange={(_event, value: 'write' | 'read' | null) => value && setMode(value)}
+          onChange={(_event, value: NoteMode | null) => value && setMode(value)}
         >
           <ToggleButton value="write" disabled={!canWrite}>
             {t('Schreiben')}
           </ToggleButton>
+          {wide && (
+            <ToggleButton value="both" disabled={!canWrite}>
+              {t('Beides')}
+            </ToggleButton>
+          )}
           <ToggleButton value="read">{t('Lesen')}</ToggleButton>
         </ToggleButtonGroup>
-        {mode === 'write' && canWrite && (
+        {writing && canWrite && (
           <Box sx={{ display: 'flex', order: { xs: 1, sm: 0 }, width: { xs: '100%', sm: 'auto' } }}>
             <Tooltip title={t('Überschrift')}>
               <IconButton aria-label={t('Überschrift')} onClick={() => format('## ')}>
@@ -418,7 +609,45 @@ function Editor({ id, onChanged, onGone }: { id: string; onChanged: () => void; 
         <Typography variant="caption" sx={{ color: c.onSurfaceVariant, display: 'block', mb: 1.5 }}>
           {[note.category, t('zuletzt geändert {date}', { date: formatRelative(note.modifiedAt) })].filter(Boolean).join(' · ')}
         </Typography>
-        {mode === 'write' ? (
+        {split ? (
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 3, alignItems: 'start' }}>
+            <InputBase
+              inputRef={area}
+              multiline
+              fullWidth
+              minRows={14}
+              value={text}
+              readOnly={!canWrite}
+              placeholder={t('Schreib los. Rechts siehst du gleich, wie es aussieht.')}
+              onChange={(event) => change(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                  event.preventDefault();
+                  void save();
+                }
+              }}
+              inputProps={{ 'aria-label': t('Text der Notiz'), spellCheck: true }}
+              sx={{ alignItems: 'flex-start', fontSize: '1rem', lineHeight: 1.65, p: 0 }}
+            />
+            <Box
+              className="markdown"
+              data-note-preview
+              aria-label={t('Vorschau der Notiz')}
+              onClick={tick}
+              sx={{
+                ...markdownBody,
+                px: 0,
+                py: 0,
+                pl: 3,
+                overflow: 'visible',
+                borderLeft: `1px solid ${c.outlineVariant}`,
+                minHeight: 240,
+                '& li.task > input:not(:disabled)': { cursor: 'pointer' },
+              }}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </Box>
+        ) : writing ? (
           <InputBase
             inputRef={area}
             multiline
@@ -492,6 +721,8 @@ export function NotesView({ id }: { id: string | null }) {
     .filter((item) => category === null || item.category === category)
     .filter((item) => !needle || item.title.toLowerCase().includes(needle) || item.excerpt.toLowerCase().includes(needle))
     .sort((a, b) => Number(Boolean(b.starred)) - Number(Boolean(a.starred)));
+
+  const tasks = id === TASKS;
 
   useEffect(() => {
     if (wide && !id && list && list.items.length > 0) navigate(hrefOf(list.items[0].id), { replace: true });
@@ -598,6 +829,30 @@ export function NotesView({ id }: { id: string | null }) {
         </Box>
       )}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: { md: 'auto' }, px: 1, pb: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+        <ButtonBase
+          component="a"
+          href={hrefOf(TASKS)}
+          aria-current={tasks ? 'page' : undefined}
+          onClick={(event: MouseEvent) => {
+            event.preventDefault();
+            navigate(hrefOf(TASKS));
+          }}
+          sx={{
+            justifyContent: 'flex-start',
+            gap: 1.25,
+            px: 1.5,
+            py: 1,
+            borderRadius: `${radius.md}px`,
+            bgcolor: tasks ? c.secondaryContainer : 'transparent',
+            color: tasks ? c.onSecondaryContainer : c.onSurface,
+            '&:hover': { bgcolor: tasks ? c.secondaryContainer : mix(c.onSurface, 6) },
+          }}
+        >
+          <ChecklistRounded fontSize="small" />
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {t('Aufgaben')}
+          </Typography>
+        </ButtonBase>
         {shown.length === 0 && (
           <Typography variant="body2" sx={{ color: c.onSurfaceVariant, px: 1, py: 2 }}>
             {t('Keine Notiz passt dazu.')}
@@ -660,13 +915,16 @@ export function NotesView({ id }: { id: string | null }) {
   );
 
   if (!wide) {
+    if (tasks) return <Tasks wide={false} onBack={() => navigate(hrefOf(null))} />;
     return id ? <Editor key={id} id={id} onChanged={() => void load()} onGone={() => navigate(hrefOf(null))} /> : listPane;
   }
 
   return (
     <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       {listPane}
-      {id ? (
+      {tasks ? (
+        <Tasks wide onBack={() => navigate(hrefOf(null))} />
+      ) : id ? (
         <Editor key={id} id={id} onChanged={() => void load()} onGone={() => navigate(hrefOf(null), { replace: true })} />
       ) : (
         <Box sx={{ flex: 1 }} />

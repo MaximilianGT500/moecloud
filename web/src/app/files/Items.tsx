@@ -16,7 +16,7 @@ import AlarmRounded from '@mui/icons-material/AlarmRounded';
 import { m } from 'motion/react';
 import { formatBytes, formatDate, formatDateTime, formatDay } from '../../lib/format';
 import { t, tn, tp } from '../../lib/i18n';
-import type { Prefs } from '../../lib/prefs';
+import { currentPrefs, type Prefs } from '../../lib/prefs';
 import { c, curve, layer, mix, radius } from '../../theme/tokens';
 import { FileIcon, Thumb, kindColor, type Item } from './kinds';
 import { lockText } from './model';
@@ -253,7 +253,7 @@ export function Items(props: ItemsProps) {
   };
 
   const keys = (event: KeyboardEvent, item: Item, index: number) => {
-    const columns = layout === 'grid' ? Math.max(1, Math.floor((container.current?.clientWidth ?? 600) / 180)) : 1;
+    const columns = layout === 'grid' ? Math.max(1, Math.floor((container.current?.clientWidth ?? 600) / (180 * currentPrefs().tile))) : 1;
     if (event.key === 'Enter') {
       event.preventDefault();
       onOpen(item);
@@ -403,7 +403,7 @@ export function Items(props: ItemsProps) {
                 sx={{
                   ...surface(item),
                   bgcolor: selected.has(item.id) || over === item.id ? surface(item).bgcolor : c.surfaceContainer,
-                  height: 56,
+                  height: 'var(--moe-row, 56px)',
                   borderRadius: `${radius.md}px`,
                   display: 'flex',
                   alignItems: 'center',
@@ -556,7 +556,7 @@ export function Items(props: ItemsProps) {
                 md: '56px minmax(0, 1fr) 180px 110px 96px',
               },
               alignItems: 'center',
-              minHeight: 56,
+              minHeight: 'var(--moe-row, 56px)',
               px: 1,
               borderRadius: `${radius.tile}px`,
               my: '2px',
@@ -663,7 +663,14 @@ function GridGroup({ title, min, children }: { title: string; min: number; child
       <Typography variant="subtitle2" component="h2" sx={{ color: c.onSurfaceVariant, mb: 1.5, px: 0.5 }}>
         {title}
       </Typography>
-      <Box role="rowgroup" sx={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))`, gap: 1.5 }}>
+      <Box
+        role="rowgroup"
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, calc(${min}px * var(--moe-tile, 1))), 1fr))`,
+          gap: 1.5,
+        }}
+      >
         {children}
       </Box>
     </Box>

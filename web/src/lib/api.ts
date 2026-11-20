@@ -46,6 +46,9 @@ export async function request<T>(method: string, url: string, body?: unknown, si
     if (response.status === 401 && url.startsWith('/api/') && !url.startsWith('/api/public/') && boot().user) {
       location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
     }
+    if (response.status === 403 && data.error?.code === 'password_change_required' && boot().user) {
+      location.href = '/passwort';
+    }
     throw new ApiError(
       response.status,
       String(data.error?.message ?? t('Da ist etwas schiefgelaufen, versuch es noch einmal')),

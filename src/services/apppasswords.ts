@@ -1,6 +1,6 @@
 import { all, one, run } from '../lib/db.ts';
 import { hmac, randomId } from '../lib/crypto.ts';
-import { badRequest, notFound } from '../lib/errors.ts';
+import { badRequest, forbidden, notFound } from '../lib/errors.ts';
 import { Limiter } from '../lib/limiter.ts';
 import * as settings from './settings.ts';
 import { findByLogin, getUser, inactive, type UserRow } from './users.ts';
@@ -20,8 +20,10 @@ export interface AppPasswordRow {
 
 export interface AppAuth {
   user: UserRow;
+  id: string;
   readOnly: boolean;
   shared: boolean;
+  admin: boolean;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -38,8 +40,10 @@ const KEEP_EXPIRED = 30 * DAY;
 export function createAppPassword(
   user: UserRow,
   name: string,
-  options: { readOnly?: boolean; shared?: boolean; expiresAt?: number | null } = {}
+  options: { readOnly?: boolean; shared?: boolean; expiresAt?: number | null; admin?: boolean } = {}
 ) {
+  if (options.admin && user.role !== 'admin') throw forbidden('Das dürfen nur Admins');
+  if (options.admin && options.readOnly) throw badRequest('Ein App-Passwort für die Verwaltung kann nicht auf Lesen beschränkt sein');
   const token = format(randomId(30));
   const id = randomId();
   const now = Date.now();
@@ -54,7 +58,7 @@ export function createAppPassword(
     hash(token.replace(/-/g, '')),
     token.slice(-4),
     now,
-    options.readOnly ? 'read' : 'full',
+    options.readOnly ? 'read' : options.admin ? 'admin' : 'full',
     options.shared ? 1 : 0,
     expiresAt
   );
@@ -73,6 +77,7 @@ export function presentAppPassword(row: AppPasswordRow) {
     lastUsedAt: row.last_used_at,
     readOnly: row.scope === 'read',
     shared: Boolean(row.shared),
+    admin: row.scope === 'admin',
     expiresAt: row.expires_at,
     expired: row.expires_at !== null && row.expires_at <= Date.now(),
   };
@@ -109,5 +114,7 @@ export function basicAuth(header: string | undefined, ip: string): AppAuth | nul
     run('UPDATE app_passwords SET last_used_at = ? WHERE id = ?', now, row.id);
   }
   const current = getUser(row.user_id);
-  return current ? { user: current, readOnly: row.scope === 'read', shared: Boolean(row.shared) } : null;
+  return current
+    ? { user: current, id: row.id, readOnly: row.scope === 'read', shared: Boolean(row.shared), admin: row.scope === 'admin' }
+    : null;
 }

@@ -14,6 +14,31 @@ import SlideshowRounded from '@mui/icons-material/SlideshowRounded';
 import FolderZipRounded from '@mui/icons-material/FolderZipRounded';
 import InsertDriveFileRounded from '@mui/icons-material/InsertDriveFileRounded';
 import GppBadRounded from '@mui/icons-material/GppBadRounded';
+import StarRounded from '@mui/icons-material/StarRounded';
+import FavoriteRounded from '@mui/icons-material/FavoriteRounded';
+import HomeRounded from '@mui/icons-material/HomeRounded';
+import WorkRounded from '@mui/icons-material/WorkRounded';
+import SchoolRounded from '@mui/icons-material/SchoolRounded';
+import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded';
+import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
+import MenuBookRounded from '@mui/icons-material/MenuBookRounded';
+import FlightRounded from '@mui/icons-material/FlightRounded';
+import SavingsRounded from '@mui/icons-material/SavingsRounded';
+import LocalHospitalRounded from '@mui/icons-material/LocalHospitalRounded';
+import FitnessCenterRounded from '@mui/icons-material/FitnessCenterRounded';
+import PetsRounded from '@mui/icons-material/PetsRounded';
+import SportsEsportsRounded from '@mui/icons-material/SportsEsportsRounded';
+import ShoppingCartRounded from '@mui/icons-material/ShoppingCartRounded';
+import RestaurantRounded from '@mui/icons-material/RestaurantRounded';
+import DirectionsCarRounded from '@mui/icons-material/DirectionsCarRounded';
+import LocalFloristRounded from '@mui/icons-material/LocalFloristRounded';
+import BuildRounded from '@mui/icons-material/BuildRounded';
+import GroupsRounded from '@mui/icons-material/GroupsRounded';
+import CloudRounded from '@mui/icons-material/CloudRounded';
+import LockRounded from '@mui/icons-material/LockRounded';
+import Inventory2Rounded from '@mui/icons-material/Inventory2Rounded';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import BrushRounded from '@mui/icons-material/BrushRounded';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { c, fileTypeColor, folderColor, radius } from '../../theme/tokens';
 import { t } from '../../lib/i18n';
@@ -47,6 +72,7 @@ export interface Item {
   team?: boolean;
   viaGroup?: string;
   color?: string | null;
+  icon?: string | null;
   infected?: boolean;
   takenAt?: number | null;
   width?: number | null;
@@ -82,6 +108,7 @@ export type PreviewType =
   | 'font'
   | 'epub'
   | 'office'
+  | 'weblink'
   | 'cover'
   | 'none';
 
@@ -110,6 +137,7 @@ export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' |
   if (item.kind === 'video') return 'video';
   if (item.kind === 'audio') return 'audio';
   if (item.kind === 'pdf') return 'pdf';
+  if (ext === 'url' || ext === 'webloc') return 'weblink';
   if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'csv' || ext === 'tsv') return 'csv';
   if (ext === 'json' || ext === 'geojson' || ext === 'webmanifest') return 'json';
@@ -183,10 +211,56 @@ export const FOLDER_COLOR_OPTIONS = [
   { key: 'gray', label: 'Grau' },
 ];
 
-export function FileIcon({ item, size = 24 }: { item: Pick<Item, 'kind' | 'shared' | 'color' | 'infected'>; size?: number }) {
+export const FOLDER_ICON_OPTIONS: { key: string; label: string; Icon: SvgIconComponent }[] = [
+  { key: 'star', label: 'Stern', Icon: StarRounded },
+  { key: 'heart', label: 'Herz', Icon: FavoriteRounded },
+  { key: 'home', label: 'Zuhause', Icon: HomeRounded },
+  { key: 'work', label: 'Arbeit', Icon: WorkRounded },
+  { key: 'school', label: 'Schule', Icon: SchoolRounded },
+  { key: 'code', label: 'Code', Icon: CodeRounded },
+  { key: 'music', label: 'Musik', Icon: MusicNoteRounded },
+  { key: 'photo', label: 'Fotos', Icon: PhotoCameraRounded },
+  { key: 'video', label: 'Videos', Icon: MovieRounded },
+  { key: 'book', label: 'Bücher', Icon: MenuBookRounded },
+  { key: 'document', label: 'Dokumente', Icon: DescriptionRounded },
+  { key: 'travel', label: 'Reisen', Icon: FlightRounded },
+  { key: 'money', label: 'Finanzen', Icon: SavingsRounded },
+  { key: 'health', label: 'Gesundheit', Icon: LocalHospitalRounded },
+  { key: 'sport', label: 'Sport', Icon: FitnessCenterRounded },
+  { key: 'pets', label: 'Tiere', Icon: PetsRounded },
+  { key: 'game', label: 'Spiele', Icon: SportsEsportsRounded },
+  { key: 'shop', label: 'Einkauf', Icon: ShoppingCartRounded },
+  { key: 'food', label: 'Essen', Icon: RestaurantRounded },
+  { key: 'car', label: 'Auto', Icon: DirectionsCarRounded },
+  { key: 'garden', label: 'Garten', Icon: LocalFloristRounded },
+  { key: 'tools', label: 'Werkzeug', Icon: BuildRounded },
+  { key: 'people', label: 'Menschen', Icon: GroupsRounded },
+  { key: 'cloud', label: 'Cloud', Icon: CloudRounded },
+  { key: 'lock', label: 'Vertraulich', Icon: LockRounded },
+  { key: 'archive', label: 'Archiv', Icon: Inventory2Rounded },
+  { key: 'download', label: 'Downloads', Icon: DownloadRounded },
+  { key: 'art', label: 'Kreatives', Icon: BrushRounded },
+];
+
+const FOLDER_ICONS = new Map(FOLDER_ICON_OPTIONS.map((option) => [option.key, option.Icon]));
+
+export function FileIcon({ item, size = 24 }: { item: Pick<Item, 'kind' | 'shared' | 'color' | 'infected' | 'icon'>; size?: number }) {
   if (item.infected) return <GppBadRounded sx={{ fontSize: size, color: c.error, flex: 'none' }} aria-hidden />;
-  const Icon = item.kind === 'folder' && item.shared ? FolderSharedRounded : (ICONS[item.kind] ?? InsertDriveFileRounded);
   const color = item.kind === 'folder' && item.color ? folderColor(item.color) : kindColor(item.kind);
+  const Symbol = item.kind === 'folder' && item.icon ? FOLDER_ICONS.get(item.icon) : undefined;
+  if (Symbol) {
+    return (
+      <Box
+        aria-hidden
+        data-folder-icon={item.icon}
+        sx={{ position: 'relative', display: 'inline-grid', placeItems: 'center', width: size, height: size, flex: 'none' }}
+      >
+        <FolderRounded sx={{ fontSize: size, color, gridArea: '1 / 1' }} />
+        <Symbol sx={{ fontSize: Math.round(size * 0.46), color: c.surface, gridArea: '1 / 1', mt: `${Math.round(size * 0.1)}px` }} />
+      </Box>
+    );
+  }
+  const Icon = item.kind === 'folder' && item.shared ? FolderSharedRounded : (ICONS[item.kind] ?? InsertDriveFileRounded);
   return <Icon sx={{ fontSize: size, color, flex: 'none' }} aria-hidden />;
 }
 

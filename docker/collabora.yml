@@ -1,0 +1,32 @@
+services:
+  moecloud:
+    environment:
+      COLLABORA_INTERNAL_URL: http://collabora:9980
+      COLLABORA_WOPI_URL: http://moecloud:3000
+    networks:
+      - default
+      - office
+
+  collabora:
+    image: collabora/code:${COLLABORA_TAG:-latest}
+    container_name: moecloud-collabora
+    restart: unless-stopped
+    environment:
+      aliasgroup1: http://moecloud:3000
+      extra_params: --o:ssl.enable=false ${OFFICE_HTTPS:+--o:ssl.termination=true}${DOMAIN:+ --o:ssl.termination=true}
+      dictionaries: ${OFFICE_DICTIONARIES:-de_DE en_US}
+      TZ: ${TZ:-Europe/Berlin}
+    networks:
+      - office
+    cap_add:
+      - MKNOD
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+networks:
+  office:
+    internal: true

@@ -3,7 +3,7 @@ import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { badRequest } from '../lib/errors.ts';
 import { me } from '../lib/request.ts';
-import { id, parse } from '../lib/validate.ts';
+import { id, intOf, parse } from '../lib/validate.ts';
 import { present, requireAccess } from '../services/nodes.ts';
 import { abortUpload, appendChunk, completeUpload, getUpload, initUpload, uploadStream, type Actor } from '../services/uploads.ts';
 
@@ -24,7 +24,10 @@ export function uploadEndpoints(
   actorOf: (request: FastifyRequest) => Actor,
   view: (request: FastifyRequest, nodeId: string) => unknown
 ) {
-  app.post(`${prefix}/uploads`, async (request) => initUpload(actorOf(request), parse(initSchema, request.body)));
+  app.post(`${prefix}/uploads`, async (request) => {
+    const actor = actorOf(request);
+    return initUpload(actor, parse(initSchema, request.body));
+  });
 
   app.get<UploadParams>(`${prefix}/uploads/:upload`, async (request) => {
     const upload = getUpload(actorOf(request), request.params.upload);
@@ -32,11 +35,12 @@ export function uploadEndpoints(
   });
 
   app.put<UploadParams & { Querystring: { offset?: string } }>(`${prefix}/uploads/:upload`, async (request) => {
+    const actor = actorOf(request);
     const stream = request.body as Readable | undefined;
     if (!stream || typeof stream.pipe !== 'function') throw badRequest('Sende die Daten als application/octet-stream');
-    const offset = Number(request.query.offset ?? 0);
+    const offset = intOf(request.query.offset ?? 0);
     if (!Number.isSafeInteger(offset) || offset < 0) throw badRequest('Ungültige Position');
-    return appendChunk(actorOf(request), request.params.upload, offset, stream);
+    return appendChunk(actor, request.params.upload, offset, stream);
   });
 
   app.post<UploadParams>(`${prefix}/uploads/:upload/complete`, async (request) => {

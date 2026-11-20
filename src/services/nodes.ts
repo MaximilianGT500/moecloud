@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { all, dialect, IN_LIST, one, run, tx, type Param } from '../lib/db.ts';
 import { randomId } from '../lib/crypto.ts';
 import { badRequest, conflict, forbidden, HttpError, insufficientStorage, notFound } from '../lib/errors.ts';
@@ -32,6 +33,7 @@ export interface NodeRow {
   etag: number;
   color: string | null;
   description: string | null;
+  icon: string | null;
 }
 
 export type Role = 'owner' | 'edit' | 'view';
@@ -641,6 +643,50 @@ export function setColor(user: UserRow, ids: string[], color: string | null) {
   changed(folders);
 }
 
+export const FOLDER_ICONS = [
+  'star',
+  'heart',
+  'home',
+  'work',
+  'school',
+  'code',
+  'music',
+  'photo',
+  'video',
+  'book',
+  'document',
+  'travel',
+  'money',
+  'health',
+  'sport',
+  'pets',
+  'game',
+  'shop',
+  'food',
+  'car',
+  'garden',
+  'tools',
+  'people',
+  'cloud',
+  'lock',
+  'archive',
+  'download',
+  'art',
+] as const;
+
+export function setIcon(user: UserRow, ids: string[], icon: string | null) {
+  const folders = new Set<string | null>();
+  tx(() => {
+    for (const id of ids) {
+      const access = requireAccess(user, id, 'edit');
+      if (access.node.type !== 'folder' || !access.node.parent_id) throw badRequest('Symbole gibt es nur für Ordner');
+      run('UPDATE nodes SET icon = ? WHERE id = ?', icon, id);
+      folders.add(access.node.parent_id);
+    }
+  });
+  changed(folders);
+}
+
 export function emptyTrash(user: UserRow) {
   const roots = all<{ id: string }>('SELECT id FROM nodes WHERE owner_id = ? AND trash_root = 1 AND trashed_at IS NOT NULL', user.id);
   tx(() => roots.forEach((root) => destroyTree(root.id)));
@@ -697,14 +743,14 @@ const DOCUMENT_MIMES = [
   'application/vnd.oasis.opendocument.presentation',
 ];
 
-const KIND_FILTERS: Record<string, string> = {
+const KIND_FILTERS: Record<string, string> = lookup({
   folder: "n.type = 'folder'",
   image: "n.mime LIKE 'image/%'",
   video: "n.mime LIKE 'video/%'",
   audio: "n.mime LIKE 'audio/%'",
   pdf: "n.mime = 'application/pdf'",
   document: `n.mime IN (${DOCUMENT_MIMES.map((mime) => `'${mime}'`).join(', ')})`,
-};
+});
 
 export type Found = NodeRow & { parent_name: string | null; snippet?: string | null };
 
@@ -802,7 +848,7 @@ export interface SearchFilters {
 function searchFilter(user: UserRow, filters: SearchFilters) {
   const parts: string[] = [];
   const params: (string | number)[] = [];
-  if (filters.kind && KIND_FILTERS[filters.kind]) parts.push(KIND_FILTERS[filters.kind]);
+  if (filters.kind && Object.hasOwn(KIND_FILTERS, filters.kind)) parts.push(KIND_FILTERS[filters.kind]);
   if (filters.after !== undefined) {
     parts.push('n.modified_at >= ?');
     params.push(filters.after);
@@ -827,7 +873,10 @@ function searchFilter(user: UserRow, filters: SearchFilters) {
 }
 
 export function search(user: UserRow, query: string, filters: SearchFilters = {}, content = true): Found[] {
-  const text = query.trim().slice(0, 200);
+  const text = query
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .trim()
+    .slice(0, 200);
   const filter = searchFilter(user, filters);
   const owners = ownerScope(user);
   if (!text) {
@@ -915,6 +964,7 @@ export interface Presented {
   role: Role;
   owner: { id: number; name: string } | null;
   color: string | null;
+  icon: string | null;
   infected: boolean;
   takenAt: number | null;
   width: number | null;
@@ -1040,6 +1090,7 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       role: typeof role === 'function' ? role(node) : role,
       owner: node.owner_id === viewer.id ? null : { id: node.owner_id, name: owners.get(node.owner_id) ?? '' },
       color: node.type === 'folder' ? node.color : null,
+      icon: node.type === 'folder' ? (node.icon ?? null) : null,
       infected: blob?.scan_status === 'infected',
       takenAt: blob?.taken_at ?? null,
       width: blob?.width ?? null,

@@ -19,11 +19,14 @@ import { QuotaField } from '../common/QuotaField';
 import { toast } from '../common/toast';
 import { Loading, SaveBar, Toggle, loadSettings, saveSettings, useDraft, type Settings } from './shared';
 import { AppearanceSection } from './Appearance';
+import { BrandingSection } from './Branding';
 
 interface OfficeInfo {
   enabled: boolean;
   ok: boolean;
   error: string | null;
+  builtIn: boolean;
+  secure: boolean;
   extensions: string[];
 }
 
@@ -43,6 +46,19 @@ function OfficeState({ url, saved }: { url: string; saved: boolean }) {
   }, [saved, url]);
 
   if (!saved || !url.trim() || !state?.enabled) return null;
+  if (state.ok && state.builtIn && state.secure !== (window.location.protocol === 'https:')) {
+    return (
+      <Alert severity="warning">
+        {state.secure
+          ? t(
+              'Collabora antwortet, rechnet aber mit HTTPS, während deine Cloud hier über HTTP läuft. Der Editor kann sich so nicht verbinden. Nimm bei Collabora ssl.termination heraus.'
+            )
+          : t(
+              'Collabora antwortet, rechnet aber mit HTTP, während deine Cloud hier über HTTPS läuft. Der Editor kann sich so nicht verbinden. Schalte bei Collabora ssl.termination ein, in der Komplettfassung mit OFFICE_HTTPS=true in der .env.'
+            )}
+      </Alert>
+    );
+  }
   return state.ok ? (
     <Alert severity="success">
       {t('Collabora antwortet. {count} Dateiformate lassen sich bearbeiten, darunter {examples}.', {
@@ -244,6 +260,14 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
 
       <AppearanceSection personal={Boolean(draft['themes.personal'])} onPersonal={(value) => set('themes.personal', value)} />
 
+      <BrandingSection
+        draft={draft}
+        set={set}
+        onImages={(images) =>
+          form.merge({ 'site.logo': images['site.logo'] ?? '', 'login.background': images['login.background'] ?? '' } as Partial<Settings>)
+        }
+      />
+
       <Section title={t('Anmeldung')}>
         <RadioGroup
           value={draft['auth.registration']}
@@ -255,6 +279,29 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           <FormControlLabel value="approval" control={<Radio />} label={t('Jeder darf sich registrieren, du gibst die Konten frei')} />
           <FormControlLabel value="open" control={<Radio />} label={t('Jeder darf sich registrieren')} />
         </RadioGroup>
+        {(draft['auth.registration'] === 'open' || draft['auth.registration'] === 'approval') && (
+          <>
+            <Toggle
+              checked={Boolean(draft['auth.confirmEmail']) || Boolean(String(draft['auth.domains'] ?? '').trim())}
+              disabled={Boolean(String(draft['auth.domains'] ?? '').trim())}
+              onChange={(value) => set('auth.confirmEmail', value)}
+              label={t('E-Mail-Adresse bestätigen lassen')}
+              hint={t(
+                'Wer sich registriert, bekommt einen Link per E-Mail und kann sich erst danach anmelden. Unbestätigte Konten verschwinden nach 48 Stunden von selbst.'
+              )}
+            />
+            <TextField
+              label={t('Nur E-Mail-Adressen dieser Domains')}
+              value={String(draft['auth.domains'] ?? '')}
+              onChange={(event) => set('auth.domains', event.target.value)}
+              placeholder="example.com, firma.de"
+              slotProps={{ htmlInput: { maxLength: 1500, spellCheck: false, autoCapitalize: 'none' }, inputLabel: { shrink: true } }}
+              helperText={t(
+                'Leer lassen, damit jede Adresse geht. Mit einer Liste wird die Adresse immer bestätigt, sonst ließe sich die Regel mit einer erfundenen Adresse umgehen. Einladungen gelten weiter für jede Adresse.'
+              )}
+            />
+          </>
+        )}
         <Toggle
           checked={Boolean(draft['auth.passkeys'])}
           onChange={(value) => set('auth.passkeys', value)}
@@ -273,6 +320,32 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           helperText={t('Gilt für neue und geänderte Passwörter, zwischen 10 und 64.')}
           sx={{ maxWidth: 320 }}
         />
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
+            label={t('Abmelden ohne Nutzung nach')}
+            type="number"
+            value={draft['auth.sessionDays'] ?? 30}
+            onChange={(event) => set('auth.sessionDays', Math.min(365, Math.max(1, Math.round(Number(event.target.value)))))}
+            slotProps={{
+              htmlInput: { min: 1, max: 365 },
+              input: { endAdornment: <InputAdornment position="end">{t('Tagen')}</InputAdornment> },
+            }}
+            helperText={t('Wer so lange nicht da war, meldet sich neu an. Zwischen 1 und 365.')}
+            sx={{ flex: '1 1 260px', maxWidth: 320 }}
+          />
+          <TextField
+            label={t('Spätestens neu anmelden nach')}
+            type="number"
+            value={draft['auth.sessionMaxDays'] ?? 30}
+            onChange={(event) => set('auth.sessionMaxDays', Math.min(365, Math.max(0, Math.round(Number(event.target.value)))))}
+            slotProps={{
+              htmlInput: { min: 0, max: 365 },
+              input: { endAdornment: <InputAdornment position="end">{t('Tagen')}</InputAdornment> },
+            }}
+            helperText={t('Gilt auch bei täglicher Nutzung. 0 heißt nie, dann bleibt angemeldet, wer MoeCloud regelmäßig öffnet.')}
+            sx={{ flex: '1 1 260px', maxWidth: 320 }}
+          />
+        </Box>
         <TextField
           label={t('Unbenutzte Konten sperren nach')}
           type="number"
@@ -511,15 +584,26 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
       <Section
         title={t('Office')}
         description={t(
-          'Mit Collabora Online bearbeitest du Word, Excel, PowerPoint und OpenDocument direkt im Browser, auch mit mehreren zugleich. Collabora läuft als eigener Dienst unter einer eigenen Adresse.'
+          'Mit Collabora Online bearbeitest du Word, Excel, PowerPoint und OpenDocument direkt im Browser, auch mit mehreren zugleich. Collabora läuft als eigener Dienst. Entweder reicht MoeCloud ihn unter der Adresse der Cloud durch, oder er bekommt eine eigene Adresse.'
         )}
       >
         <TextField
-          label={t('Adresse von Collabora Online')}
+          label={t('Interne Adresse von Collabora')}
+          placeholder="http://collabora:9980"
+          value={draft['collabora.internal'] ?? ''}
+          onChange={(event) => set('collabora.internal', event.target.value)}
+          helperText={t(
+            'Unter dieser Adresse erreicht MoeCloud selbst Collabora, etwa im selben Docker-Netz. Bleibt das nächste Feld leer, reicht MoeCloud den Editor unter der Adresse der Cloud durch, und nur Angemeldete kommen heran.'
+          )}
+        />
+        <TextField
+          label={t('Eigene Adresse von Collabora')}
           placeholder="https://office.example.com"
           value={draft['collabora.url'] ?? ''}
           onChange={(event) => set('collabora.url', event.target.value)}
-          helperText={t('Leer ist die Bearbeitung aus. In Collabora muss die Adresse deiner Cloud als erlaubter Host eingetragen sein.')}
+          helperText={t(
+            'Für Collabora unter einer eigenen Adresse, die die Browser deiner Leute erreichen. Dann lädt der Editor von dort und bleibt von der Cloud getrennt. Sind beide Felder leer, ist die Bearbeitung aus.'
+          )}
         />
         <TextField
           label={t('Adresse von MoeCloud für Collabora')}
@@ -527,10 +611,13 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           value={draft['collabora.host'] ?? ''}
           onChange={(event) => set('collabora.host', event.target.value)}
           helperText={t(
-            'Nur nötig, wenn Collabora deine Cloud unter einer anderen Adresse erreicht als dein Browser, etwa im selben Docker-Netz.'
+            'Nur nötig, wenn Collabora deine Cloud unter einer anderen Adresse erreicht als dein Browser, etwa im selben Docker-Netz. In Collabora muss diese Adresse als erlaubter Host eingetragen sein.'
           )}
         />
-        <OfficeState url={String(draft['collabora.url'] ?? '')} saved={form.changed.length === 0} />
+        <OfficeState
+          url={`${String(draft['collabora.internal'] ?? '')}${String(draft['collabora.url'] ?? '')}`}
+          saved={form.changed.length === 0}
+        />
       </Section>
 
       <Section

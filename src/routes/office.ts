@@ -147,6 +147,9 @@ export async function officeRoutes(app: FastifyInstance) {
       return { LastModifiedTime: stamp(updated) };
     });
 
-    wopi.post<IdParams>('/wopi/files/:id', async (_request, reply) => reply.code(501).send({ error: 'not_implemented' }));
+    wopi.post<IdParams & TokenQuery>('/wopi/files/:id', async (request, reply) => {
+      if (!sessionOf(request, reply)) return reply;
+      return reply.code(501).send({ error: 'not_implemented' });
+    });
   });
 }

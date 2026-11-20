@@ -9,7 +9,7 @@ import { DEFAULT_SPEC, FONT_STACKS, isPalette, sameColors, TRUE_BLACK, type Pale
 import { createAppTheme } from '../theme/theme';
 import { ease } from '../theme/tokens';
 import { boot, type ThemeBoot } from '../lib/boot';
-import { currentPrefs, usePrefs } from '../lib/prefs';
+import { applyDisplay, currentPrefs, usePrefs } from '../lib/prefs';
 import { Toaster } from './common/toast';
 import { DialogHost } from './common/dialogs';
 import { ErrorBoundary } from './common/ErrorBoundary';
@@ -100,6 +100,9 @@ function Root({ children }: { children: ReactNode }) {
     if (!palette) void loadGenerator().then(() => setLoaded((count) => count + 1));
   }, [palette]);
   useEffect(() => {
+    applyDisplay(prefs);
+  }, [prefs.scale, prefs.density, prefs.tile, prefs.motion, prefs.backdrop]);
+  useEffect(() => {
     document.documentElement.style.setProperty('--moe-font', FONT_STACKS[spec.font] ?? FONT_STACKS.rounded);
     document.documentElement.style.setProperty('--moe-corners', String(prefs.shape ?? spec.corners));
   }, [spec.font, spec.corners, prefs.shape]);
@@ -136,7 +139,7 @@ function Root({ children }: { children: ReactNode }) {
         <ThemeProvider theme={theme} defaultMode="dark" modeStorageKey="mui-mode" noSsr disableTransitionOnChange>
           <CssBaseline enableColorScheme />
           <LazyMotion features={motionFeatures} strict>
-            <MotionConfig reducedMotion="user" transition={{ duration: 0.35, ease: ease.enter }}>
+            <MotionConfig reducedMotion={prefs.motion === 'reduced' ? 'always' : 'user'} transition={{ duration: 0.35, ease: ease.enter }}>
               <ErrorBoundary>{children}</ErrorBoundary>
               <Toaster />
               <DialogHost />
@@ -152,6 +155,7 @@ export async function mount(app: ReactNode) {
   const container = document.getElementById('root');
   if (!container) return;
   const prefs = currentPrefs();
+  applyDisplay(prefs);
   if (!paletteFor(bootSpec(), prefs.contrast, prefs.trueBlack)) await loadGenerator().catch(() => undefined);
   createRoot(container).render(
     <StrictMode>

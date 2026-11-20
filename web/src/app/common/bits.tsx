@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { encode } from 'uqr';
 import Avatar from '@mui/material/Avatar';
 import Box, { type BoxProps } from '@mui/material/Box';
@@ -13,19 +13,39 @@ import CheckRounded from '@mui/icons-material/CheckRounded';
 import { m } from 'motion/react';
 import { formatBytes } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import type { Storage } from '../../lib/boot';
+import { boot, type Storage } from '../../lib/boot';
 import { c, fonts, mix, radius, srOnly } from '../../theme/tokens';
 import { toast } from './toast';
 
+const logoListeners = new Set<() => void>();
+
+export function setSiteLogo(url: string | null) {
+  boot().site.logo = url;
+  logoListeners.forEach((listener) => listener());
+}
+
+const watchLogo = (listener: () => void) => {
+  logoListeners.add(listener);
+  return () => logoListeners.delete(listener);
+};
+
 export function BrandMark({ size = 44 }: { size?: number }) {
+  const logo = useSyncExternalStore(watchLogo, () => boot().site.logo ?? null);
   return (
     <Box
       component="img"
-      src="/favicon.svg"
+      src={logo ?? '/favicon.svg'}
       alt=""
       width={size}
       height={size}
-      sx={{ width: size, height: size, borderRadius: `${Math.round(size * 0.28)}px`, display: 'block', flex: 'none' }}
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: `${Math.round(size * (logo ? 0.18 : 0.28))}px`,
+        objectFit: logo ? 'contain' : undefined,
+        display: 'block',
+        flex: 'none',
+      }}
     />
   );
 }

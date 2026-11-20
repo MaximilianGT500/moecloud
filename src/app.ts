@@ -6,7 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import { randomBytes } from 'node:crypto';
 import { config } from './config.ts';
 import { randomId, safeEqual } from './lib/crypto.ts';
-import { forbidden, HttpError } from './lib/errors.ts';
+import { badRequest, forbidden, HttpError, unauthorized } from './lib/errors.ts';
 import { isSecure, sameOrigin } from './lib/http.ts';
 import { fromAcceptLanguage, isLang, t, type Lang } from './lib/i18n.ts';
 import { renderDocument } from './lib/html.ts';
@@ -17,7 +17,8 @@ import { secondFactorPending } from './services/auth.ts';
 import { termsPending } from './services/terms.ts';
 import { officeOrigin } from './services/wopi.ts';
 import { readSession } from './services/sessions.ts';
-import { CSRF_COOKIE, LANG_COOKIE, type RequestAuth } from './lib/request.ts';
+import { adminBlocked, adminReachable } from './services/adminnet.ts';
+import { CSRF_COOKIE, LANG_COOKIE, sessionRequired, type RequestAuth } from './lib/request.ts';
 import * as settings from './services/settings.ts';
 import { touchSeen, type UserRow } from './services/users.ts';
 import { systemRoutes } from './routes/system.ts';
@@ -38,6 +39,7 @@ import { groupRoutes } from './routes/groups.ts';
 import { teamRoutes } from './routes/teams.ts';
 import { automationRoutes } from './routes/automations.ts';
 import { officeRoutes } from './routes/office.ts';
+import { collaboraRoutes } from './routes/collabora.ts';
 import { noteRoutes } from './routes/notes.ts';
 import { musicRoutes } from './routes/music.ts';
 import { tagRoutes } from './routes/tags.ts';
@@ -45,6 +47,7 @@ import { albumRoutes } from './routes/albums.ts';
 import { toolRoutes } from './routes/tools.ts';
 import { themeRoutes } from './routes/themes.ts';
 import { pluginRoutes } from './routes/plugins.ts';
+import { securityRoutes } from './routes/security.ts';
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const MODE_SWITCH_STYLE = "'sha256-GNF74DLkXb0fH3ILHgILFjk1ozCF3SNXQ5mQb7WLu/Y='";
@@ -107,7 +110,51 @@ function inMaintenance(request: FastifyRequest) {
   return !OPEN_DURING_MAINTENANCE.test(request.url);
 }
 
+const OPEN_API = /^\/api\/(public\/|setup(\/|$)|auth\/passkey\/|language$)/;
+
+const SESSION_ONLY = new Set([
+  'POST /api/account/app-passwords',
+  'DELETE /api/account/app-passwords/:id',
+  'POST /api/account/delete',
+  'POST /api/account/password',
+  'POST /api/account/secure',
+  'POST /api/account/passkeys',
+  'POST /api/account/passkeys/options',
+  'PATCH /api/account/passkeys/:id',
+  'DELETE /api/account/passkeys/:id',
+  'DELETE /api/account/session',
+  'DELETE /api/account/sessions/:id',
+  'POST /api/account/sessions/revoke-others',
+  'DELETE /api/account/sso',
+  'POST /api/account/totp/setup',
+  'POST /api/account/totp/enable',
+  'POST /api/account/totp/disable',
+  'POST /api/account/totp/recovery',
+]);
+
+function hasNul(body: unknown) {
+  if (typeof body === 'string') return body.includes('\0');
+  if (!body || typeof body !== 'object' || Buffer.isBuffer(body) || typeof (body as { pipe?: unknown }).pipe === 'function') return false;
+  const pending: unknown[] = [body];
+  for (let seen = 0; pending.length > 0 && seen < 500_000; seen++) {
+    const current = pending.pop();
+    if (typeof current === 'string') {
+      if (current.includes('\0')) return true;
+    } else if (current && typeof current === 'object') {
+      for (const [key, entry] of Object.entries(current)) {
+        if (key.includes('\0')) return true;
+        if (typeof entry === 'string' || (entry && typeof entry === 'object')) pending.push(entry);
+      }
+    }
+  }
+  return false;
+}
+
 const isLocalHost = (host: string) => /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(host);
+
+const ROUTES = new WeakMap<FastifyInstance, { method: string; url: string }[]>();
+
+export const routesOf = (app: FastifyInstance) => ROUTES.get(app) ?? [];
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -126,6 +173,15 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   setLogger(app.log);
 
+  const routes: { method: string; url: string }[] = [];
+  ROUTES.set(app, routes);
+  app.addHook('onRoute', (route) => {
+    for (const method of [route.method].flat()) {
+      if (method !== 'HEAD' || !routes.some((entry) => entry.method === 'GET' && entry.url === route.url))
+        routes.push({ method, url: route.url });
+    }
+  });
+
   app.decorateRequest('auth', null);
   app.decorateRequest('lang', 'de');
   app.decorateRequest('nonce', '');
@@ -142,6 +198,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
 
   const termsRoutes = new Set(['GET /api/session', 'DELETE /api/account/session', 'POST /api/language']);
+  const changeRoutes = new Set(['GET /api/session', 'POST /api/account/password', 'DELETE /api/account/session', 'POST /api/language']);
   const secondFactorRoutes = new Set([
     'GET /api/session',
     'GET /api/account',
@@ -175,10 +232,12 @@ export async function buildApp(): Promise<FastifyInstance> {
       }
       return;
     }
-    let auth: RequestAuth | null = readSession(request);
+    let auth: RequestAuth | null = readSession(request, reply);
     if (!auth && request.url.startsWith('/api/') && request.headers.authorization?.startsWith('Basic ')) {
       const found = basicAuth(request.headers.authorization, request.ip);
-      if (found && found !== 'blocked') auth = { user: found.user, session: null, readOnly: found.readOnly };
+      if (found && found !== 'blocked') {
+        auth = { user: found.user, session: null, readOnly: found.readOnly, app: { id: found.id, admin: found.admin } };
+      }
     }
     request.auth = auth;
     if (auth) touchSeen(auth.user.id);
@@ -228,10 +287,41 @@ export async function buildApp(): Promise<FastifyInstance> {
         return reply.redirect('/nutzungsbedingungen');
       }
     }
+    if (auth?.session && auth.user.must_change) {
+      if (request.url.startsWith('/api/')) {
+        if (!changeRoutes.has(`${request.method} ${request.routeOptions.url ?? ''}`)) {
+          return reply.code(403).send({
+            error: { code: 'password_change_required', message: t(request.lang, 'Leg zuerst im Browser ein neues Passwort fest') },
+          });
+        }
+      } else if (
+        request.method === 'GET' ? /^\/(files|admin|account)(\/|\?|$)/.test(request.url) : request.url.startsWith('/share-target')
+      ) {
+        return reply.redirect('/passwort', request.method === 'GET' ? 302 : 303);
+      }
+    }
+    const route = request.routeOptions.url;
+    if (route?.startsWith('/api/') && !OPEN_API.test(route)) {
+      if (!request.auth) throw unauthorized();
+      const app = request.auth.app;
+      if (route.startsWith('/api/admin/')) {
+        if (request.auth.user.role !== 'admin') throw forbidden('Das dürfen nur Admins');
+        if (app && !app.admin) throw new HttpError(403, 'Dieses App-Passwort darf die Verwaltung nicht bedienen', 'app_password_scope');
+        if (!adminReachable(request.ip)) throw adminBlocked();
+      }
+      if (app && SESSION_ONLY.has(`${request.method} ${route}`)) {
+        const own = route === '/api/account/app-passwords/:id' && (request.params as { id?: string }).id === app.id;
+        if (!own) throw sessionRequired();
+      }
+    }
+  });
+
+  app.addHook('preValidation', async (request) => {
+    if (request.url.includes('%00') || hasNul(request.body)) throw badRequest('Die Anfrage enthält ein ungültiges Zeichen');
   });
 
   app.addHook('preHandler', async (request) => {
-    if (!UNSAFE.has(request.method) || !request.url.startsWith('/api/')) return;
+    if (!UNSAFE.has(request.method) || !(request.routeOptions.url ?? request.url).startsWith('/api/')) return;
     if (request.auth?.readOnly) throw new HttpError(403, 'Dieses App-Passwort darf nur lesen', 'read_only');
     if (request.auth && !request.auth.session) return;
     if (!sameOrigin(request)) throw forbidden('Die Anfrage kam von einer fremden Seite');
@@ -245,6 +335,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     reply.header('X-Content-Type-Options', 'nosniff');
     if (!reply.hasHeader('Referrer-Policy')) reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    if ((request.routeOptions.url ?? request.url).startsWith('/api/') && !reply.hasHeader('Cache-Control'))
+      reply.header('Cache-Control', 'no-store');
     if (request.protocol === 'https' && !isLocalHost(request.host)) reply.header('Strict-Transport-Security', 'max-age=15552000');
     const type = String(reply.getHeader('content-type') ?? '');
     if (type.startsWith('text/html')) {
@@ -327,10 +419,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(teamRoutes);
   await app.register(automationRoutes);
   await app.register(officeRoutes);
+  await app.register(collaboraRoutes);
   await app.register(noteRoutes);
   await app.register(musicRoutes);
   await app.register(systemAdminRoutes);
   await app.register(eventRoutes);
+  await app.register(securityRoutes);
   await app.register(davRoutes);
   await app.register(metricsRoutes);
 

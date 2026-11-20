@@ -25,6 +25,7 @@ import ReplayRounded from '@mui/icons-material/ReplayRounded';
 import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
 import DriveFolderUploadRounded from '@mui/icons-material/DriveFolderUploadRounded';
 import CreateNewFolderRounded from '@mui/icons-material/CreateNewFolderRounded';
+import AddLinkRounded from '@mui/icons-material/AddLinkRounded';
 import NoteAddRounded from '@mui/icons-material/NoteAddRounded';
 import PostAddRounded from '@mui/icons-material/PostAddRounded';
 import SlideshowRounded from '@mui/icons-material/SlideshowRounded';
@@ -205,6 +206,7 @@ export function useNewMenu({
   onUploadFolder,
   onNewFolder,
   onNewText,
+  onNewLink,
   onTemplate,
   onOffice,
   onImport,
@@ -215,6 +217,7 @@ export function useNewMenu({
   onUploadFolder: () => void;
   onNewFolder: () => void;
   onNewText: () => void;
+  onNewLink?: () => void;
   onTemplate?: () => void;
   onOffice?: (kind: 'document' | 'spreadsheet' | 'presentation') => void;
   onImport?: () => void;
@@ -241,6 +244,7 @@ export function useNewMenu({
       <Divider sx={{ my: 0.5 }} />
       {item(<CreateNewFolderRounded />, t('Neuer Ordner'), onNewFolder)}
       {item(<NoteAddRounded />, t('Neue Textdatei'), onNewText)}
+      {onNewLink && item(<AddLinkRounded />, t('Neuer Weblink'), onNewLink)}
       {onOffice && item(<ArticleRounded />, t('Neues Dokument'), () => onOffice('document'))}
       {onOffice && item(<TableChartRounded />, t('Neue Tabelle'), () => onOffice('spreadsheet'))}
       {onOffice && item(<SlideshowRounded />, t('Neue Präsentation'), () => onOffice('presentation'))}

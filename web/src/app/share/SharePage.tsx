@@ -52,6 +52,7 @@ interface ShareBoot extends Boot {
     uploadOnly: boolean;
     reports?: boolean;
     expiresAt: number | null;
+    message?: string | null;
     downloadsLeft: number | null;
     node: Item;
   };
@@ -405,6 +406,28 @@ export function SharePage() {
                 )}
               </Box>
             </Box>
+
+            {share.message && (
+              <Box
+                data-share-message
+                sx={{
+                  px: 2,
+                  py: 1.5,
+                  borderRadius: `${radius.md}px`,
+                  bgcolor: c.secondaryContainer,
+                  color: c.onSecondaryContainer,
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                <Typography variant="caption" component="p" sx={{ fontWeight: 700, opacity: 0.8 }}>
+                  {share.owner ? t('Nachricht von {name}', { name: share.owner }) : t('Nachricht')}
+                </Typography>
+                <Typography variant="body2" component="p">
+                  {share.message}
+                </Typography>
+              </Box>
+            )}
 
             {share.uploadOnly ? (
               <>

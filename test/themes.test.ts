@@ -36,7 +36,7 @@ describe('Themes', () => {
       list.themes.map((theme: { id: string }) => theme.id),
       builtin.map((theme) => theme.id)
     );
-    assert.equal(list.themes.length, 12);
+    assert.equal(list.themes.length, 20);
     assert.equal(list.themes[1].name, 'Ozean');
     assert.equal(list.themes[1].source, 'builtin');
     assert.equal(list.themes[1].preview.light.primary, ozean.palette.light.primary);
@@ -146,9 +146,9 @@ describe('Themes', () => {
     assert.equal(created.statusCode, 201, created.body);
     const id = created.json().id as string;
     assert.match(id, /^abendrot-[a-z0-9]{4}$/);
-    assert.equal(created.json().themes.length, 13);
-    assert.equal(created.json().themes[12].source, 'custom');
-    assert.equal(created.json().themes[12].css, true);
+    assert.equal(created.json().themes.length, 21);
+    assert.equal(created.json().themes[20].source, 'custom');
+    assert.equal(created.json().themes[20].css, true);
     assert.deepEqual(created.json().items[0].css, '.moe-test { letter-spacing: 0.01em; }');
     assert.equal((await emi.json('POST', '/api/admin/themes', input)).json().error.message, 'Ein Theme mit diesem Namen gibt es schon');
     assert.equal((await mia.get('/api/admin/themes')).statusCode, 403);
@@ -219,7 +219,7 @@ describe('Themes', () => {
     assert.equal(builtinSite.json().site.name, 'Wald');
     assert.deepEqual(settings.get('site.palette'), wald.palette);
     assert.equal((await emi.json('DELETE', `/api/admin/themes/${id}`)).statusCode, 200);
-    assert.equal((await emi.get('/api/themes')).json().themes.length, 12);
+    assert.equal((await emi.get('/api/themes')).json().themes.length, 20);
     assert.equal(variable((await mia.get('/impressum', { accept: 'text/html' })).body, 'primary'), wald.palette.dark.primary);
     assert.equal((await mia.get('/api/themes')).json().choice, null);
 

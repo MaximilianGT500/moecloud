@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import { posix } from 'node:path';
 import type { Entry, ZipFile } from 'yauzl';
 import { extensionOf } from '../lib/mime.ts';
@@ -12,7 +13,7 @@ const OFFICE = ['docProps/thumbnail.jpeg', 'docProps/thumbnail.jpg', 'docProps/t
 const IWORK = ['preview.jpg', 'QuickLook/Thumbnail.jpg', 'QuickLook/Thumbnail.png'];
 const PAGES = /\.(jpe?g|png|webp|gif|avif)$/i;
 
-const COVERS: Record<string, string[]> = {
+const COVERS: Record<string, string[]> = lookup({
   odt: OPEN_DOCUMENT,
   ods: OPEN_DOCUMENT,
   odp: OPEN_DOCUMENT,
@@ -41,7 +42,7 @@ const COVERS: Record<string, string[]> = {
   '3mf': ['Metadata/thumbnail.png', 'Metadata/thumbnail.jpg', 'Metadata/thumbnail.jpeg'],
   epub: [],
   cbz: [],
-};
+});
 
 export const hasCover = (name: string) => Object.hasOwn(COVERS, extensionOf(name));
 

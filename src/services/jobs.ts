@@ -1,3 +1,4 @@
+import { purgeUnconfirmed } from './confirmations.ts';
 import type { FastifyBaseLogger } from 'fastify';
 import { statfs } from 'node:fs/promises';
 import { config } from '../config.ts';
@@ -14,6 +15,7 @@ import { purgeResets } from './resets.ts';
 import { applyRules } from './rules.ts';
 import { rescan, scanEnabled } from './scan.ts';
 import { purgeExpiredSessions } from './sessions.ts';
+import { integrityDue, startIntegrity } from './integrity.ts';
 import { purgeOfficeTokens } from './wopi.ts';
 import { purgeAppPasswords } from './apppasswords.ts';
 import { expireGrants } from './grants.ts';
@@ -104,6 +106,8 @@ export function startJobs(log: FastifyBaseLogger) {
       await sendWeeklyReports();
       await checkDisk();
       checkLogins();
+      if (integrityDue()) void startIntegrity('schedule').catch((error) => log.error(error, 'Prüfung der Dateien fehlgeschlagen'));
+      purgeUnconfirmed();
     } catch (error) {
       log.error(error, 'Prüfung fehlgeschlagen');
     }

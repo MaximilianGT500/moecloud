@@ -182,4 +182,50 @@ describe('Notizen', () => {
     assert.deepEqual(await notes(lea), { folderId: null, items: [], more: false });
     assert.equal((await lea.json('POST', '/api/notes', { title: 'Gast' })).statusCode, 403);
   });
+
+  it('sammelt die Aufgaben aus allen Notizen und hakt sie von dort aus ab', async () => {
+    const list = (
+      await emi.json('POST', '/api/notes', {
+        title: 'Umzug',
+        category: 'Privat',
+        content:
+          '# Umzug\n\n- [ ] Kartons besorgen\n- [x] Transporter buchen\n* [ ] Lea fragen\r\n\n```\n- [ ] steht nur im Code\n```\n1. [ ] Strom ummelden\n',
+      })
+    ).json().note as Note;
+    await emi.json('POST', '/api/notes', { title: 'Ohne Aufgaben', content: 'Nur Text mit [Klammern].' });
+    const tasks = (await emi.get('/api/notes/tasks')).json();
+    assert.equal(tasks.open, 3);
+    assert.equal(tasks.done, 1);
+    assert.deepEqual(
+      tasks.notes.map((note: { title: string; category: string }) => [note.title, note.category]),
+      [['Umzug', 'Privat']]
+    );
+    assert.deepEqual(tasks.notes[0].tasks, [
+      { line: 2, text: 'Kartons besorgen', done: false },
+      { line: 3, text: 'Transporter buchen', done: true },
+      { line: 4, text: 'Lea fragen', done: false },
+      { line: 9, text: 'Strom ummelden', done: false },
+    ]);
+
+    const done = await emi.json('POST', `/api/notes/${list.id}/tasks`, { line: 4, text: 'Lea fragen' });
+    assert.equal(done.statusCode, 200, done.body);
+    assert.equal(done.json().done, true);
+    const content = (await emi.get(`/api/notes/${list.id}`)).json().content as string;
+    assert.match(content, /\* \[x\] Lea fragen\r\n/);
+    assert.match(content, /- \[ \] steht nur im Code/);
+    const back = await emi.json('POST', `/api/notes/${list.id}/tasks`, { line: 3, text: 'Transporter buchen' });
+    assert.equal(back.json().done, false);
+    const after = (await emi.get('/api/notes/tasks')).json();
+    assert.deepEqual([after.open, after.done], [3, 1]);
+
+    const stale = await emi.json('POST', `/api/notes/${list.id}/tasks`, { line: 2, text: 'Etwas anderes' });
+    assert.equal(stale.statusCode, 409);
+    assert.equal(stale.json().error.code, 'note_conflict');
+    assert.equal((await emi.json('POST', `/api/notes/${list.id}/tasks`, { line: 0, text: 'Umzug' })).statusCode, 409);
+    assert.equal((await mia.json('POST', `/api/notes/${list.id}/tasks`, { line: 2, text: 'Kartons besorgen' })).statusCode, 404);
+    assert.deepEqual(
+      (await mia.get('/api/notes/tasks')).json().notes.filter((note: { title: string }) => note.title === 'Umzug'),
+      []
+    );
+  });
 });

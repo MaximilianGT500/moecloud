@@ -4,16 +4,16 @@ import { forbidden, HttpError, notFound, unauthorized } from '../lib/errors.ts';
 import { verifyPassword } from '../lib/crypto.ts';
 import { escapeHtml, isSecure } from '../lib/http.ts';
 import { renderApp, renderDocument } from '../lib/html.ts';
-import { t } from '../lib/i18n.ts';
+import { longDateTime, t } from '../lib/i18n.ts';
 import { checkFormCsrf, body } from '../lib/request.ts';
 import { Limiter } from '../lib/limiter.ts';
 import { kindOf } from '../lib/mime.ts';
 import { toVtt } from '../lib/subtitles.ts';
-import { parse, ids } from '../lib/validate.ts';
+import { ids, intOf, parse } from '../lib/validate.ts';
 import { messagePage, sharePasswordPage } from '../views/pages.ts';
 import { blobPath, typeOf } from '../services/blobs.ts';
 import { subtitleNode, subtitlesOf } from '../services/media-state.ts';
-import { blobInfo, chain, children, type NodeRow } from '../services/nodes.ts';
+import { blobInfo, chain, children, getNode, type NodeRow } from '../services/nodes.ts';
 import { previews } from '../services/thumbs.ts';
 import {
   baseUrl,
@@ -21,6 +21,7 @@ import {
   downloadsLeft,
   isUnlocked,
   linkFolder,
+  linkBlock,
   linkByToken,
   linkNode,
   linkState,
@@ -31,6 +32,7 @@ import {
   type LinkRow,
 } from '../services/links.ts';
 import { audit } from '../services/audit.ts';
+import { findTheme } from '../services/themes.ts';
 import { createReport, REPORT_REASONS } from '../services/reports.ts';
 import * as settings from '../services/settings.ts';
 import { getUser } from '../services/users.ts';
@@ -105,8 +107,9 @@ function shareInfo(link: LinkRow, node: NodeRow) {
     uploadOnly: Boolean(link.upload_only),
     reports: settings.get('share.reports'),
     expiresAt: link.expires_at,
+    message: link.message,
     downloadsLeft: downloadsLeft(link),
-    node: presentPublic([node])[0],
+    node: link.upload_only ? { ...presentPublic([node])[0], items: null, size: 0, modifiedAt: 0, version: '' } : presentPublic([node])[0],
   };
 }
 
@@ -146,13 +149,29 @@ function exhaustedPage(request: FastifyRequest) {
   });
 }
 
+function scheduledPage(request: FastifyRequest, startsAt: number) {
+  return messagePage(request, {
+    icon: 'linkOff',
+    title: t(request.lang, 'Dieser Link ist noch nicht freigeschaltet'),
+    text: t(request.lang, 'Er gilt ab dem {date}. Schau dann noch einmal vorbei.', { date: longDateTime(request.lang, startsAt) }),
+    action: null,
+  });
+}
+
 function unavailable(request: FastifyRequest<TokenParams>, reply: FastifyReply) {
   const stored = linkByToken(request.params.token);
   const state = stored ? linkState(stored) : 'expired';
+  const scheduled = stored && state === 'scheduled' && getNode(stored.node_id)?.trashed_at === null && !linkBlock(stored);
   return renderDocument(request, reply, {
-    title: t(request.lang, 'Link ungültig'),
+    title: scheduled ? t(request.lang, 'Link noch nicht freigeschaltet') : t(request.lang, 'Link ungültig'),
     status: 404,
-    body: state === 'paused' ? pausedPage(request) : state === 'exhausted' ? exhaustedPage(request) : invalidPage(request),
+    body: scheduled
+      ? scheduledPage(request, stored.starts_at!)
+      : state === 'paused'
+        ? pausedPage(request)
+        : state === 'exhausted'
+          ? exhaustedPage(request)
+          : invalidPage(request),
   });
 }
 
@@ -165,7 +184,7 @@ export async function publicRoutes(app: FastifyInstance) {
     if (!isUnlocked(request, link)) {
       return renderDocument(request, reply, {
         title: t(request.lang, 'Geschützter Link'),
-        body: sharePasswordPage(request, { csrf: request.csrf, name: node.name }),
+        body: sharePasswordPage(request, { csrf: request.csrf, name: link.label }),
       });
     }
     countAccess(link, 'views', undefined, request.headers['user-agent']);
@@ -189,6 +208,7 @@ export async function publicRoutes(app: FastifyInstance) {
     return renderApp(request, reply, {
       entry: 'share',
       title: link.label || node.name,
+      theme: (link.theme && findTheme(link.theme, request.lang)) || undefined,
       extraHead,
       data: {
         user: request.auth?.session ? { name: request.auth.user.name } : null,
@@ -201,7 +221,7 @@ export async function publicRoutes(app: FastifyInstance) {
     reply.header('Referrer-Policy', 'no-referrer');
     const resolved = resolveToken(request.params.token);
     if (!resolved) return unavailable(request, reply);
-    const { link, node } = resolved;
+    const { link } = resolved;
     const form = body<{ _csrf?: string; password?: string }>(request);
     try {
       checkFormCsrf(request, form._csrf);
@@ -224,7 +244,7 @@ export async function publicRoutes(app: FastifyInstance) {
       return renderDocument(request, reply, {
         title: t(request.lang, 'Geschützter Link'),
         status: error.status,
-        body: sharePasswordPage(request, { csrf: request.csrf, name: node.name, error: t(request.lang, error.message, error.params) }),
+        body: sharePasswordPage(request, { csrf: request.csrf, name: link.label, error: t(request.lang, error.message, error.params) }),
       });
     }
   });
@@ -284,7 +304,7 @@ export async function publicRoutes(app: FastifyInstance) {
       const { link } = linkFor(request);
       if (link.upload_only) throw notFound();
       if (!link.allow_download) throw forbidden('Herunterladen ist für diesen Link ausgeschaltet');
-      return sendEmailAttachment(reply, linkNode(link, request.params.id), Number(request.params.index));
+      return sendEmailAttachment(reply, linkNode(link, request.params.id), intOf(request.params.index));
     }
   );
 

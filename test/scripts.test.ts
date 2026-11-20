@@ -167,10 +167,83 @@ describe('Befehl moecloud auf dem Server', { skip }, () => {
   });
 });
 
-describe('Compose-Datei', () => {
+describe('Zusatzdienste über das Skript', { skip }, () => {
+  it('richtet mit --all Virenscan, Office-Vorschau und Collabora ein und lässt die Grunddatei schlank', () => {
+    const host = fakeHost();
+    hosts.push(host);
+    host.publish('latest', '2.4.0');
+    const result = host.install('--yes', '--all');
+    assert.equal(result.status, 0, result.output);
+    assert.match(host.env(), /^COMPOSE_FILE=docker-compose\.yml:docker\/clamav\.yml:docker\/office\.yml:docker\/collabora\.yml$/m);
+    assert.ok(existsSync(join(host.dir, 'docker', 'collabora.yml')));
+    assert.doesNotMatch(readFileSync(join(host.dir, 'docker-compose.yml'), 'utf8'), /^ {2}(collabora|clamav|office):$/m);
+    assert.match(result.output, /Collabora Online läuft mit/);
+    const status = host.moecloud('status');
+    assert.match(status.output, /Office bearbeiten\s+Collabora Online/);
+    assert.match(status.output, /Office-Vorschau\s+LibreOffice/);
+  });
+
+  it('nimmt ohne Angabe nichts dazu und schaltet Collabora später ein und aus', () => {
+    const host = installed('2.4.0');
+    assert.doesNotMatch(host.env(), /COMPOSE_FILE/);
+    assert.match(host.moecloud('status').output, /Office bearbeiten\s+nicht eingerichtet/);
+    host.addEnv('PUBLIC_URL=https://cloud.example.com');
+    const on = host.moecloud('collabora', 'on');
+    assert.equal(on.status, 0, on.output);
+    assert.match(host.env(), /^COMPOSE_FILE=docker-compose\.yml:docker\/collabora\.yml$/m);
+    assert.match(host.env(), /^OFFICE_HTTPS=true$/m);
+    assert.ok(host.calls().includes('compose pull collabora'));
+    assert.equal(host.moecloud('collabora', 'on').status, 1);
+    assert.match(host.moecloud('collabora').output, /Collabora Online läuft in einem eigenen Container/);
+    const off = host.moecloud('collabora', 'off');
+    assert.equal(off.status, 0, off.output);
+    assert.doesNotMatch(host.env(), /COMPOSE_FILE/);
+    assert.equal(host.moecloud('collabora', 'off').status, 1);
+    assert.equal(host.moecloud('collabora', 'vielleicht').status, 1);
+  });
+
+  it('behält bei einem Update, was eingerichtet ist', () => {
+    const host = fakeHost();
+    hosts.push(host);
+    host.publish('latest', '2.4.0');
+    assert.equal(host.install('--yes', '--collabora', '--office').status, 0);
+    const before = host.env().match(/^COMPOSE_FILE=.*$/m)?.[0];
+    assert.equal(before, 'COMPOSE_FILE=docker-compose.yml:docker/office.yml:docker/collabora.yml');
+    host.publish('latest', '2.5.0');
+    const update = host.moecloud('update');
+    assert.equal(update.status, 0, update.output);
+    assert.equal(host.env().match(/^COMPOSE_FILE=.*$/m)?.[0], before);
+    assert.equal(host.running(), '2.5.0');
+  });
+});
+
+describe('Compose-Dateien', () => {
+  const services = (file: string) => [...readFileSync(join(root, file), 'utf8').matchAll(/^ {2}([a-z]+):$/gm)].map((match) => match[1]);
+
   it('nimmt das Image latest und hört nicht auf MOECLOUD_VERSION', () => {
-    const compose = readFileSync(join(root, 'docker-compose.yml'), 'utf8');
-    assert.match(compose, /^ {4}image: ghcr\.io\/maximiliangt500\/moecloud:\$\{MOECLOUD_TAG:-latest\}$/m);
-    assert.doesNotMatch(compose, /MOECLOUD_VERSION/);
+    for (const file of ['docker-compose.yml', 'compose.yaml']) {
+      const compose = readFileSync(join(root, file), 'utf8');
+      assert.match(compose, /^ {4}image: ghcr\.io\/maximiliangt500\/moecloud:\$\{MOECLOUD_TAG:-latest\}$/m);
+      assert.doesNotMatch(compose, /MOECLOUD_VERSION/);
+    }
+  });
+
+  it('bringt in compose.yaml alles mit und hält docker-compose.yml schlank, weil ältere Skripte sie bei jedem Update laden', () => {
+    assert.deepEqual(
+      services('compose.yaml')
+        .filter((name) => !['office', 'caddy-data', 'caddy-config'].includes(name))
+        .sort(),
+      ['caddy', 'clamav', 'collabora', 'moecloud']
+    );
+    assert.ok(services('compose.yaml').includes('office'));
+    assert.deepEqual(
+      services('docker-compose.yml').filter((name) => !name.startsWith('caddy-')),
+      ['moecloud', 'caddy']
+    );
+    const full = readFileSync(join(root, 'compose.yaml'), 'utf8');
+    assert.match(full, /COLLABORA_INTERNAL_URL: \$\{COLLABORA_INTERNAL_URL:-http:\/\/collabora:9980\}/);
+    assert.match(full, /COLLABORA_WOPI_URL: \$\{COLLABORA_WOPI_URL:-http:\/\/moecloud:3000\}/);
+    assert.match(full, /aliasgroup1: http:\/\/moecloud:3000/);
+    assert.doesNotMatch(full.slice(full.indexOf('  collabora:'), full.indexOf('  office:')), /ports:/);
   });
 });

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { config } from '../config.ts';
 import { all, one, run, tx, value } from '../lib/db.ts';
 import { hashPassword, randomId } from '../lib/crypto.ts';
-import { conflict, notFound, unauthorized } from '../lib/errors.ts';
+import { conflict, HttpError, notFound, unauthorized } from '../lib/errors.ts';
 import { isLang, type Lang } from '../lib/i18n.ts';
 import * as settings from './settings.ts';
 
@@ -36,6 +36,7 @@ export interface UserRow {
   avatar: string | null;
   pending: number;
   seen_at: number | null;
+  must_change: number;
 }
 
 export const expired = (user: Pick<UserRow, 'expires_at'>, now = Date.now()) => Boolean(user.expires_at && Number(user.expires_at) <= now);
@@ -47,6 +48,9 @@ export const inactive = (user: Pick<UserRow, 'disabled' | 'expires_at'> & { role
 
 export function assertActive(user: Pick<UserRow, 'disabled' | 'expires_at'> & { role?: string; pending?: number }) {
   if (user.role === 'team') throw unauthorized('Benutzername oder Passwort stimmen nicht');
+  if (Number(user.pending) & 2) {
+    throw new HttpError(401, 'Bestätige zuerst deine E-Mail-Adresse. Den Link dazu findest du in deinem Postfach', 'email_unconfirmed');
+  }
   if (user.pending) throw unauthorized('Dein Konto wartet noch auf die Freigabe durch die Verwaltung');
   if (user.disabled) throw unauthorized('Dein Konto ist gesperrt, wende dich an die Verwaltung');
   if (expired(user)) throw unauthorized('Dein Konto ist abgelaufen, wende dich an die Verwaltung');
@@ -81,6 +85,8 @@ export interface UserPrefs {
   zone: string;
   theme: { id: string } | { own: settings.ThemeSpec; palette: settings.Palette } | null;
   start: 'files' | 'home';
+  nav: { order: string[]; hidden: string[]; bar: string[] } | null;
+  home: { order: string[]; hidden: string[] } | null;
 }
 
 export const preferredLanguage = (user: Pick<UserRow, 'language'>): Lang =>
@@ -106,6 +112,8 @@ const PREF_DEFAULTS: UserPrefs = {
   zone: '',
   theme: null,
   start: 'files',
+  nav: null,
+  home: null,
 };
 
 export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
@@ -134,7 +142,8 @@ export interface NewUser {
   quota?: number | null;
   language?: Lang | null;
   expiresAt?: number | null;
-  pending?: boolean;
+  pending?: boolean | number;
+  mustChange?: boolean;
 }
 
 export const keyOf = (value: string) => value.normalize('NFC').trim().toLowerCase();
@@ -172,8 +181,8 @@ export async function createUser(input: NewUser): Promise<UserRow> {
   const rootId = randomId();
   const user = tx(() => {
     const { lastId } = run(
-      `INSERT INTO users (username, username_key, email, email_key, name, password_hash, role, quota_bytes, language, root_id, created_at, expires_at, pending)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (username, username_key, email, email_key, name, password_hash, role, quota_bytes, language, root_id, created_at, expires_at, pending, must_change)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.username.trim(),
       usernameKey,
       input.email?.trim() || null,
@@ -186,7 +195,8 @@ export async function createUser(input: NewUser): Promise<UserRow> {
       rootId,
       now,
       input.expiresAt ?? null,
-      input.pending ? 1 : 0
+      typeof input.pending === 'number' ? input.pending : input.pending ? 1 : 0,
+      input.mustChange && hash ? 1 : 0
     );
     run(
       `INSERT INTO nodes (id, owner_id, parent_id, type, name, name_key, created_by, updated_by, created_at, updated_at, modified_at)
@@ -248,12 +258,14 @@ export function adminUser(user: UserRow) {
     ...publicUser(user),
     disabled: Boolean(user.disabled),
     pending: Boolean(user.pending),
+    unconfirmed: Boolean(Number(user.pending) & 2),
     quota: user.quota_bytes,
     effectiveQuota: quotaOf(user),
     used: usageOf(user.id),
     totp: Boolean(user.totp_enabled),
     passkeys: value<number>('SELECT COUNT(*) FROM passkeys WHERE user_id = ?', user.id) ?? 0,
     hasPassword: Boolean(user.password_hash),
+    mustChange: Boolean(user.must_change),
     createdAt: user.created_at,
     lastLoginAt: user.last_login_at,
     lastActiveAt: lastActive(user),
@@ -280,7 +292,9 @@ export const lastActive = (user: Pick<UserRow, 'id' | 'seen_at' | 'last_login_at
   );
 
 export function approveUser(id: number) {
-  return run('UPDATE users SET pending = 0 WHERE id = ? AND pending = 1', id).changes > 0;
+  const done = run('UPDATE users SET pending = 0 WHERE id = ? AND pending != 0', id).changes > 0;
+  if (done) run('DELETE FROM email_confirmations WHERE user_id = ?', id);
+  return done;
 }
 
 export const listUsers = () => all<UserRow>(`SELECT * FROM users WHERE ${PERSON} ORDER BY name COLLATE NOCASE`);
@@ -307,13 +321,14 @@ export function deleteUser(id: number) {
 export function searchUsers(query: string, exclude: number) {
   const q = `%${query.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
   return all<UserRow>(
-    `SELECT * FROM users WHERE id != ? AND ${ACTIVE} AND (name LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')
+    `SELECT * FROM users WHERE id != ? AND ${ACTIVE}
+       AND (name LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR LOWER(email) = ?)
      ORDER BY name COLLATE NOCASE LIMIT 8`,
     exclude,
     Date.now(),
     q,
     q,
-    q
+    query.trim().toLowerCase()
   ).map((user) => ({
     id: user.id,
     username: user.username,

@@ -29,6 +29,7 @@ export type NotifyKind =
   | 'dav_import_partial'
   | 'dav_import_failed'
   | 'login_new'
+  | 'account_change'
   | 'cleanup'
   | 'account_expiring'
   | 'lock_removed'
@@ -44,6 +45,7 @@ export type NotifyKind =
   | 'admin_scan'
   | 'admin_backup'
   | 'admin_disk'
+  | 'admin_integrity'
   | 'admin_update'
   | 'admin_logins'
   | 'admin_plugin';
@@ -67,6 +69,31 @@ function reportReason(lang: Lang, reason: string) {
   if (reason === 'copyright') return t(lang, 'Urheberrecht');
   if (reason === 'privacy') return t(lang, 'Persönliche Daten');
   return t(lang, 'Sonstiges');
+}
+
+function changeTitle(lang: Lang, params: Params) {
+  switch (params.change) {
+    case 'password':
+      return t(lang, 'Dein Passwort wurde geändert');
+    case 'email':
+      return t(lang, 'Die E-Mail-Adresse deines Kontos wurde geändert');
+    case 'totp_off':
+      return t(lang, 'Die Authenticator-App wurde ausgeschaltet');
+    case 'totp_on':
+      return t(lang, 'Die Authenticator-App wurde eingerichtet');
+    case 'passkey_added':
+      return t(lang, 'Ein Passkey wurde hinzugefügt');
+    case 'passkey_removed':
+      return t(lang, 'Ein Passkey wurde entfernt');
+    case 'app_password':
+      return t(lang, 'Das App-Passwort „{name}“ wurde erstellt', params);
+    case 'app_password_admin':
+      return t(lang, 'Das App-Passwort „{name}“ mit Zugriff auf die Verwaltung wurde erstellt', params);
+    case 'secured':
+      return t(lang, 'Dein Konto wurde abgesichert');
+    default:
+      return t(lang, 'An deinem Konto wurde etwas geändert');
+  }
 }
 
 const KINDS: Record<NotifyKind, Kind> = {
@@ -202,6 +229,12 @@ const KINDS: Record<NotifyKind, Kind> = {
     pref: 'mailLogins',
     action: 'Sitzungen ansehen',
   },
+  account_change: {
+    urgent: true,
+    title: (lang, p) => changeTitle(lang, p),
+    text: (lang) => t(lang, 'Warst du das nicht, ändere sofort dein Passwort und sieh unter Konto › Sitzungen nach, wer angemeldet ist.'),
+    action: 'Sitzungen ansehen',
+  },
   cleanup: {
     title: (lang, p) => many(lang, Number(p.count), 'Eine Datei aus „{folder}“ aufgeräumt', '{count} Dateien aus „{folder}“ aufgeräumt', p),
     text: (lang, p) => t(lang, 'Sie lagen länger als {days} Tage unverändert dort. Im Papierkorb kannst du sie wiederherstellen.', p),
@@ -326,6 +359,14 @@ const KINDS: Record<NotifyKind, Kind> = {
     pref: 'mailAdmin',
     action: 'Zur Übersicht',
     event: 'disk_low',
+  },
+  admin_integrity: {
+    urgent: true,
+    title: (lang) => t(lang, 'Bei der Prüfung der Dateien ist etwas aufgefallen'),
+    text: (lang, p) => t(lang, 'Fehlende Dateien: {missing}, beschädigte Dateien: {damaged}.', p),
+    pref: 'mailAdmin',
+    action: 'Zur Sicherheit',
+    event: 'files_damaged',
   },
   admin_update: {
     title: (lang, p) => t(lang, 'MoeCloud {version} ist erschienen', p),
@@ -587,7 +628,9 @@ export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string 
     event: spec.event,
     title: spec.title(lang, params),
     text,
-    level: ['admin_virus', 'admin_scan', 'admin_backup', 'admin_disk', 'admin_logins', 'admin_plugin'].includes(kind) ? 'error' : 'info',
+    level: ['admin_virus', 'admin_scan', 'admin_backup', 'admin_disk', 'admin_integrity', 'admin_logins', 'admin_plugin'].includes(kind)
+      ? 'error'
+      : 'info',
   }).catch(() => undefined);
 }
 

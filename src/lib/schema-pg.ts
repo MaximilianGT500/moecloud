@@ -648,6 +648,32 @@ CREATE TABLE playlist_items (
 );
 CREATE INDEX playlist_items_node ON playlist_items(node_id);
 `,
+  10: `
+ALTER TABLE nodes ADD COLUMN icon ${T};
+ALTER TABLE links ADD COLUMN starts_at BIGINT;
+ALTER TABLE links ADD COLUMN message ${T};
+ALTER TABLE links ADD COLUMN theme ${T};
+CREATE TABLE plays (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  node_id ${T} NOT NULL REFERENCES nodes(id) ON DELETE CASCADE ${FK},
+  count BIGINT NOT NULL DEFAULT 0,
+  played_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, node_id)
+);
+CREATE INDEX plays_recent ON plays(user_id, played_at);
+CREATE INDEX plays_node ON plays(node_id);
+CREATE TABLE email_confirmations (
+  token_hash ${T} PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL
+);
+CREATE INDEX email_confirmations_user ON email_confirmations(user_id);
+`,
+  11: `
+UPDATE app_passwords SET scope = 'admin' WHERE scope = 'full' AND user_id IN (SELECT id FROM users WHERE role = 'admin');
+ALTER TABLE users ADD COLUMN must_change BIGINT NOT NULL DEFAULT 0;
+`,
 };
 
 export const PG_IDENTITY: Record<string, string> = {
@@ -709,6 +735,8 @@ export const TABLES = [
   'office_tokens',
   'playlists',
   'playlist_items',
+  'plays',
+  'email_confirmations',
 ];
 
 export const RECOUNT_REFS =

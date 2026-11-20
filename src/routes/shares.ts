@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { badRequest, forbidden, tooMany } from '../lib/errors.ts';
-import { longDate, t } from '../lib/i18n.ts';
+import { longDate, longDateTime, t } from '../lib/i18n.ts';
 import { Limiter } from '../lib/limiter.ts';
 import { me } from '../lib/request.ts';
 import { email, parse } from '../lib/validate.ts';
@@ -45,6 +45,9 @@ const linkSchema = z.object({
   slug: z.string().max(64).nullable().optional(),
   maxDownloads: z.number().int().min(1).max(1_000_000).nullable().optional(),
   paused: z.boolean().optional(),
+  startsAt: z.number().int().positive().nullable().optional(),
+  message: z.string().max(500, 'Die Nachricht darf höchstens 500 Zeichen haben').nullable().optional(),
+  theme: z.string().max(40).nullable().optional(),
 });
 
 const permission = z.enum(['view', 'edit']);
@@ -112,6 +115,9 @@ export async function shareRoutes(app: FastifyInstance) {
             : t(lang, 'Über den Link kommst du ohne Konto an den Inhalt.'),
           ...(link.password_hash
             ? [t(lang, 'Der Link ist mit einem Passwort geschützt, das dir {name} auf einem anderen Weg gibt.', names)]
+            : []),
+          ...(link.starts_at && link.starts_at > Date.now()
+            ? [t(lang, 'Der Link gilt ab dem {date}.', { date: longDateTime(lang, link.starts_at) })]
             : []),
           ...(link.expires_at ? [t(lang, 'Der Link gilt bis zum {date}.', { date: longDate(lang, link.expires_at) })] : []),
         ],
@@ -224,6 +230,7 @@ export async function shareRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { q?: string } }>('/api/users/search', async (request) => {
     const user = me(request);
     if (!settings.get('share.users')) throw forbidden('Teilen mit anderen Personen ist auf diesem Server ausgeschaltet');
+    if (user.role === 'guest') throw forbidden('Mit einem Gastkonto kannst du nichts weiterteilen');
     const query = String(request.query.q ?? '').trim();
     const groups = query ? searchGroups(user, query) : [];
     if (!settings.get('users.directory') && user.role !== 'admin') {

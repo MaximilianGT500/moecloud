@@ -50,6 +50,21 @@ export type MusicTab = 'tracks' | 'albums' | 'artists' | 'playlists';
 
 export interface Track extends Item {
   track: { title: string; artist: string; album: string; year: number | null; number: number | null; duration: number | null };
+  plays?: number;
+  playedAt?: number | null;
+}
+
+type TrackOrder = 'artist' | 'recent' | 'top' | 'new';
+
+const ORDER_KEY = 'moe-music-order';
+
+function storedOrder(): TrackOrder {
+  try {
+    const value = localStorage.getItem(ORDER_KEY);
+    return value === 'recent' || value === 'top' || value === 'new' ? value : 'artist';
+  } catch {
+    return 'artist';
+  }
 }
 
 interface Playlist {
@@ -293,12 +308,14 @@ function TrackList({
   tracks,
   label,
   numbered = false,
+  counts = false,
   extra,
   onPick,
 }: {
   tracks: Track[];
   label: string;
   numbered?: boolean;
+  counts?: boolean;
   extra?: (track: Track, index: number) => RowAction[];
   onPick: (tracks: Track[]) => void;
 }) {
@@ -382,6 +399,11 @@ function TrackList({
                   {[track.track.artist, numbered ? null : track.track.album].filter(Boolean).join(' · ') || track.name}
                 </Typography>
               </Box>
+              {counts && (track.plays ?? 0) > 0 && (
+                <Typography variant="caption" sx={{ flex: 'none', opacity: 0.75, display: { xs: 'none', sm: 'block' } }}>
+                  {tn(track.plays ?? 0, 'einmal gehört', '{count}-mal gehört')}
+                </Typography>
+              )}
               {track.track.duration !== null && (
                 <Typography variant="caption" sx={{ flex: 'none', opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
                   {formatDuration(track.track.duration)}
@@ -645,9 +667,18 @@ function GroupGrid({ groups, tab, round }: { groups: Group[]; tab: 'albums' | 'a
 export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null; name: string | null }) {
   const [data, setData] = useState<{ items: Track[]; more: boolean } | null>(null);
   const [query, setQuery] = useState('');
+  const [order, setOrderState] = useState<TrackOrder>(storedOrder);
   const [pick, setPick] = useState<Track[] | null>(null);
   const { lists } = usePlaylists();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setOrder = (next: TrackOrder) => {
+    setOrderState(next);
+    try {
+      localStorage.setItem(ORDER_KEY, next);
+    } catch {
+      return;
+    }
+  };
 
   const load = () =>
     api
@@ -666,9 +697,9 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
   }, []);
 
   useLive((event) => {
-    if (event !== 'reconnect' && event !== 'change') return;
+    if (event !== 'reconnect' && event !== 'change' && event !== 'plays') return;
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void load(), 3000);
+    timer.current = setTimeout(() => void load(), event === 'plays' ? 400 : 3000);
   });
 
   const all = data?.items ?? [];
@@ -679,8 +710,17 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
           [track.track.title, track.track.artist, track.track.album, track.name].some((value) => value.toLowerCase().includes(needle))
         )
       : all;
+    if (order === 'recent') {
+      return matching.filter((track) => track.playedAt).sort((a, b) => (b.playedAt ?? 0) - (a.playedAt ?? 0));
+    }
+    if (order === 'top') {
+      return matching
+        .filter((track) => (track.plays ?? 0) > 0)
+        .sort((a, b) => (b.plays ?? 0) - (a.plays ?? 0) || (b.playedAt ?? 0) - (a.playedAt ?? 0));
+    }
+    if (order === 'new') return [...matching].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     return [...matching].sort(byArtist);
-  }, [all, needle]);
+  }, [all, needle, order]);
   const albums = useMemo(() => albumsOf(tracks), [tracks]);
   const artists = useMemo(() => artistsOf(tracks), [tracks]);
 
@@ -809,7 +849,12 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
             </Typography>
           </Box>
         )}
-        <TrackList tracks={tracks} label={t('Alle Titel')} onPick={setPick} />
+        <TrackList
+          tracks={tracks}
+          label={order === 'recent' ? t('Zuletzt gehört') : order === 'top' ? t('Oft gehört') : t('Alle Titel')}
+          counts={order === 'top' || order === 'recent'}
+          onPick={setPick}
+        />
         {data.more && (
           <Typography variant="caption" sx={{ color: c.onSurfaceVariant, display: 'block', mt: 2 }}>
             {t('Hier stehen die 10.000 neuesten Titel.')}
@@ -820,6 +865,10 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
   };
 
   const detail = (tab === 'playlists' && id) || group;
+  const emptyText =
+    tab === 'tracks' && order !== 'artist' && order !== 'new' && all.length > 0
+      ? t('Hier steht, was du gehört hast. Spiel einen Titel ab, dann füllt sich die Liste.')
+      : t('Noch keine eigene Musik. Deine Wiedergabelisten findest du nebenan.');
 
   return (
     <Box sx={{ px: { xs: 1.5, md: 3 }, pb: 4 }}>
@@ -837,6 +886,21 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
             <ToggleButton value="artists">{t('Interpreten')}</ToggleButton>
             <ToggleButton value="playlists">{t('Wiedergabelisten')}</ToggleButton>
           </ToggleButtonGroup>
+          {tab === 'tracks' && (
+            <TextField
+              select
+              size="small"
+              value={order}
+              onChange={(event) => setOrder(event.target.value as TrackOrder)}
+              sx={{ minWidth: 190 }}
+              slotProps={{ htmlInput: { 'aria-label': t('Titel sortieren') } }}
+            >
+              <MenuItem value="artist">{t('Nach Interpret')}</MenuItem>
+              <MenuItem value="recent">{t('Zuletzt gehört')}</MenuItem>
+              <MenuItem value="top">{t('Oft gehört')}</MenuItem>
+              <MenuItem value="new">{t('Neu dazugekommen')}</MenuItem>
+            </TextField>
+          )}
           {tab !== 'playlists' && (
             <TextField
               size="small"
@@ -860,7 +924,7 @@ export function MusicView({ tab, id, name }: { tab: MusicTab; id: string | null;
       )}
       {!detail && tab !== 'playlists' && tracks.length === 0 ? (
         <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
-          {needle ? t('Kein Titel passt dazu.') : t('Noch keine eigene Musik. Deine Wiedergabelisten findest du nebenan.')}
+          {needle ? t('Kein Titel passt dazu.') : emptyText}
         </Typography>
       ) : (
         body()

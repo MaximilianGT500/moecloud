@@ -1,3 +1,4 @@
+import { lookup } from '../lib/lookup.ts';
 import type { Readable } from 'node:stream';
 import yauzl, { type Entry, type ZipFile } from 'yauzl';
 import { badRequest, notFound } from '../lib/errors.ts';
@@ -124,7 +125,7 @@ export async function openEntry(path: string, name: string, maxBytes: number) {
   return { stream: readable, size: entry.uncompressedSize, modified: entry.getLastModDate().getTime() };
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const ENTITIES: Record<string, string> = lookup({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" });
 
 const decode = (text: string) =>
   text.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (match, code: string) => {

@@ -124,6 +124,10 @@ export function useDraft<T extends Settings>(load: () => Promise<T>, save: (chan
       setSaved(value);
       setDraft(value);
     },
+    merge: (value: Partial<T>) => {
+      setSaved((current) => (current ? { ...current, ...value } : current));
+      setDraft((current) => (current ? { ...current, ...value } : current));
+    },
     save: async () => {
       if (!draft) return;
       setBusy(true);

@@ -1,6 +1,7 @@
 import { html } from 'htm/preact';
 import type { FastifyRequest } from 'fastify';
 import { passwordMin } from '../services/passwords.ts';
+import { brandingUrl } from '../services/branding.ts';
 import * as settings from '../services/settings.ts';
 import { legalLinks } from '../lib/html.ts';
 import { t, type Lang } from '../lib/i18n.ts';
@@ -19,11 +20,21 @@ function languageSwitch(request: FastifyRequest) {
 export function shell(request: FastifyRequest, content: Child, options: { wide?: boolean } = {}) {
   const lang = request.lang;
   const links = legalLinks(request);
+  const layout = settings.get('login.layout');
+  const classes = ['auth', brandingUrl('background') ? 'auth--image' : '', layout === 'center' ? '' : `auth--${layout}`]
+    .filter(Boolean)
+    .join(' ');
   return html`<a class="skip" href="#inhalt">${t(lang, 'Zum Inhalt springen')}</a>
-    <main id="inhalt" class="auth">
+    <main id="inhalt" class=${classes}>
       <div class=${options.wide ? 'auth__card auth__card--wide' : 'auth__card'}>
         <a class="auth__brand" href="/">
-          <img src="/favicon.svg" width="44" height="44" alt="" />
+          <img
+            class=${brandingUrl('logo') ? 'auth__logo' : null}
+            src=${brandingUrl('logo') ?? '/favicon.svg'}
+            width="44"
+            height="44"
+            alt=""
+          />
           <span>${settings.get('site.name')}</span>
         </a>
         ${content}
@@ -99,8 +110,10 @@ export function loginPage(request: FastifyRequest, view: LoginView) {
   const lang = request.lang;
   return shell(
     request,
-    html`<h1>${t(lang, 'Anmelden')}</h1>
-      <p class="auth__lead">${t(lang, 'Melde dich an, um zu deinen Dateien zu kommen.')}</p>
+    html`<h1>${settings.get('login.title') || t(lang, 'Anmelden')}</h1>
+      <p class=${settings.get('login.text') ? 'auth__lead auth__lead--own' : 'auth__lead'}>
+        ${settings.get('login.text') || t(lang, 'Melde dich an, um zu deinen Dateien zu kommen.')}
+      </p>
       ${view.announcement ? alert(view.announcement.level === 'warning' ? 'warning' : 'info', view.announcement.text) : null}
       ${alert('error', view.error)} ${alert('success', view.notice)}
       ${
@@ -284,14 +297,20 @@ export function legalPage(request: FastifyRequest, title: string, text: string, 
   );
 }
 
-export function sharePasswordPage(request: FastifyRequest, view: { csrf: string; name: string; error?: string | null }) {
+export function sharePasswordPage(request: FastifyRequest, view: { csrf: string; name: string | null; error?: string | null }) {
   const lang = request.lang;
   return shell(
     request,
     html`<div class="message message--left">
         <div class="message__icon">${icon('lock')}</div>
         <h1>${t(lang, 'Geschützter Link')}</h1>
-        <p class="auth__lead">${t(lang, '„{name}“ ist mit einem Passwort geschützt.', { name: view.name })}</p>
+        <p class="auth__lead">
+          ${
+            view.name
+              ? t(lang, '„{name}“ ist mit einem Passwort geschützt.', { name: view.name })
+              : t(lang, 'Was hier geteilt wird, siehst du nach dem Passwort.')
+          }
+        </p>
       </div>
       ${alert('error', view.error)}
       <form method="post" class="form">
@@ -357,6 +376,46 @@ export function resetPage(request: FastifyRequest, view: { csrf: string; token: 
           hint: t(lang, 'Mindestens {count} Zeichen.', { count: passwordMin() }),
         })}
         <button class="button button--filled" type="submit">${t(lang, 'Passwort speichern')}</button>
+      </form>`
+  );
+}
+
+export function changePasswordPage(request: FastifyRequest, view: { csrf: string; name: string; error?: string | null }) {
+  const lang = request.lang;
+  return shell(
+    request,
+    html`<div class="message message--left">
+        <div class="message__icon">${icon('lockReset')}</div>
+        <h1>${t(lang, 'Neues Passwort festlegen')}</h1>
+        <p class="auth__lead">
+          ${t(lang, 'Hallo {name}, bevor es weitergeht, brauchst du ein eigenes Passwort. Das bisherige kennt außer dir noch jemand.', {
+            name: view.name,
+          })}
+        </p>
+      </div>
+      ${alert('error', view.error)}
+      <form method="post" action="/passwort" class="form">
+        ${hidden('_csrf', view.csrf)}
+        ${field({
+          name: 'current',
+          label: t(lang, 'Bisheriges Passwort'),
+          type: 'password',
+          autocomplete: 'current-password',
+          autofocus: true,
+        })}
+        ${field({
+          name: 'password',
+          label: t(lang, 'Neues Passwort'),
+          type: 'password',
+          autocomplete: 'new-password',
+          minlength: passwordMin(),
+          hint: t(lang, 'Mindestens {count} Zeichen.', { count: passwordMin() }),
+        })}
+        <button class="button button--filled" type="submit">${t(lang, 'Passwort speichern')}</button>
+      </form>
+      <form class="form" method="post" action="/logout">
+        ${hidden('_csrf', view.csrf)}
+        <button class="button button--tonal" type="submit">${t(lang, 'Abmelden')}</button>
       </form>`
   );
 }

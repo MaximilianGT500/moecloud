@@ -23,11 +23,14 @@ import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import AddLinkRounded from '@mui/icons-material/AddLinkRounded';
+import BlockRounded from '@mui/icons-material/BlockRounded';
+import CasinoRounded from '@mui/icons-material/CasinoRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import ForwardToInboxRounded from '@mui/icons-material/ForwardToInboxRounded';
 import PauseCircleRounded from '@mui/icons-material/PauseCircleRounded';
 import PlayCircleRounded from '@mui/icons-material/PlayCircleRounded';
+import EventRounded from '@mui/icons-material/EventRounded';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
@@ -107,6 +110,19 @@ function LinkForm({
   const [label, setLabel] = useState(link?.label ?? '');
   const [slug, setSlug] = useState(link?.slug ?? '');
   const [password, setPassword] = useState('');
+  const [shown, setShown] = useState(false);
+  const generate = () => {
+    const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const made = Array.from(crypto.getRandomValues(new Uint32Array(16)), (value) => alphabet[value % alphabet.length])
+      .join('')
+      .replace(/(.{4})(?=.)/g, '$1-');
+    setPassword(made);
+    setShown(true);
+    void (navigator.clipboard?.writeText(made) ?? Promise.reject(new Error('clipboard'))).then(
+      () => toast(t('Passwort erzeugt und kopiert')),
+      () => toast(t('Passwort erzeugt, kopier es dir, bevor du speicherst'))
+    );
+  };
   const [removePassword, setRemovePassword] = useState(false);
   const [expires, setExpires] = useState(dayValue(link?.expiresAt ?? (rules.maxDays ? Date.now() + rules.maxDays * 86_400_000 : null)));
   const [allowDownload, setAllowDownload] = useState(link?.allowDownload ?? true);
@@ -115,7 +131,17 @@ function LinkForm({
   const [notify, setNotify] = useState(link?.notify ?? true);
   const [notifyDownloads, setNotifyDownloads] = useState(link?.notifyDownloads ?? false);
   const [maxDownloads, setMaxDownloads] = useState<number | null>(link?.maxDownloads ?? null);
+  const [starts, setStarts] = useState(link?.startsAt && link.startsAt > Date.now() ? dayValue(link.startsAt) : '');
+  const [message, setMessage] = useState(link?.message ?? '');
+  const [theme, setTheme] = useState(link?.theme ?? '');
+  const [themes, setThemes] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api
+      .get<{ themes: { id: string; name: string }[] }>('/api/themes')
+      .then((result) => setThemes(result.themes.filter((entry) => entry.id)))
+      .catch(() => undefined);
+  }, []);
   const today = dayValue(Date.now() + 86_400_000);
   const max = rules.maxDays ? dayValue(Date.now() + rules.maxDays * 86_400_000) : undefined;
   const needsPassword = rules.requirePassword && !password && (!link?.hasPassword || removePassword);
@@ -135,6 +161,9 @@ function LinkForm({
         notify: (allowUpload || uploadOnly) && notify,
         notifyDownloads: allowDownload && !uploadOnly && notifyDownloads,
         maxDownloads: allowDownload && !uploadOnly ? maxDownloads : null,
+        startsAt: starts ? new Date(`${starts}T00:00:00`).getTime() : null,
+        message: message.trim() || null,
+        theme: theme || null,
       };
       const result = link
         ? await api.patch<{ link: SharedLink }>(`/api/links/${link.id}`, body)
@@ -177,11 +206,25 @@ function LinkForm({
       )}
       <TextField
         label={link?.hasPassword && !removePassword ? t('Neues Passwort') : t('Passwort')}
-        type="password"
+        type={shown ? 'text' : 'password'}
         autoComplete="new-password"
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         required={rules.requirePassword && !link?.hasPassword}
+        slotProps={{
+          htmlInput: { maxLength: 512, spellCheck: false },
+          input: {
+            endAdornment: (
+              <InputAdornment position="end">
+                <Tooltip title={t('Passwort erzeugen')}>
+                  <IconButton aria-label={t('Passwort erzeugen')} onClick={generate} edge="end">
+                    <CasinoRounded />
+                  </IconButton>
+                </Tooltip>
+              </InputAdornment>
+            ),
+          },
+        }}
         helperText={
           link?.hasPassword && !removePassword
             ? t('Der Link hat ein Passwort. Lass das Feld leer, um es zu behalten.')
@@ -209,6 +252,40 @@ function LinkForm({
             : t('Leer lassen, damit der Link nicht abläuft.')
         }
       />
+      <TextField
+        label={t('Gilt ab (freiwillig)')}
+        type="date"
+        value={starts}
+        onChange={(event) => setStarts(event.target.value)}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today, max: expires || max } }}
+        helperText={t('Vorher sehen Besucher nur, ab wann der Link gilt. Leer lassen, damit er sofort funktioniert.')}
+      />
+      <TextField
+        label={t('Nachricht für Besucher (freiwillig)')}
+        value={message}
+        onChange={(event) => setMessage(event.target.value)}
+        multiline
+        minRows={2}
+        maxRows={6}
+        slotProps={{ htmlInput: { maxLength: 500 } }}
+        helperText={t('Steht auf der Seite des Links über dem Inhalt.')}
+      />
+      {(themes.length > 0 || theme) && (
+        <TextField
+          select
+          label={t('Aussehen der Seite')}
+          value={themes.some((entry) => entry.id === theme) || !theme ? theme : ''}
+          onChange={(event) => setTheme(event.target.value)}
+          helperText={t('Besucher sehen die Seite des Links in diesem Theme.')}
+        >
+          <MenuItem value="">{t('Wie die Cloud')}</MenuItem>
+          {themes.map((entry) => (
+            <MenuItem key={entry.id} value={entry.id}>
+              {entry.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
       <Box sx={{ display: 'flex', flexDirection: 'column' }}>
         <FormControlLabel
           control={
@@ -397,7 +474,7 @@ function LinkCard({
   const [qr, setQr] = useState(false);
   const [send, setSend] = useState(false);
   const [history, setHistory] = useState(false);
-  const sendable = Boolean(boot().site.mail) && !link.expired && !link.paused && !link.exhausted;
+  const sendable = Boolean(boot().site.mail) && !link.expired && !link.paused && !link.exhausted && !link.blocked;
   const chips = [
     link.hasPassword && { icon: <LockRounded />, label: t('Passwort') },
     link.expiresAt && {
@@ -415,6 +492,8 @@ function LinkCard({
         : t('{count} von {max} Downloads', { count: formatNumber(link.downloads), max: formatNumber(link.maxDownloads) }),
     },
     link.paused && { icon: <PauseCircleRounded />, label: t('Pausiert') },
+    link.blocked && { icon: <BlockRounded />, label: link.blocked === 'access' ? t('Ohne Zugriff, außer Kraft') : t('Konto gesperrt') },
+    link.scheduled && link.startsAt && { icon: <EventRounded />, label: t('Ab {date}', { date: formatDay(link.startsAt) }) },
   ].filter(Boolean) as { icon: ReactElement; label: string }[];
   const togglePause = async () => {
     try {
@@ -426,7 +505,10 @@ function LinkCard({
     }
   };
   return (
-    <Box sx={{ bgcolor: c.surfaceContainer, borderRadius: `${radius.md}px`, p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Box
+      data-link={link.id}
+      sx={{ bgcolor: c.surfaceContainer, borderRadius: `${radius.md}px`, p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}
+    >
       {link.label && (
         <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LinkRounded fontSize="small" /> {link.label}

@@ -1,3 +1,4 @@
+import { weblinkFile } from './preview/weblink';
 import { api, errorText } from '../../lib/api';
 import { boot } from '../../lib/boot';
 import { splitExtension } from '../../lib/format';
@@ -156,6 +157,26 @@ export async function createTextFile(parentId: string) {
   });
   if (!name) return null;
   return (await attempt(() => api.post<{ node: Item }>(`/api/nodes/${parentId}/text`, { name, content: '' })))?.node ?? null;
+}
+
+export async function createWeblink(parentId: string) {
+  const address = await prompt({
+    title: t('Neuer Weblink'),
+    label: t('Adresse'),
+    value: 'https://',
+    select: [8, 8],
+    confirm: t('Erstellen'),
+    helper: t('Legt eine kleine Datei an, die auf die Adresse zeigt. Du kannst sie wie jede Datei teilen und umbenennen.'),
+  });
+  if (!address) return null;
+  let file: { name: string; content: string };
+  try {
+    file = weblinkFile(/^[a-z][a-z0-9+.-]*:/i.test(address) ? address : `https://${address}`);
+  } catch {
+    toast(t('Das ist keine Webadresse. Sie beginnt mit https:// oder http://'));
+    return null;
+  }
+  return (await attempt(() => api.post<{ node: Item }>(`/api/nodes/${parentId}/text`, file)))?.node ?? null;
 }
 
 export async function leaveShare(item: Item) {

@@ -9,6 +9,7 @@ export const AUDIT_ACTIONS = [
   'login_failed',
   'logout',
   'password_changed',
+  'email_changed',
   'password_reset_requested',
   'password_reset',
   'totp_enabled',
@@ -19,6 +20,8 @@ export const AUDIT_ACTIONS = [
   'app_password_created',
   'app_password_removed',
   'sessions_revoked',
+  'account_secured',
+  'lockout_released',
   'sso_unlinked',
   'account_exported',
   'account_deleted',
@@ -28,6 +31,7 @@ export const AUDIT_ACTIONS = [
   'user_created',
   'user_updated',
   'user_approved',
+  'email_confirmed',
   'user_deleted',
   'user_disabled',
   'user_enabled',
@@ -40,6 +44,8 @@ export const AUDIT_ACTIONS = [
   'invite_created',
   'invite_deleted',
   'settings_changed',
+  'audit_exported',
+  'integrity_checked',
   'mail_changed',
   'sso_changed',
   'scan_changed',
@@ -77,6 +83,7 @@ export const SECURITY_ACTIONS: AuditAction[] = [
   'login',
   'login_failed',
   'password_changed',
+  'email_changed',
   'password_reset',
   'totp_enabled',
   'totp_disabled',
@@ -86,6 +93,7 @@ export const SECURITY_ACTIONS: AuditAction[] = [
   'app_password_created',
   'app_password_removed',
   'sessions_revoked',
+  'account_secured',
   'sso_unlinked',
   'account_exported',
   'admin_password_set',
@@ -181,6 +189,45 @@ export function listAudit(query: AuditQuery) {
     })),
     more: rows.length > limit,
   };
+}
+
+export const AUDIT_EXPORT_LIMIT = 50_000;
+
+const BOM = String.fromCharCode(0xfeff);
+const RISKY = new Set(['=', '+', '-', '@', String.fromCharCode(9), String.fromCharCode(13)]);
+
+function cell(value: unknown) {
+  let text = value === null || value === undefined ? '' : String(value);
+  if (text && RISKY.has(text[0])) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+export function auditCsv(query: Pick<AuditQuery, 'user' | 'actions'>, headers: string[]) {
+  const lines = [headers.map(cell).join(',')];
+  let before: number | undefined;
+  let rows = 0;
+  while (rows < AUDIT_EXPORT_LIMIT) {
+    const page = listAudit({ ...query, before, limit: 200 });
+    for (const item of page.items) {
+      lines.push(
+        [
+          new Date(Number(item.createdAt)).toISOString(),
+          item.action,
+          item.actor?.username ?? '',
+          item.actor?.name ?? '',
+          item.subject?.username ?? '',
+          item.ip ?? '',
+          item.details ? JSON.stringify(item.details) : '',
+        ]
+          .map(cell)
+          .join(',')
+      );
+    }
+    rows += page.items.length;
+    if (!page.more || page.items.length === 0) break;
+    before = Number(page.items[page.items.length - 1].id);
+  }
+  return { text: `${BOM}${lines.join('\r\n')}\r\n`, rows };
 }
 
 export function purgeAudit(days: number) {

@@ -53,7 +53,17 @@ const KIND_NAMES: Record<Kind, string> = {
   ntfy: 'ntfy',
   json: 'JSON',
 };
-const EVENTS = ['user_registered', 'virus', 'scan_error', 'backup_failed', 'disk_low', 'update', 'login_failed', 'plugin_stopped'];
+const EVENTS = [
+  'user_registered',
+  'virus',
+  'scan_error',
+  'backup_failed',
+  'disk_low',
+  'files_damaged',
+  'update',
+  'login_failed',
+  'plugin_stopped',
+];
 
 function eventLabel(event: string) {
   switch (event) {
@@ -67,6 +77,8 @@ function eventLabel(event: string) {
       return t('Sicherung fehlgeschlagen');
     case 'disk_low':
       return t('Wenig Speicherplatz');
+    case 'files_damaged':
+      return t('Dateien fehlen oder sind beschädigt');
     case 'update':
       return t('Neue Version');
     case 'login_failed':

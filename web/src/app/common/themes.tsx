@@ -26,6 +26,7 @@ import {
   FONT_STACKS,
   normalizeHex,
   SEED_PRESETS,
+  THEME_FONTS,
   THEME_STYLES,
   type Palette,
   type ThemeCorners,
@@ -35,6 +36,16 @@ import {
 } from '../../theme/scheme';
 import { c, fonts, radius } from '../../theme/tokens';
 import { useThemeControl } from '../mount';
+
+export function fontLabel(font: ThemeFont) {
+  if (font === 'system') return t('System');
+  if (font === 'serif') return t('Serifen');
+  if (font === 'mono') return t('Mono');
+  if (font === 'geist') return t('Klar (Geist)');
+  if (font === 'legible') return t('Gut lesbar (Atkinson Hyperlegible)');
+  if (font === 'fraunces') return t('Elegant (Fraunces)');
+  return t('Rund');
+}
 
 export interface ThemeCard extends ThemeSpec {
   id: string;
@@ -457,23 +468,26 @@ export function ThemeEditorDialog({
             />
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Typography variant="subtitle2">{t('Schrift')}</Typography>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                fullWidth
-                value={draft.font}
-                disabled={busy}
-                onChange={(_event, value: ThemeFont | null) => value && set({ font: value })}
-                aria-label={t('Schrift')}
-              >
-                <ToggleButton value="rounded">{t('Rund')}</ToggleButton>
-                <ToggleButton value="system">{t('System')}</ToggleButton>
-                <ToggleButton value="serif">{t('Serifen')}</ToggleButton>
-                <ToggleButton value="mono">{t('Mono')}</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
+            <TextField
+              select
+              label={t('Schrift')}
+              value={draft.font}
+              disabled={busy}
+              onChange={(event) => set({ font: event.target.value as ThemeFont })}
+              slotProps={{
+                select: {
+                  renderValue: (value) => (
+                    <span style={{ fontFamily: FONT_STACKS[value as ThemeFont] }}>{fontLabel(value as ThemeFont)}</span>
+                  ),
+                },
+              }}
+            >
+              {THEME_FONTS.map((font) => (
+                <MenuItem key={font} value={font} sx={{ fontFamily: FONT_STACKS[font] }}>
+                  {fontLabel(font)}
+                </MenuItem>
+              ))}
+            </TextField>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <Typography variant="subtitle2">{t('Ecken')}</Typography>
               <ToggleButtonGroup

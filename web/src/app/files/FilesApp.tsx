@@ -24,6 +24,8 @@ import CheckRounded from '@mui/icons-material/CheckRounded';
 import DataUsageRounded from '@mui/icons-material/DataUsageRounded';
 import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
+import EmojiSymbolsRounded from '@mui/icons-material/EmojiSymbolsRounded';
+import FolderRounded from '@mui/icons-material/FolderRounded';
 import PaletteRounded from '@mui/icons-material/PaletteRounded';
 import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
 import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
@@ -80,6 +82,8 @@ import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { setPrefs, usePrefs, type Prefs } from '../../lib/prefs';
 import { navigate, useLocation } from '../../lib/router';
+import { registerWorker, takeShared } from '../../lib/shared';
+import { weblinkFile } from './preview/weblink';
 import { Uploader, entriesFromDrop, entriesFromInput, entriesFromPaste, hasFiles, type UploadEntry } from '../../lib/upload';
 import { c, folderColor, radius } from '../../theme/tokens';
 import { AppShell, type Destination } from '../shell/AppShell';
@@ -93,6 +97,7 @@ import {
   attempt,
   createFolder,
   createTextFile,
+  createWeblink,
   deleteForever,
   download,
   emptyTrash,
@@ -110,7 +115,16 @@ import { Details, type DetailsTab } from './Details';
 import { enqueue, forget, playItems, usePlayer } from './player';
 import { FolderReadme, readmeOf } from './Readme';
 import { DRAG_TYPE, Items } from './Items';
-import { canEditImage, canMakePdf, canMergePdfs, canOrganizePdf, FOLDER_COLOR_OPTIONS, previewType, type Item } from './kinds';
+import {
+  canEditImage,
+  canMakePdf,
+  canMergePdfs,
+  canOrganizePdf,
+  FOLDER_COLOR_OPTIONS,
+  FOLDER_ICON_OPTIONS,
+  previewType,
+  type Item,
+} from './kinds';
 import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
 import { loadOfficeExtensions, OfficeEditor, officeEditable, officeExtensions } from './OfficeEditor';
@@ -867,6 +881,23 @@ export function FilesApp() {
           if (done !== undefined) refresh();
         },
       });
+      list.push({
+        key: 'icon',
+        label: t('Symbol'),
+        icon: <EmojiSymbolsRounded />,
+        onClick: async () => {
+          const value = await pickColor({
+            title: single ? t('Symbol für „{name}“', { name: single.name }) : t('Symbol für {count} Ordner', { count: targets.length }),
+            value: single?.icon ?? null,
+            group: t('Symbol'),
+            none: { label: t('Kein Symbol'), icon: <FolderRounded /> },
+            options: FOLDER_ICON_OPTIONS.map((option) => ({ key: option.key, label: t(option.label), color: '', icon: <option.Icon /> })),
+          });
+          if (value === undefined) return;
+          const done = await attempt(() => api.put('/api/nodes/icon', { ids: targets.map((item) => item.id), icon: value }));
+          if (done !== undefined) refresh();
+        },
+      });
     }
     list.push({
       key: 'details',
@@ -957,6 +988,57 @@ export function FilesApp() {
     return () => window.removeEventListener('paste', handler);
   });
 
+  const sharedDone = useRef(false);
+  useEffect(() => {
+    registerWorker();
+  }, []);
+  useEffect(() => {
+    const state = new URLSearchParams(window.location.search).get('geteilt');
+    if (state === null || sharedDone.current || !rootId) return;
+    sharedDone.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('geteilt');
+    navigate(url.pathname + url.search, { replace: true });
+    if (state !== '1') {
+      toast(t('Das Teilen hat nicht geklappt. Öffne MoeCloud einmal und versuch es dann noch mal.'));
+      return;
+    }
+    void takeShared().then(async (shared) => {
+      if (!shared) return;
+      if (readOnly || !uploadTarget) {
+        toast(t('In diesem Ordner darfst du nichts hochladen'));
+        return;
+      }
+      if (shared.files.length > 0) {
+        void upload(shared.files.map((file) => ({ file })));
+        return;
+      }
+      const address = [shared.url, shared.text].map((value) => value.trim()).find((value) => /^https?:\/\/\S+$/i.test(value));
+      try {
+        if (address) {
+          const file = weblinkFile(address);
+          const name = shared.title.trim()
+            ? `${shared.title
+                .trim()
+                .replace(/[\\/:*?"<>|]+/g, ' ')
+                .slice(0, 80)}.url`
+            : file.name;
+          await api.post(`/api/nodes/${uploadTarget}/text`, { name, content: file.content });
+          toast(t('Weblink gespeichert'));
+          refresh();
+        } else if (shared.text.trim()) {
+          const created = await api.post<{ note: { id: string } }>('/api/notes', {
+            title: shared.title.trim().slice(0, 200) || undefined,
+            content: shared.text,
+          });
+          navigate(`/files/notes/${created.note.id}`);
+        }
+      } catch (error) {
+        toast(errorText(error));
+      }
+    });
+  }, [rootId]);
+
   const newMenu = useNewMenu({
     onUploadFiles: () => fileInput.current?.click(),
     onUploadFolder: () => folderInput.current?.click(),
@@ -970,6 +1052,12 @@ export function FilesApp() {
       if (uploadTarget !== folder?.id) navigate(folderHref(uploadTarget, rootId));
       refresh();
       setTimeout(() => setViewer({ id: created.id, editing: true }), 350);
+    },
+    onNewLink: async () => {
+      const created = await createWeblink(uploadTarget);
+      if (!created) return;
+      if (uploadTarget !== folder?.id) navigate(folderHref(uploadTarget, rootId));
+      refresh();
     },
     onTemplate: () => setTemplateFor(uploadTarget),
     onOffice:

@@ -96,6 +96,29 @@ describe('Musik und Wiedergabelisten', () => {
     assert.deepEqual((await mia.get('/api/music')).json(), { items: [], more: false });
   });
 
+  it('zählt, was gehört wurde, und merkt sich den letzten Zeitpunkt, getrennt für jede Person', async () => {
+    const plays = async (client: Client) =>
+      Object.fromEntries(
+        ((await client.get('/api/music')).json().items as (Track & { plays: number; playedAt: number | null })[]).map((item) => [
+          item.id,
+          [item.plays, item.playedAt !== null],
+        ])
+      );
+    assert.deepEqual((await plays(emi))[song], [0, false]);
+    assert.equal((await emi.json('POST', '/api/music/played', { id: song })).statusCode, 200);
+    assert.equal((await emi.json('POST', '/api/music/played', { id: song })).statusCode, 200);
+    assert.equal((await emi.json('POST', '/api/music/played', { id: rain })).statusCode, 200);
+    const counted = await plays(emi);
+    assert.deepEqual(counted[song], [2, true]);
+    assert.deepEqual(counted[rain], [1, true]);
+    assert.deepEqual(counted[plain], [0, false]);
+    assert.equal((await emi.json('POST', '/api/music/played', { id: text })).statusCode, 400);
+    assert.equal((await emi.json('POST', '/api/music/played', { id: music })).statusCode, 400);
+    assert.equal((await mia.json('POST', '/api/music/played', { id: song })).statusCode, 404);
+    assert.equal((await emi.json('DELETE', '/api/music/played')).statusCode, 200);
+    assert.deepEqual((await plays(emi))[song], [0, false]);
+  });
+
   it('legt Wiedergabelisten an, füllt sie auch aus Ordnern und hält die Reihenfolge', async () => {
     const created = await emi.json('POST', '/api/playlists', { name: '  Abends   am See ', ids: [rain, song] });
     assert.equal(created.statusCode, 200, created.body);
