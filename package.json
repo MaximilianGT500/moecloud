@@ -35,7 +35,7 @@
     "htm": "^3.1.1",
     "libheif-js": "^1.23.5",
     "mime-types": "^3.0.2",
-    "music-metadata": "^12.5.0",
+    "music-metadata": "^12.7.0",
     "nodemailer": "^10.6.0",
     "openid-client": "^6.9.0",
     "pg": "^8.23.1",
