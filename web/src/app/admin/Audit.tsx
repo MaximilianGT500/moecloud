@@ -38,6 +38,8 @@ const GROUPS: Record<string, string[]> = {
     'lockout_released',
     'sso_unlinked',
     'account_exported',
+    'device_burst',
+    'device_resumed',
   ],
   failed: ['login_failed'],
   people: [

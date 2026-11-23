@@ -22,6 +22,7 @@ export type View =
   | { kind: 'tag'; id: string }
   | { kind: 'albums' }
   | { kind: 'notes'; id: string | null }
+  | { kind: 'forms'; id: string | null }
   | { kind: 'music'; tab: 'tracks' | 'albums' | 'artists' | 'playlists'; id: string | null; name: string | null }
   | { kind: 'album'; id: string }
   | { kind: 'plugin'; plugin: string; page: string }
@@ -113,6 +114,9 @@ export function parseView(path: string, query: URLSearchParams, rootId: string):
       name: tab === 'playlists' ? null : query.get('name'),
     };
   }
+  if (path === '/files/forms') return { kind: 'forms', id: null };
+  const form = /^\/files\/forms\/([0-9A-Za-z_-]{1,64})$/.exec(path);
+  if (form) return { kind: 'forms', id: form[1] };
   if (path === '/files/notes') return { kind: 'notes', id: null };
   const note = /^\/files\/notes\/([0-9A-Za-z]+)$/.exec(path);
   if (note) return { kind: 'notes', id: note[1] };
@@ -213,6 +217,7 @@ async function fetchListing(view: View, signal: AbortSignal): Promise<Listing> {
     case 'tags':
     case 'albums':
     case 'notes':
+    case 'forms':
     case 'music':
     case 'plugin':
       return { items: [], role: 'owner' };

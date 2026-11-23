@@ -10,7 +10,7 @@ export interface RequestAuth {
   user: UserRow;
   session: SessionRow | null;
   readOnly?: boolean;
-  app?: { id: string; admin: boolean };
+  app?: { id: string; admin: boolean; paused?: boolean };
 }
 
 declare module 'fastify' {

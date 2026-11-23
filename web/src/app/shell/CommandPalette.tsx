@@ -23,6 +23,7 @@ import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import SellRounded from '@mui/icons-material/SellRounded';
 import StarRounded from '@mui/icons-material/StarRounded';
+import AssignmentRounded from '@mui/icons-material/AssignmentRounded';
 import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
 import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
 import { api, errorText, logout } from '../../lib/api';
@@ -143,6 +144,9 @@ export function CommandPalette({
     { id: 'albums', group: places, label: t('Alben'), icon: <CollectionsRounded />, run: () => go('/files/photos/albums') },
     { id: 'recent', group: places, label: t('Zuletzt'), icon: <ScheduleRounded />, run: () => go('/files/recent') },
     { id: 'notes', group: places, label: t('Notizen'), icon: <StickyNote2Rounded />, run: () => go('/files/notes') },
+    ...(boot().forms
+      ? [{ id: 'forms', group: places, label: t('Formulare'), icon: <AssignmentRounded />, run: () => go('/files/forms') }]
+      : []),
     { id: 'music', group: places, label: t('Musik'), icon: <LibraryMusicRounded />, run: () => go('/files/music') },
     { id: 'activity', group: places, label: t('Aktivität'), icon: <HistoryRounded />, run: () => go('/files/activity') },
     { id: 'starred', group: places, label: t('Favoriten'), icon: <StarRounded />, run: () => go('/files/starred') },

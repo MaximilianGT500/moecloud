@@ -674,6 +674,47 @@ CREATE INDEX email_confirmations_user ON email_confirmations(user_id);
 UPDATE app_passwords SET scope = 'admin' WHERE scope = 'full' AND user_id IN (SELECT id FROM users WHERE role = 'admin');
 ALTER TABLE users ADD COLUMN must_change BIGINT NOT NULL DEFAULT 0;
 `,
+  12: `
+CREATE TABLE forms (
+  id ${T} PRIMARY KEY,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  title ${T} NOT NULL,
+  description ${T} NOT NULL DEFAULT '',
+  questions ${T} NOT NULL DEFAULT '[]',
+  token ${T} NOT NULL UNIQUE,
+  accepting BIGINT NOT NULL DEFAULT 1,
+  closes_at BIGINT,
+  max_responses BIGINT,
+  once BIGINT NOT NULL DEFAULT 0,
+  signed_in BIGINT NOT NULL DEFAULT 0,
+  named BIGINT NOT NULL DEFAULT 0,
+  notify BIGINT NOT NULL DEFAULT 1,
+  confirmation ${T} NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX forms_owner ON forms(owner_id, updated_at);
+CREATE TABLE form_responses (
+  id ${T} PRIMARY KEY,
+  form_id ${T} NOT NULL REFERENCES forms(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL ${FK},
+  respondent ${T},
+  answers ${T} NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX form_responses_form ON form_responses(form_id, created_at);
+CREATE INDEX form_responses_respondent ON form_responses(form_id, respondent);
+CREATE TABLE comment_reactions (
+  comment_id ${T} NOT NULL REFERENCES comments(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  emoji ${T} NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (comment_id, user_id, emoji)
+);
+CREATE INDEX comment_reactions_user ON comment_reactions(user_id);
+ALTER TABLE app_passwords ADD COLUMN paused_at BIGINT;
+ALTER TABLE app_passwords ADD COLUMN paused_reason ${T};
+`,
 };
 
 export const PG_IDENTITY: Record<string, string> = {
@@ -737,6 +778,9 @@ export const TABLES = [
   'playlist_items',
   'plays',
   'email_confirmations',
+  'forms',
+  'form_responses',
+  'comment_reactions',
 ];
 
 export const RECOUNT_REFS =

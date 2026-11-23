@@ -95,6 +95,10 @@ export function auditLabel(action: string) {
       return t('Protokoll als CSV geladen');
     case 'integrity_checked':
       return t('Dateien geprüft');
+    case 'device_burst':
+      return t('Auffällig viele Änderungen über ein App-Passwort');
+    case 'device_resumed':
+      return t('Angehaltenes App-Passwort freigegeben');
     case 'mail_changed':
       return t('E-Mail-Versand geändert');
     case 'sso_changed':
@@ -199,6 +203,16 @@ export function auditDetail(entry: AuditEntry) {
       return [text('name'), typeof d.size === 'number' ? formatBytes(d.size) : ''].filter(Boolean).join(' · ');
     case 'backup_failed':
       return text('error');
+    case 'device_burst':
+      return [
+        text('appPassword'),
+        typeof d.count === 'number' ? tn(d.count, '{count} Änderung', '{count} Änderungen') : '',
+        d.paused ? t('angehalten') : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'device_resumed':
+      return text('appPassword');
     case 'audit_exported':
       return typeof d.rows === 'number' ? tn(d.rows, '{count} Zeile', '{count} Zeilen') : '';
     case 'integrity_checked':

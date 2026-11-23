@@ -60,6 +60,7 @@ const EVENTS = [
   'backup_failed',
   'disk_low',
   'files_damaged',
+  'changes_burst',
   'update',
   'login_failed',
   'plugin_stopped',
@@ -79,6 +80,8 @@ function eventLabel(event: string) {
       return t('Wenig Speicherplatz');
     case 'files_damaged':
       return t('Dateien fehlen oder sind beschädigt');
+    case 'changes_burst':
+      return t('Auffällig viele Änderungen über ein Gerät');
     case 'update':
       return t('Neue Version');
     case 'login_failed':

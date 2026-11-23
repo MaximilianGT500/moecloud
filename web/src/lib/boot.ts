@@ -100,6 +100,7 @@ export interface Boot {
   unread?: number;
   setup2fa?: boolean;
   plugins?: PluginBoot;
+  forms?: boolean;
 }
 
 let cached: Boot | null = null;

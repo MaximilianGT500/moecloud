@@ -1,3 +1,4 @@
+import { assertNoRansomware } from './ransomware.ts';
 import { badRequest } from '../lib/errors.ts';
 import * as settings from './settings.ts';
 
@@ -33,6 +34,7 @@ export function isBlockedName(name: string) {
 }
 
 export function assertAllowedName(name: string) {
+  assertNoRansomware(name);
   if (isBlockedName(name)) {
     throw badRequest('Dateien mit der Endung .{extension} sind auf diesem Server nicht erlaubt', { extension: extensionOf(name) });
   }

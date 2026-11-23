@@ -119,6 +119,7 @@ interface Account {
       admin?: boolean;
       expiresAt?: number | null;
       expired?: boolean;
+      paused?: { at: number; count: number; since: number | null } | null;
     }[];
     sessions: {
       id: string;
@@ -1979,6 +1980,7 @@ export function AccountPage() {
 
             {!locked && (
               <Section
+                id="app-passwoerter"
                 title={t('WebDAV und App-Passwörter')}
                 description={t(
                   'Binde MoeCloud als Laufwerk im Explorer, im Finder oder mit rclone ein. Melde dich dort mit deinem Benutzernamen und einem App-Passwort an.'
@@ -1989,44 +1991,88 @@ export function AccountPage() {
                   <CopyField value={account.user.username} label={t('Benutzername')} />
                 </Box>
                 {security.appPasswords.map((entry) => (
-                  <Row
-                    key={entry.id}
-                    icon={<KeyRounded />}
-                    title={entry.name}
-                    text={[
-                      `…${entry.hint}`,
-                      entry.readOnly ? t('nur lesen') : null,
-                      entry.admin ? t('mit Verwaltung') : null,
-                      entry.shared ? t('mit Teamordnern und Geteiltem') : null,
-                      entry.expired ? t('abgelaufen') : null,
-                      entry.expiresAt && !entry.expired ? t('gültig bis {date}', { date: formatDate(entry.expiresAt) }) : null,
-                      entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt'),
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                    action={
-                      <Tooltip title={t('Widerrufen')}>
-                        <IconButton
-                          aria-label={t('App-Passwort {name} widerrufen', { name: entry.name })}
-                          onClick={async () => {
-                            if (
-                              !(await confirm({
-                                title: t('App-Passwort widerrufen?'),
-                                text: t('Geräte, die „{name}“ nutzen, verlieren den Zugriff.', { name: entry.name }),
-                                confirm: t('Widerrufen'),
-                                danger: true,
-                              }))
-                            )
-                              return;
-                            await api.delete(`/api/account/app-passwords/${entry.id}`).catch((error) => toast(errorText(error)));
-                            void load();
-                          }}
-                        >
-                          <DeleteOutlineRounded />
-                        </IconButton>
-                      </Tooltip>
-                    }
-                  />
+                  <Box key={entry.id} data-app-password={entry.name} data-paused={entry.paused ? 'ja' : undefined}>
+                    <Row
+                      icon={<KeyRounded />}
+                      title={entry.name}
+                      text={[
+                        `…${entry.hint}`,
+                        entry.readOnly ? t('nur lesen') : null,
+                        entry.admin ? t('mit Verwaltung') : null,
+                        entry.shared ? t('mit Teamordnern und Geteiltem') : null,
+                        entry.expired ? t('abgelaufen') : null,
+                        entry.expiresAt && !entry.expired ? t('gültig bis {date}', { date: formatDate(entry.expiresAt) }) : null,
+                        entry.lastUsedAt ? t('zuletzt genutzt {date}', { date: formatDate(entry.lastUsedAt) }) : t('noch nie genutzt'),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                      action={
+                        <Tooltip title={t('Widerrufen')}>
+                          <IconButton
+                            aria-label={t('App-Passwort {name} widerrufen', { name: entry.name })}
+                            onClick={async () => {
+                              if (
+                                !(await confirm({
+                                  title: t('App-Passwort widerrufen?'),
+                                  text: t('Geräte, die „{name}“ nutzen, verlieren den Zugriff.', { name: entry.name }),
+                                  confirm: t('Widerrufen'),
+                                  danger: true,
+                                }))
+                              )
+                                return;
+                              await api.delete(`/api/account/app-passwords/${entry.id}`).catch((error) => toast(errorText(error)));
+                              void load();
+                            }}
+                          >
+                            <DeleteOutlineRounded />
+                          </IconButton>
+                        </Tooltip>
+                      }
+                    />
+                    {entry.paused && (
+                      <Alert
+                        severity="warning"
+                        sx={{ mt: 1 }}
+                        action={
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <Button
+                              color="inherit"
+                              size="small"
+                              href={`/files?zuruecksetzen=${Math.max(1, (entry.paused.since ?? entry.paused.at) - 60_000)}`}
+                            >
+                              {t('Dateien zurücksetzen')}
+                            </Button>
+                            <Button
+                              color="inherit"
+                              size="small"
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: t('„{name}“ wieder freigeben?', { name: entry.name }),
+                                  text: t(
+                                    'Das Gerät kann danach wieder Dateien ändern. Gib es nur frei, wenn du weißt, woher die vielen Änderungen kamen.'
+                                  ),
+                                  confirm: t('Freigeben'),
+                                });
+                                if (!ok) return;
+                                await api
+                                  .post(`/api/account/app-passwords/${entry.id}/resume`)
+                                  .then(() => toast(t('„{name}“ ist wieder freigegeben', { name: entry.name })))
+                                  .catch((error) => toast(errorText(error)));
+                                void load();
+                              }}
+                            >
+                              {t('Freigeben')}
+                            </Button>
+                          </Box>
+                        }
+                      >
+                        {t('Angehalten am {date}, nach {count} Änderungen in wenigen Minuten. Das Gerät kann nur noch lesen.', {
+                          date: formatDateTime(entry.paused.at),
+                          count: entry.paused.count,
+                        })}
+                      </Alert>
+                    )}
+                  </Box>
                 ))}
                 <Box>
                   <Button variant="tonal" startIcon={<KeyRounded />} onClick={() => setDialog('app')}>

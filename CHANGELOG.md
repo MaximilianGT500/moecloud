@@ -2,6 +2,57 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.8.0] · 2026-11-22
+
+Diese Version bringt Formulare für Umfragen und Anmeldungen, die jeder über einen Link ausfüllt, und schützt deine Dateien vor Erpressungstrojanern: MoeCloud weist ihre Dateien ab, hält Geräte an, die auffällig viele Dateien ändern, und setzt einen Ordner samt Inhalt auf einen früheren Stand zurück, ohne dabei etwas zu verlieren. Dazu kommen Aufnahmen direkt im Browser, Reaktionen auf Kommentare und das Entpacken von TAR- und GZ-Archiven.
+
+### Neu
+
+- **Formulare** in der Navigation: Umfragen, Anmeldungen und Rückmeldungen, die jeder über einen Link ausfüllt, auch ohne Konto. Acht Arten von Fragen von kurzer Antwort über Datum und Zahl bis Auswahl und Skala, Pflichtfragen, Hinweise und ein Text nach dem Absenden. Ein Formular nimmt Antworten an, bis du es schließt, bis zu einem Zeitpunkt oder bis zu einer Zahl von Antworten, auf Wunsch nur eine pro Person oder nur von angemeldeten Personen mit ihrem Namen
+- **Auswertung**: Balken für Auswahlen, Durchschnitt für Skalen und Zahlen, die neuesten Texte, alle einzelnen Antworten und ein Export als CSV, in dem Zellen, die eine Tabellenkalkulation als Formel lesen würde, entschärft sind. Neue Antworten melden sich in der Glocke, mehrere kurz hintereinander als eine Nachricht
+- **Auf früheren Stand zurücksetzen** im Menü und in der Kopfzeile eigener Ordner: Du wählst einen Zeitpunkt bis zu 365 Tage zurück, und die Vorschau zeigt, was sich ändert. Dateien bekommen ihren Inhalt von damals als neue Version, alte Namen und Gelöschtes aus dem Papierkorb kommen zurück, und was danach dazukam, wandert in den Papierkorb. Der heutige Stand bleibt dabei als Version oder im Papierkorb erhalten
+- **Schutz vor Erpressungstrojanern** unter **Admin › Sicherheit**: Dateien mit Endungen bekannter Erpressungstrojaner wie `.locky` oder `.wncry` und typische Erpresserbriefe nimmt MoeCloud nicht an, auch nicht beim Umbenennen, über WebDAV oder beim Entpacken
+- **Auffällig viele Änderungen**: Überschreibt, verschiebt, benennt oder löscht ein Gerät über WebDAV in zehn Minuten mehr vorhandene Dateien als die Grenze, bekommen die Person und die Admins Bescheid, und MoeCloud hält das App-Passwort an. Bis die Person es unter **Konto** wieder freigibt, kann es nur noch lesen. **Dateien zurücksetzen** führt von dort direkt zum Stand kurz davor
+- **Aufnehmen** unter **Neu**: Sprachnotizen, Fotos, Videos und den Bildschirm nimmst du direkt im Browser auf, hörst oder siehst sie dir an, benennst sie und speicherst sie im offenen Ordner. Bei Videos wechselst du die Kamera, beim Bildschirm läuft auf Wunsch das Mikrofon mit
+- **Reaktionen auf Kommentare**: 👍, ❤️, 😂, 🎉, 😮, 😢, 👀 oder ✅ unter jedem Kommentar, mit der Zahl und den Namen derer, die so reagiert haben
+- **TAR, TAR.GZ und GZ**: Die Vorschau zeigt den Inhalt dieser Archive und lädt einzelne Dateien daraus, und **Entpacken** packt sie aus wie ein ZIP. Eine einzelne GZ-Datei wie `Bericht.csv.gz` wird zu `Bericht.csv` daneben. Symbolische Links und Geräte überspringt MoeCloud, harte Links werden zu einer Kopie ohne zusätzlichen Platz auf der Platte
+
+### Verbessert
+
+- Der Datenexport enthält deine Formulare samt Antworten und deine Reaktionen
+- Die Sicherheitsprüfung meldet, wenn der Schutz vor Erpressungstrojanern nicht ganz eingeschaltet ist
+- Das Protokoll und die Webhooks kennen das Anhalten und Freigeben von Geräten
+- Kamera, Mikrofon und Bildschirmfreigabe dürfen die Seiten von MoeCloud jetzt für angemeldete Personen nutzen. Öffentliche Seiten und eingebettete Inhalte dürfen das weiterhin nicht
+
+### API
+
+- Formulare: `GET` und `POST /api/forms`, `GET`, `PATCH` und `DELETE /api/forms/:id`, `POST /api/forms/:id/copy` und `/token`, `GET /api/forms/:id/results`, `/responses` und `/export`, `DELETE /api/forms/:id/responses` und `/responses/:response`. Ausgefüllt werden Formulare ohne Anmeldung unter `/f/:token`
+- Zurücksetzen: `GET /api/nodes/:id/rewind?at=` zeigt die Vorschau, `POST` mit JSON `{ "at" }` setzt zurück
+- Reaktionen: `POST /api/nodes/:id/comments/:comment/reactions` mit JSON `{ "emoji", "on" }`, Kommentare bringen `reactions` mit
+- App-Passwörter: Angehaltene tragen in `GET /api/account` das Feld `paused`, `POST /api/account/app-passwords/:id/resume` gibt sie im Browser wieder frei. Schreibende Anfragen mit einem angehaltenen App-Passwort bekommen `403` mit dem Code `device_paused`, über WebDAV ebenfalls `403`. Namen bekannter Erpressungstrojaner lehnt MoeCloud mit `403` und dem Code `ransomware` ab
+- Archive: `GET /api/nodes/:id/archive`, `/archive/entry` und `POST /api/nodes/:id/extract` nehmen auch TAR, TAR.GZ, TGZ und GZ. Bei einer einzelnen GZ-Datei kommt `/archive/entry` ohne `Content-Length`, und `extract` nennt als `folderId` den Ordner, in dem das Archiv liegt
+- Verwaltung: Die Einstellungen kennen `forms.enabled`, `security.ransomware`, `security.burst`, `security.burstPause` und `security.burstLimit`, `GET /api/admin/security` nennt `ransomware`, Webhooks das Ereignis `changes_burst` und das Protokoll die Aktionen `device_burst` und `device_resumed`
+- Benachrichtigungen haben die neuen Arten `form_response`, `device_burst` und `admin_burst`, die Live-Ereignisse das Ereignis `forms`
+- Alle anderen Adressen und Felder bleiben, wie sie sind
+
+### Kleinigkeiten
+
+- Die Datenbank bekommt Stand 12. Vorher legt MoeCloud wie gewohnt eine Sicherung an
+- 263 neue Texte mit englischer Übersetzung
+- 579 Tests statt 542, auf SQLite und auf PostgreSQL
+
+### Update von 1.7.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Tabellen für Formulare, ihre Antworten und Reaktionen an, dazu zwei Spalten für angehaltene App-Passwörter. An deinen Dateien ändert sich nichts.
+
+**Schutz vor Erpressungstrojanern**: Er ist nach dem Update eingeschaltet. Dateien mit Endungen wie `.locky`, die schon da sind, bleiben, neue lassen sich nicht mehr hochladen oder so benennen. Ein Gerät, das über WebDAV regelmäßig sehr viele vorhandene Dateien auf einmal ändert, kann MoeCloud anhalten. Dann gibst du es unter **Konto › WebDAV und App-Passwörter** frei und setzt die Grenze unter **Admin › Sicherheit** höher oder schaltest dort nur das Anhalten ab.
+
+**Formulare** stehen allen Mitgliedern gleich zur Verfügung. Unter **Admin › Einstellungen › Teilen** schaltest du sie ab.
+
+Geprüft ist das Aufnehmen in Chrome mit nachgebildeter Kamera und nachgebildetem Mikrofon. Die Aufnahme des Bildschirms und andere Browser sind noch nicht geprüft. TAR-Archive sind mit selbst gebauten Archiven und solchen von GNU tar in den Formaten GNU, PAX und USTAR geprüft.
+
 ## [1.7.0] · 2026-11-20
 
 Diese Version bringt eine Compose-Datei, die alles mitstartet, und macht MoeCloud zu deiner Cloud: zwanzig Themes, sieben Schriften, eine Darstellung nach Maß, eine Navigation und eine Startseite in deiner Reihenfolge, Symbole für Ordner und eine Anmeldeseite mit eigenem Logo und Hintergrund. Dazu kommen Weblinks, eine Übersicht aller Aufgaben aus deinen Notizen, Tempo und Schlummern im Player, Links mit Beginn, Nachricht und eigenem Aussehen, Registrierung mit bestätigter E-Mail-Adresse und das Teilen aus anderen Apps in die Cloud. Außerdem ist MoeCloud mit einer eigenen Testreihe auf Sicherheit geprüft: Was dabei aufgefallen ist, ist behoben, und unter **Admin › Sicherheit** siehst du, wie es um deine eigene Cloud steht. Dort prüfst du auch, ob jede gespeicherte Datei noch unversehrt ist, und beschränkst die Verwaltung auf deine eigenen Netze.
@@ -714,6 +765,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.8.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.8.0
 [1.7.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.7.0
 [1.6.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.6.0
 [1.5.1]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.5.1

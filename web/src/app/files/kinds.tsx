@@ -143,7 +143,7 @@ export function previewType(item: Pick<Item, 'name' | 'kind' | 'mime' | 'type' |
   if (ext === 'json' || ext === 'geojson' || ext === 'webmanifest') return 'json';
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx') return 'xlsx';
-  if (ext === 'zip') return 'zip';
+  if (ext === 'zip' || ext === 'tar' || ext === 'tgz' || ext === 'gz') return 'zip';
   if (ext === 'epub') return 'epub';
   if (item.office) return 'office';
   if (ext === 'eml' || item.mime === 'message/rfc822') return 'email';

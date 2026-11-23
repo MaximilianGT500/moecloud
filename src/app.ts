@@ -1,3 +1,4 @@
+import { devicePaused } from './services/ransomware.ts';
 import Fastify, { LogController, type FastifyInstance, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import compress from '@fastify/compress';
@@ -44,6 +45,8 @@ import { noteRoutes } from './routes/notes.ts';
 import { musicRoutes } from './routes/music.ts';
 import { tagRoutes } from './routes/tags.ts';
 import { albumRoutes } from './routes/albums.ts';
+import { formRoutes } from './routes/forms.ts';
+import { rewindRoutes } from './routes/rewind.ts';
 import { toolRoutes } from './routes/tools.ts';
 import { themeRoutes } from './routes/themes.ts';
 import { pluginRoutes } from './routes/plugins.ts';
@@ -115,6 +118,7 @@ const OPEN_API = /^\/api\/(public\/|setup(\/|$)|auth\/passkey\/|language$)/;
 const SESSION_ONLY = new Set([
   'POST /api/account/app-passwords',
   'DELETE /api/account/app-passwords/:id',
+  'POST /api/account/app-passwords/:id/resume',
   'POST /api/account/delete',
   'POST /api/account/password',
   'POST /api/account/secure',
@@ -236,7 +240,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (!auth && request.url.startsWith('/api/') && request.headers.authorization?.startsWith('Basic ')) {
       const found = basicAuth(request.headers.authorization, request.ip);
       if (found && found !== 'blocked') {
-        auth = { user: found.user, session: null, readOnly: found.readOnly, app: { id: found.id, admin: found.admin } };
+        auth = {
+          user: found.user,
+          session: null,
+          readOnly: found.readOnly,
+          app: { id: found.id, admin: found.admin, paused: found.paused },
+        };
       }
     }
     request.auth = auth;
@@ -323,6 +332,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('preHandler', async (request) => {
     if (!UNSAFE.has(request.method) || !(request.routeOptions.url ?? request.url).startsWith('/api/')) return;
     if (request.auth?.readOnly) throw new HttpError(403, 'Dieses App-Passwort darf nur lesen', 'read_only');
+    if (request.auth?.app?.paused) throw devicePaused();
     if (request.auth && !request.auth.session) return;
     if (!sameOrigin(request)) throw forbidden('Die Anfrage kam von einer fremden Seite');
     const expected = request.auth?.session?.csrf ?? request.csrf;
@@ -334,7 +344,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     if (!reply.hasHeader('Referrer-Policy')) reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    const media = request.auth?.session ? '(self)' : '()';
+    reply.header(
+      'Permissions-Policy',
+      `camera=${media}, microphone=${media}, display-capture=${media}, geolocation=(), payment=(), usb=()`
+    );
     if ((request.routeOptions.url ?? request.url).startsWith('/api/') && !reply.hasHeader('Cache-Control'))
       reply.header('Cache-Control', 'no-store');
     if (request.protocol === 'https' && !isLocalHost(request.host)) reply.header('Strict-Transport-Security', 'max-age=15552000');
@@ -407,6 +421,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(fileRoutes);
   await app.register(tagRoutes);
   await app.register(albumRoutes);
+  await app.register(formRoutes);
+  await app.register(rewindRoutes);
   await app.register(toolRoutes);
   await app.register(themeRoutes);
   await app.register(pluginRoutes);

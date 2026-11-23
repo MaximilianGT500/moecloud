@@ -40,7 +40,14 @@ describe('Kopfzeilen', () => {
       assert.equal(response.headers['x-content-type-options'], 'nosniff', url);
       assert.equal(response.headers['cross-origin-opener-policy'], 'same-origin', url);
       assert.match(String(response.headers['referrer-policy']), /strict-origin-when-cross-origin|no-referrer/, url);
-      assert.match(String(response.headers['permissions-policy']), /camera=\(\)/, url);
+      const signedIn = client === mia || client === emi;
+      assert.match(
+        String(response.headers['permissions-policy']),
+        signedIn
+          ? /^camera=\(self\), microphone=\(self\), display-capture=\(self\), geolocation=\(\), payment=\(\), usb=\(\)$/
+          : /^camera=\(\), microphone=\(\), display-capture=\(\), geolocation=\(\), payment=\(\), usb=\(\)$/,
+        url
+      );
       assert.match(policy, /frame-ancestors 'none'/, url);
       assert.match(policy, /object-src 'none'/, url);
       assert.match(policy, /base-uri 'none'/, url);

@@ -114,6 +114,7 @@ import { albumHref, newAlbum } from './album';
 import { Details, type DetailsTab } from './Details';
 import { enqueue, forget, playItems, usePlayer } from './player';
 import { FolderReadme, readmeOf } from './Readme';
+import { FormsView } from './Forms';
 import { DRAG_TYPE, Items } from './Items';
 import {
   canEditImage,
@@ -126,6 +127,7 @@ import {
   type Item,
 } from './kinds';
 import { canEdit, folderHref, parseView, searchQuery, sortItems, useListing, viewKey, type View } from './model';
+import type { RecordMode } from './record';
 import { MoveDialog, type MoveRequest } from './MoveDialog';
 import { loadOfficeExtensions, OfficeEditor, officeEditable, officeExtensions } from './OfficeEditor';
 import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewMenu } from './Panels';
@@ -142,6 +144,8 @@ const AlbumMenu = lazyNamed(() => import('./Albums'), 'AlbumMenu');
 const AlbumPicker = lazyNamed(() => import('./Albums'), 'AlbumPicker');
 const AutomationsDialog = lazyNamed(() => import('./Automations'), 'AutomationsDialog');
 const CleanupDialog = lazyNamed(() => import('./Bulk'), 'CleanupDialog');
+const RewindDialog = lazyNamed(() => import('./Rewind'), 'RewindDialog');
+const RecordDialog = lazyNamed(() => import('./Recorder'), 'RecordDialog');
 const LockDialog = lazyNamed(() => import('./Bulk'), 'LockDialog');
 const DavImportDialog = lazyNamed(() => import('./DavImport'), 'DavImportDialog');
 const ReminderDialog = lazyNamed(() => import('./Bulk'), 'ReminderDialog');
@@ -196,7 +200,19 @@ function destinationOf(view: View, team = false): Destination {
   return view.kind;
 }
 
-const SPECIAL = new Set<View['kind']>(['home', 'teams', 'photos', 'activity', 'storage', 'tags', 'albums', 'notes', 'music', 'plugin']);
+const SPECIAL = new Set<View['kind']>([
+  'home',
+  'teams',
+  'photos',
+  'activity',
+  'storage',
+  'tags',
+  'albums',
+  'notes',
+  'forms',
+  'music',
+  'plugin',
+]);
 
 function titleOf(view: View) {
   switch (view.kind) {
@@ -216,6 +232,8 @@ function titleOf(view: View) {
       return t('Speicher');
     case 'notes':
       return t('Notizen');
+    case 'forms':
+      return t('Formulare');
     case 'music':
       return t('Musik');
     case 'starred':
@@ -286,6 +304,8 @@ export function FilesApp() {
   const [renaming, setRenaming] = useState<Item[] | null>(null);
   const [packing, setPacking] = useState<Item[] | null>(null);
   const [cleanupFor, setCleanupFor] = useState<Item | null>(null);
+  const [recordMode, setRecordMode] = useState<RecordMode | null>(null);
+  const [rewindFor, setRewindFor] = useState<{ folder: { id: string; name: string; root: boolean }; at: number | null } | null>(null);
   const [starter, setStarter] = useState<string | null>(data.starter ?? null);
   const [automationsFor, setAutomationsFor] = useState<Item | null>(null);
   const [locking, setLocking] = useState<Item | null>(null);
@@ -813,6 +833,14 @@ export function FilesApp() {
     if (single && single.type === 'folder' && single.parentId && single.role === 'owner') {
       list.push({ key: 'cleanup', label: t('Aufräumregel'), icon: <AutoDeleteRounded />, onClick: () => setCleanupFor(single) });
     }
+    if (single && single.type === 'folder' && single.role === 'owner' && !single.team && !listing.data?.team && view.kind === 'folder') {
+      list.push({
+        key: 'rewind',
+        label: t('Auf früheren Stand zurücksetzen'),
+        icon: <HistoryRounded />,
+        onClick: () => setRewindFor({ folder: { id: single.id, name: single.name, root: !single.parentId }, at: null }),
+      });
+    }
     if (single && single.type === 'folder' && (single.role === 'owner' || single.role === 'edit')) {
       list.push({ key: 'automations', label: t('Abläufe'), icon: <AutoModeRounded />, onClick: () => setAutomationsFor(single) });
     }
@@ -988,6 +1016,20 @@ export function FilesApp() {
     return () => window.removeEventListener('paste', handler);
   });
 
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('zuruecksetzen');
+    if (param === null || view.kind !== 'folder' || !folder || folder.id !== view.id) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('zuruecksetzen');
+    navigate(url.pathname + url.search, { replace: true });
+    if (role !== 'owner' || listing.data?.team) return;
+    const at = Number(param);
+    setRewindFor({
+      folder: { id: folder.id, name: folder.name, root: !folder.parentId },
+      at: Number.isSafeInteger(at) && at > 0 ? at : null,
+    });
+  }, [folder?.id, view.kind]);
+
   const sharedDone = useRef(false);
   useEffect(() => {
     registerWorker();
@@ -1072,6 +1114,7 @@ export function FilesApp() {
         : undefined,
     onImport: data.import ? () => void importFromUrl(uploadTarget) : undefined,
     onDavImport: data.import ? () => setDavImport(uploadTarget) : undefined,
+    onRecord: (mode) => setRecordMode(mode),
   });
 
   const dropHandlers = {
@@ -1194,6 +1237,16 @@ export function FilesApp() {
             )}
           </Tooltip>
         ) : null}
+        {view.kind === 'folder' && folder && role === 'owner' && !listing.data?.team && (
+          <Tooltip title={t('Auf früheren Stand zurücksetzen')}>
+            <IconButton
+              aria-label={t('Auf früheren Stand zurücksetzen')}
+              onClick={() => setRewindFor({ folder: { id: folder.id, name: folder.name, root: !folder.parentId }, at: null })}
+            >
+              <HistoryRounded />
+            </IconButton>
+          </Tooltip>
+        )}
         {view.kind === 'folder' && folder?.parentId && (
           <Tooltip title={folder.watching ? t('Du beobachtest diesen Ordner') : t('Ordner beobachten')}>
             <IconButton
@@ -1459,6 +1512,7 @@ export function FilesApp() {
     if (view.kind === 'albums') return <AlbumList />;
     if (view.kind === 'storage') return <StorageView onReveal={(item) => reveal(item)} />;
     if (view.kind === 'notes') return <NotesView id={view.id} />;
+    if (view.kind === 'forms') return <FormsView id={view.id} />;
     if (view.kind === 'music') return <MusicView tab={view.tab} id={view.id} name={view.name} />;
     if (view.kind === 'plugin') return <PluginPageView plugin={view.plugin} page={view.page} />;
     if (listing.error) {
@@ -1766,6 +1820,16 @@ export function FilesApp() {
       {automationsFor && (
         <Later>
           <AutomationsDialog folder={automationsFor} onClose={() => setAutomationsFor(null)} />
+        </Later>
+      )}
+      {recordMode && (
+        <Later>
+          <RecordDialog mode={recordMode} onClose={() => setRecordMode(null)} onSave={(file) => void upload([{ file }], uploadTarget)} />
+        </Later>
+      )}
+      {rewindFor && (
+        <Later>
+          <RewindDialog folder={rewindFor.folder} initial={rewindFor.at} onClose={() => setRewindFor(null)} onDone={() => refresh()} />
         </Later>
       )}
       {cleanupFor && (

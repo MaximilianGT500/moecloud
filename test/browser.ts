@@ -60,8 +60,9 @@ const code = await new Promise<string>((done, fail) => {
   server.once('exit', (status) => fail(new Error(`Der Server hat sich beendet (${status})`)));
 });
 
+const FAKE_MEDIA = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 const browser = await chromium
-  .launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
+  .launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH, args: FAKE_MEDIA } : { channel: 'chrome', args: FAKE_MEDIA })
   .catch(async (error: Error) => {
     server.kill('SIGTERM');
     await smtp.close();
@@ -426,6 +427,10 @@ try {
     await field.pressSequentially('danke, ist eingepackt.');
     await page.getByRole('button', { name: 'Senden', exact: true }).click();
     await page.getByText('danke, ist eingepackt.').first().waitFor();
+    const adapter = page.locator('li', { hasText: 'Denk an den Adapter, in Japan gibt es Typ A.' });
+    await adapter.getByRole('button', { name: 'Reagieren' }).click();
+    await page.getByRole('group', { name: 'Reaktion wählen' }).getByRole('button', { name: 'Daumen hoch' }).click();
+    await adapter.locator('[data-reaction="👍"][aria-pressed="true"]').waitFor();
     await shot(page, 'comments');
   });
 
@@ -2549,6 +2554,170 @@ try {
     const people = await api<{ items: { id: number; username: string }[] }>(page, 'GET', '/api/admin/users');
     const emily = people.items.find((entry) => entry.username === 'emily-start');
     if (emily) await api(page, 'DELETE', `/api/admin/users/${emily.id}`);
+  });
+
+  await step('Formular anlegen, ausfüllen und auswerten', async () => {
+    await page.goto(`${base}/files/forms`);
+    await page.getByRole('button', { name: 'Neues Formular' }).first().click();
+    const ask = page.getByRole('dialog');
+    await ask.getByLabel('Titel').fill('Sommerfest bei Lea');
+    await ask.getByRole('button', { name: 'Anlegen' }).click();
+    await page.waitForURL(/\/files\/forms\/[A-Za-z0-9_-]+$/);
+    await page.getByLabel('Beschreibung').fill('Sag uns bis Freitag, ob du kommst und was du essen möchtest.');
+    await page.getByRole('button', { name: 'Frage hinzufügen' }).click();
+    await page.getByRole('menuitem', { name: /^Eine Auswahl/ }).click();
+    const choice = page.locator('[data-question-card]').nth(1);
+    await choice.getByLabel('Frage 2').fill('Was möchtest du essen?');
+    await choice.getByLabel('Antwort 1').fill('Pizza');
+    await choice.getByLabel('Antwort 2').fill('Salat');
+    await choice.getByLabel('Antwort 2').press('Enter');
+    await choice.getByLabel('Antwort 3').fill('Suppe');
+    await choice.getByLabel('Pflichtfrage').check();
+    await page.getByRole('button', { name: 'Frage hinzufügen' }).click();
+    await page.getByRole('menuitem', { name: /^Skala/ }).click();
+    const scale = page.locator('[data-question-card]').nth(2);
+    await scale.getByLabel('Frage 3').fill('Wie sehr freust du dich?');
+    await scale.getByLabel('Text am Anfang').fill('Kaum');
+    await scale.getByLabel('Text am Ende').fill('Riesig');
+    await page.getByText('Gespeichert', { exact: true }).first().waitFor();
+    await page.waitForFunction(async () => {
+      const data = (await (await fetch('/api/forms')).json()) as { items: { questions: { title: string }[] }[] };
+      return data.items.some((form) => form.questions.some((question) => question.title === 'Wie sehr freust du dich?'));
+    });
+    await page.getByRole('heading', { name: 'Sommerfest bei Lea' }).first().scrollIntoViewIfNeeded();
+    await shot(page, 'forms-editor');
+
+    const { items } = await api<{ items: { id: string; url: string; title: string }[] }>(page, 'GET', '/api/forms');
+    const form = items.find((entry) => entry.title === 'Sommerfest bei Lea');
+    if (!form) throw new Error('Das Formular fehlt in der Liste');
+    const guest = await context('light');
+    const visitor = await guest.newPage();
+    await visitor.goto(`${base}${form.url}`);
+    await visitor.getByRole('heading', { name: 'Sommerfest bei Lea' }).waitFor();
+    await visitor.getByLabel('Wie heißt du?').fill('Mia');
+    await visitor.getByLabel('Pizza').check();
+    await visitor.locator('.scale__step', { hasText: '4' }).click();
+    await shot(visitor, 'form-public');
+    await Promise.all([visitor.waitForURL(/gesendet/), visitor.getByRole('button', { name: 'Absenden' }).click()]);
+    await visitor.getByRole('heading', { name: 'Danke für deine Antwort' }).waitFor();
+    await visitor.getByRole('link', { name: 'Noch eine Antwort senden' }).click();
+    await visitor.getByLabel('Wie heißt du?').fill('Lea');
+    await visitor.getByLabel('Salat').check();
+    await visitor.locator('.scale__step', { hasText: '5' }).click();
+    await Promise.all([visitor.waitForURL(/gesendet/), visitor.getByRole('button', { name: 'Absenden' }).click()]);
+    await guest.close();
+
+    await page.getByRole('tab', { name: /Antworten/ }).click();
+    await page.locator('[data-total="2"]').waitFor();
+    await page.locator('[data-bar="Pizza"]').waitFor();
+    await page.getByText('Durchschnitt 4,5').waitFor();
+    await shot(page, 'forms-results');
+    await page.getByRole('tab', { name: 'Einstellungen' }).click();
+    await page.getByLabel('Nur eine Antwort pro Person').check();
+    await visible(page, 'Gespeichert');
+    await page.goto(`${base}/files/forms`);
+    await page.locator('[data-form]').first().waitFor();
+  });
+
+  await step('Sprachnotiz, Foto und Video aufnehmen', async () => {
+    const ready = () =>
+      page.waitForFunction(() => {
+        const video = document.querySelector<HTMLVideoElement>('video[data-record-preview]');
+        return Boolean(video && video.videoWidth > 0);
+      });
+    await page.goto(`${base}/files`);
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Sprachnotiz aufnehmen' }).click();
+    const voice = page.getByRole('dialog', { name: 'Sprachnotiz aufnehmen' });
+    await voice.getByRole('button', { name: 'Aufnahme starten' }).click();
+    await voice.getByRole('button', { name: 'Pause' }).waitFor();
+    await page.waitForTimeout(1500);
+    await shot(page, 'recorder');
+    await voice.getByRole('button', { name: 'Aufnahme beenden' }).click();
+    await voice.locator('audio[data-record-result]').waitFor();
+    await voice.getByLabel('Name').fill('Sprachnotiz für Mia');
+    await voice.getByRole('button', { name: 'Speichern' }).click();
+    await page
+      .getByRole('grid')
+      .getByText(/^Sprachnotiz für Mia\.(m4a|weba|ogg)$/)
+      .first()
+      .waitFor();
+
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Foto oder Video aufnehmen' }).click();
+    const camera = page.getByRole('dialog', { name: 'Foto oder Video aufnehmen' });
+    await ready();
+    await camera.getByRole('button', { name: 'Foto aufnehmen' }).click();
+    await camera.locator('img[data-record-result]').waitFor();
+    await camera.getByLabel('Name').fill('Foto von Lea');
+    await camera.getByRole('button', { name: 'Speichern' }).click();
+    await item(page, 'Foto von Lea.jpg').waitFor();
+
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Foto oder Video aufnehmen' }).click();
+    await ready();
+    await camera.getByRole('button', { name: 'Video', exact: true }).click();
+    await camera.getByRole('button', { name: 'Aufnahme starten' }).click();
+    await camera.getByRole('button', { name: 'Pause' }).waitFor();
+    await page.waitForTimeout(1500);
+    await camera.getByRole('button', { name: 'Aufnahme beenden' }).click();
+    await camera.locator('video[data-record-result]').waitFor();
+    await camera.getByLabel('Name').fill('Video von Emi');
+    await camera.getByRole('button', { name: 'Speichern' }).click();
+    await page
+      .getByRole('grid')
+      .getByText(/^Video von Emi\.(mp4|webm)$/)
+      .first()
+      .waitFor();
+  });
+
+  await step('Ordner auf einen früheren Stand zurücksetzen', async () => {
+    await page.goto(`${base}/files`);
+    const session = await api<{ user: { rootId: string } }>(page, 'GET', '/api/session');
+    const folder = (await api<{ node: { id: string } }>(page, 'POST', `/api/nodes/${session.user.rootId}/folders`, { name: 'Steuer 2026' }))
+      .node.id;
+    const file = (
+      await api<{ node: { id: string } }>(page, 'POST', `/api/nodes/${folder}/text`, { name: 'Belege.txt', content: 'Quittungen von Emi' })
+    ).node.id;
+    await page.waitForTimeout(1200);
+    const at = await page.evaluate(() => Date.now());
+    await page.waitForTimeout(1200);
+    await api(page, 'PATCH', `/api/nodes/${file}`, { name: 'Belege.txt.verschluesselt' });
+    await api(page, 'POST', `/api/nodes/${folder}/text`, { name: 'LIES MICH.txt', content: 'Zahl uns' });
+    await page.goto(`${base}/files/folder/${folder}?zuruecksetzen=${at}`);
+    const dialog = page.getByRole('dialog');
+    await dialog.locator('[data-rewind-total="2"]').waitFor();
+    await shot(page, 'rewind');
+    await dialog.getByRole('button', { name: 'Zurücksetzen', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await item(page, 'Belege.txt').waitFor();
+    await page.waitForFunction(async (id) => {
+      const data = (await (await fetch(`/api/nodes/${id}/children`)).json()) as { items: { name: string }[] };
+      return data.items.map((entry) => entry.name).join('|') === 'Belege.txt';
+    }, folder);
+  });
+
+  await step('Gerät mit auffällig vielen Änderungen anhalten und freigeben', async () => {
+    await page.goto(`${base}/files`);
+    await api(page, 'PATCH', '/api/admin/settings', { 'security.burstLimit': 20 });
+    const made = await api<{ token: string }>(page, 'POST', '/api/account/app-passwords', { name: 'Laptop im Büro' });
+    const auth = `Basic ${Buffer.from(`emi:${made.token}`).toString('base64')}`;
+    const put = (body: string) =>
+      fetch(`${base}/dav/Wachhund.txt`, { method: 'PUT', headers: { authorization: auth, 'content-type': 'text/plain' }, body });
+    if ((await put('Anfang')).status !== 201) throw new Error('WebDAV legt die Datei nicht an');
+    for (let index = 0; index < 20; index++) await put(`Verschlüsselt ${index}`);
+    const blocked = await put('Noch mehr');
+    if (blocked.status !== 403) throw new Error(`Das Gerät wurde nicht angehalten (${blocked.status})`);
+    await page.goto(`${base}/account#app-passwoerter`);
+    const entry = page.locator('[data-app-password="Laptop im Büro"][data-paused]');
+    await entry.waitFor();
+    await entry.scrollIntoViewIfNeeded();
+    await shot(page, 'device-paused');
+    await entry.getByRole('button', { name: 'Freigeben' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Freigeben' }).click();
+    await page.locator('[data-app-password="Laptop im Büro"]:not([data-paused])').waitFor();
+    if ((await put('Wieder erlaubt')).status !== 204) throw new Error('Das Gerät schreibt nach dem Freigeben nicht');
+    await api(page, 'PATCH', '/api/admin/settings', { 'security.burstLimit': 300 });
   });
 
   await step('Ankündigung für alle', async () => {

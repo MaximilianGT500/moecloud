@@ -91,7 +91,7 @@ export function field(options: {
   </div>`;
 }
 
-const hidden = (name: string, value: string) => html`<input type="hidden" name=${name} value=${value} />`;
+export const hidden = (name: string, value: string) => html`<input type="hidden" name=${name} value=${value} />`;
 
 export interface LoginView {
   csrf: string;

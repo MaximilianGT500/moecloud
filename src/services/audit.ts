@@ -1,3 +1,4 @@
+import { csvDocument, csvRow } from '../lib/csv.ts';
 import { emitHook } from '../lib/hooks.ts';
 import type { FastifyRequest } from 'fastify';
 import { all, placeholders, run } from '../lib/db.ts';
@@ -46,6 +47,8 @@ export const AUDIT_ACTIONS = [
   'settings_changed',
   'audit_exported',
   'integrity_checked',
+  'device_burst',
+  'device_resumed',
   'mail_changed',
   'sso_changed',
   'scan_changed',
@@ -99,6 +102,8 @@ export const SECURITY_ACTIONS: AuditAction[] = [
   'admin_password_set',
   'admin_2fa_reset',
   'admin_logout',
+  'device_burst',
+  'device_resumed',
 ];
 
 interface AuditRow {
@@ -193,24 +198,15 @@ export function listAudit(query: AuditQuery) {
 
 export const AUDIT_EXPORT_LIMIT = 50_000;
 
-const BOM = String.fromCharCode(0xfeff);
-const RISKY = new Set(['=', '+', '-', '@', String.fromCharCode(9), String.fromCharCode(13)]);
-
-function cell(value: unknown) {
-  let text = value === null || value === undefined ? '' : String(value);
-  if (text && RISKY.has(text[0])) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
-}
-
 export function auditCsv(query: Pick<AuditQuery, 'user' | 'actions'>, headers: string[]) {
-  const lines = [headers.map(cell).join(',')];
+  const lines = [csvRow(headers)];
   let before: number | undefined;
   let rows = 0;
   while (rows < AUDIT_EXPORT_LIMIT) {
     const page = listAudit({ ...query, before, limit: 200 });
     for (const item of page.items) {
       lines.push(
-        [
+        csvRow([
           new Date(Number(item.createdAt)).toISOString(),
           item.action,
           item.actor?.username ?? '',
@@ -218,16 +214,14 @@ export function auditCsv(query: Pick<AuditQuery, 'user' | 'actions'>, headers: s
           item.subject?.username ?? '',
           item.ip ?? '',
           item.details ? JSON.stringify(item.details) : '',
-        ]
-          .map(cell)
-          .join(',')
+        ])
       );
     }
     rows += page.items.length;
     if (!page.more || page.items.length === 0) break;
     before = Number(page.items[page.items.length - 1].id);
   }
-  return { text: `${BOM}${lines.join('\r\n')}\r\n`, rows };
+  return { text: csvDocument(lines), rows };
 }
 
 export function purgeAudit(days: number) {

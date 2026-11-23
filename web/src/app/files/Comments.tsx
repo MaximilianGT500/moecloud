@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
+import Popover from '@mui/material/Popover';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import AddReactionOutlined from '@mui/icons-material/AddReactionOutlined';
 import ChatBubbleOutlineRounded from '@mui/icons-material/ChatBubbleOutlineRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
 import { api, errorText } from '../../lib/api';
-import { formatDateTime, formatRelative } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
+import { locale, t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { c, radius } from '../../theme/tokens';
 import { UserAvatar } from '../common/bits';
@@ -68,6 +71,13 @@ function draftMention(text: string, caret: number) {
   return match ? { query: match[1].toLowerCase(), start: caret - match[1].length - 1 } : null;
 }
 
+interface Reaction {
+  emoji: string;
+  count: number;
+  mine: boolean;
+  people: string[];
+}
+
 interface Comment {
   id: string;
   text: string;
@@ -76,6 +86,129 @@ interface Comment {
   mine: boolean;
   edited: boolean;
   createdAt: number;
+  reactions?: Reaction[];
+}
+
+const REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅'];
+
+function reactionName(emoji: string) {
+  switch (emoji) {
+    case '👍':
+      return t('Daumen hoch');
+    case '❤️':
+      return t('Herz');
+    case '😂':
+      return t('Lachen');
+    case '🎉':
+      return t('Feiern');
+    case '😮':
+      return t('Staunen');
+    case '😢':
+      return t('Traurig');
+    case '👀':
+      return t('Schau ich mir an');
+    case '✅':
+      return t('Erledigt');
+    default:
+      return emoji;
+  }
+}
+
+function reactedBy(entry: Reaction) {
+  const names = [...(entry.mine ? [t('Du')] : []), ...entry.people];
+  const rest = entry.count - names.length;
+  if (rest > 0) names.push(tn(rest, 'eine weitere Person', '{count} weitere'));
+  return `${reactionName(entry.emoji)}: ${new Intl.ListFormat(locale, { type: 'conjunction' }).format(names)}`;
+}
+
+function Reactions({ item, comment, onChange }: { item: Item; comment: Comment; onChange: (next: Comment) => void }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const list = comment.reactions ?? [];
+
+  const react = async (emoji: string, on: boolean) => {
+    setAnchor(null);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await api.post<{ comment: Comment }>(`/api/nodes/${item.id}/comments/${comment.id}/reactions`, { emoji, on });
+      onChange(result.comment);
+    } catch (error) {
+      toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Box data-reactions={comment.id} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+      {list.map((entry) => (
+        <Tooltip key={entry.emoji} title={reactedBy(entry)}>
+          <ButtonBase
+            data-reaction={entry.emoji}
+            aria-pressed={entry.mine}
+            aria-label={tn(entry.count, '{reaction}, eine Person', '{reaction}, {count} Personen', { reaction: reactionName(entry.emoji) })}
+            onClick={() => void react(entry.emoji, !entry.mine)}
+            sx={{
+              gap: 0.5,
+              height: 28,
+              px: 1,
+              borderRadius: `${radius.full}px`,
+              border: 1,
+              borderColor: entry.mine ? c.primary : c.outlineVariant,
+              bgcolor: entry.mine ? c.primaryContainer : 'transparent',
+              color: entry.mine ? c.onPrimaryContainer : c.onSurfaceVariant,
+              fontSize: 15,
+              '&:hover': { bgcolor: entry.mine ? c.primaryContainer : c.surfaceContainerHigh },
+              '&.Mui-focusVisible': { outline: `2px solid ${c.primary}`, outlineOffset: 2 },
+            }}
+          >
+            <span aria-hidden="true">{entry.emoji}</span>
+            <Typography component="span" variant="caption" sx={{ fontWeight: 600 }}>
+              {formatNumber(entry.count)}
+            </Typography>
+          </ButtonBase>
+        </Tooltip>
+      ))}
+      <Tooltip title={t('Reagieren')}>
+        <IconButton
+          size="small"
+          aria-label={t('Reagieren')}
+          aria-haspopup="true"
+          onClick={(event) => setAnchor(event.currentTarget)}
+          sx={{ color: c.onSurfaceVariant, width: 28, height: 28 }}
+        >
+          <AddReactionOutlined sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { borderRadius: `${radius.full}px` } } }}
+      >
+        <Box role="group" aria-label={t('Reaktion wählen')} sx={{ display: 'flex', gap: 0.25, p: 0.5 }}>
+          {REACTIONS.map((emoji) => {
+            const mine = list.some((entry) => entry.emoji === emoji && entry.mine);
+            return (
+              <Tooltip key={emoji} title={reactionName(emoji)}>
+                <IconButton
+                  aria-label={reactionName(emoji)}
+                  aria-pressed={mine}
+                  onClick={() => void react(emoji, !mine)}
+                  sx={{ width: 40, height: 40, fontSize: 22, bgcolor: mine ? c.primaryContainer : undefined }}
+                >
+                  <span aria-hidden="true">{emoji}</span>
+                </IconButton>
+              </Tooltip>
+            );
+          })}
+        </Box>
+      </Popover>
+    </Box>
+  );
 }
 
 export function Comments({ item }: { item: Item }) {
@@ -201,33 +334,38 @@ export function Comments({ item }: { item: Item }) {
                 avatar={comment.author?.avatar}
                 userId={comment.author?.id}
               />
-              <Box
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  px: 1.5,
-                  py: 1,
-                  borderRadius: `4px ${radius.md}px ${radius.md}px ${radius.md}px`,
-                  bgcolor: comment.mine ? c.secondaryContainer : c.surfaceContainerHigh,
-                  color: comment.mine ? c.onSecondaryContainer : c.onSurface,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                  <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                    {comment.author?.name ?? t('Gelöschtes Konto')}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    component="time"
-                    title={formatDateTime(comment.createdAt)}
-                    sx={{ opacity: 0.75, flex: 'none' }}
-                  >
-                    {formatRelative(comment.createdAt)}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: `4px ${radius.md}px ${radius.md}px ${radius.md}px`,
+                    bgcolor: comment.mine ? c.secondaryContainer : c.surfaceContainerHigh,
+                    color: comment.mine ? c.onSecondaryContainer : c.onSurface,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                    <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                      {comment.author?.name ?? t('Gelöschtes Konto')}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      component="time"
+                      title={formatDateTime(comment.createdAt)}
+                      sx={{ opacity: 0.75, flex: 'none' }}
+                    >
+                      {formatRelative(comment.createdAt)}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', mt: 0.25 }}>
+                    <CommentText text={comment.text} mentions={comment.mentions ?? []} />
                   </Typography>
                 </Box>
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', mt: 0.25 }}>
-                  <CommentText text={comment.text} mentions={comment.mentions ?? []} />
-                </Typography>
+                <Reactions
+                  item={item}
+                  comment={comment}
+                  onChange={(next) => setState({ id: item.id, list: (list ?? []).map((entry) => (entry.id === next.id ? next : entry)) })}
+                />
               </Box>
               {(comment.mine || item.role === 'owner') && (
                 <Tooltip title={t('Löschen')}>

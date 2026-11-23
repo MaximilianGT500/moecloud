@@ -210,3 +210,61 @@ describe('Vorlagen', () => {
     assert.equal((await emi.json('PUT', '/api/templates', { folderId: null })).statusCode, 200);
   });
 });
+
+describe('Reaktionen auf Kommentare', () => {
+  type Reaction = { emoji: string; count: number; mine: boolean; people: string[] };
+  const react = (client: Client, comment: string, emoji: string, on = true, node = file) =>
+    client.json('POST', `/api/nodes/${node}/comments/${comment}/reactions`, { emoji, on });
+  const reactionsOf = async (client: Client, comment: string) =>
+    ((await client.get(`/api/nodes/${file}/comments`)).json().items as { id: string; reactions: Reaction[] }[]).find(
+      (item) => item.id === comment
+    )!.reactions;
+
+  before(async () => {
+    const leaId = (await lea.get('/api/session')).json().user.id;
+    const granted = await emi.json('POST', `/api/nodes/${folder}/grants`, { userId: leaId, permission: 'view' });
+    assert.equal(granted.statusCode, 200, granted.body);
+  });
+
+  it('zählt Reaktionen pro Person und zeigt, wer reagiert hat', async () => {
+    const comment = (await mia.json('POST', `/api/nodes/${file}/comments`, { text: 'Fertig für heute' })).json().comment.id as string;
+    const first = await react(emi, comment, '👍');
+    assert.equal(first.statusCode, 200, first.body);
+    assert.deepEqual(first.json().comment.reactions, [{ emoji: '👍', count: 1, mine: true, people: [] }]);
+    assert.equal((await react(emi, comment, '👍')).json().comment.reactions[0].count, 1);
+    await react(mia, comment, '👍');
+    await react(mia, comment, '❤️');
+    await react(lea, comment, '🎉');
+    assert.deepEqual(await reactionsOf(mia, comment), [
+      { emoji: '👍', count: 2, mine: true, people: ['Emi'] },
+      { emoji: '❤️', count: 1, mine: true, people: [] },
+      { emoji: '🎉', count: 1, mine: false, people: ['Lea'] },
+    ]);
+    assert.deepEqual(await reactionsOf(emi, comment), [
+      { emoji: '👍', count: 2, mine: true, people: ['Mia'] },
+      { emoji: '❤️', count: 1, mine: false, people: ['Mia'] },
+      { emoji: '🎉', count: 1, mine: false, people: ['Lea'] },
+    ]);
+    const removed = await react(mia, comment, '👍', false);
+    assert.deepEqual(removed.json().comment.reactions[0], { emoji: '👍', count: 1, mine: false, people: ['Emi'] });
+    assert.equal((await react(mia, comment, '👍', false)).statusCode, 200);
+    assert.equal((await notes(mia, 'comment')).filter((item) => /reagiert/.test(item.title)).length, 0);
+  });
+
+  it('nimmt nur bekannte Reaktionen und nur mit Zugriff an', async () => {
+    const comment = (await emi.json('POST', `/api/nodes/${file}/comments`, { text: 'Noch eine Frage' })).json().comment.id as string;
+    for (const emoji of ['💩', 'A', '', '👍👍', '<b>']) {
+      assert.equal((await react(mia, comment, emoji)).statusCode, 400, emoji);
+    }
+    assert.equal((await mia.json('POST', `/api/nodes/${file}/comments/${comment}/reactions`, { emoji: '👍' })).statusCode, 400);
+    const emily = await login(app, 'emily', 'emily-passwort-123');
+    assert.equal((await react(emily, comment, '👍')).statusCode, 404);
+    const other = (await emi.upload(folder, 'Andere.txt', Buffer.from('x'), 4096)).json().node.id as string;
+    assert.equal((await react(emi, comment, '👍', true, other)).statusCode, 404);
+    assert.equal((await react(emi, 'gibt-es-nicht', '👍')).statusCode, 404);
+    await react(lea, comment, '👀');
+    assert.equal(value<number>('SELECT COUNT(*) FROM comment_reactions WHERE comment_id = ?', comment), 1);
+    await emi.json('DELETE', `/api/nodes/${file}/comments/${comment}`);
+    assert.equal(value<number>('SELECT COUNT(*) FROM comment_reactions WHERE comment_id = ?', comment), 0);
+  });
+});

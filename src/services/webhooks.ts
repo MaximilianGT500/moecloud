@@ -15,6 +15,7 @@ export const WEBHOOK_EVENTS = [
   'backup_failed',
   'disk_low',
   'files_damaged',
+  'changes_burst',
   'update',
   'login_failed',
   'plugin_stopped',

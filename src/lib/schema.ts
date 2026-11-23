@@ -660,6 +660,47 @@ const MIGRATIONS = [
   UPDATE app_passwords SET scope = 'admin' WHERE scope = 'full' AND user_id IN (SELECT id FROM users WHERE role = 'admin');
   ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  CREATE TABLE forms (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    questions TEXT NOT NULL DEFAULT '[]',
+    token TEXT NOT NULL UNIQUE,
+    accepting INTEGER NOT NULL DEFAULT 1,
+    closes_at INTEGER,
+    max_responses INTEGER,
+    once INTEGER NOT NULL DEFAULT 0,
+    signed_in INTEGER NOT NULL DEFAULT 0,
+    named INTEGER NOT NULL DEFAULT 0,
+    notify INTEGER NOT NULL DEFAULT 1,
+    confirmation TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX forms_owner ON forms(owner_id, updated_at);
+  CREATE TABLE form_responses (
+    id TEXT PRIMARY KEY,
+    form_id TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    respondent TEXT,
+    answers TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX form_responses_form ON form_responses(form_id, created_at);
+  CREATE INDEX form_responses_respondent ON form_responses(form_id, respondent);
+  CREATE TABLE comment_reactions (
+    comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (comment_id, user_id, emoji)
+  );
+  CREATE INDEX comment_reactions_user ON comment_reactions(user_id);
+  ALTER TABLE app_passwords ADD COLUMN paused_at INTEGER;
+  ALTER TABLE app_passwords ADD COLUMN paused_reason TEXT;
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

@@ -1,3 +1,4 @@
+import { resetBurst } from '../services/ransomware.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
@@ -26,7 +27,7 @@ import {
 import { deliver, mailReady } from '../services/mail.ts';
 import { oidcEnabled, unlink } from '../services/oidc.ts';
 import { clearNotifications, listNotifications, markRead, notify, unreadCount } from '../services/notify.ts';
-import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword } from '../services/apppasswords.ts';
+import { createAppPassword, deleteAppPassword, listAppPasswords, presentAppPassword, resumeAppPassword } from '../services/apppasswords.ts';
 import { deletePasskey, listPasskeys, presentPasskey, register, registrationOptions, renamePasskey } from '../services/passkeys.ts';
 import { deleteOwnAccount, selfDeleteAllowed } from '../services/accounts.ts';
 import { forgetOtherDevices } from '../services/devices.ts';
@@ -424,6 +425,14 @@ export async function accountRoutes(app: FastifyInstance) {
     deleteAppPassword(me(request), request.params.id);
     audit('app_password_removed', { actor: me(request).id, request });
     return { ok: true };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/account/app-passwords/:id/resume', async (request) => {
+    const user = me(request);
+    const row = resumeAppPassword(user, request.params.id);
+    resetBurst(row.id);
+    audit('device_resumed', { actor: user.id, request, details: { appPassword: row.name } });
+    return { item: presentAppPassword(row) };
   });
 
   app.delete<{ Params: { id: string } }>('/api/account/sessions/:id', async (request) => {

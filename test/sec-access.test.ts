@@ -38,6 +38,8 @@ const OPEN_PAGES = new Set([
   'GET /datenschutz',
   'GET /nutzungsbedingungen',
   'POST /nutzungsbedingungen',
+  'GET /f/:token',
+  'POST /f/:token',
   'GET /setup',
   'GET /login',
   'POST /login',

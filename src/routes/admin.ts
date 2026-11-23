@@ -147,6 +147,7 @@ const settingsSchema = z
     'storage.versions': z.number().int().min(0).max(100),
     'storage.versionDays': z.number().int().min(0).max(3650),
     'share.links': z.boolean(),
+    'forms.enabled': z.boolean(),
     'share.users': z.boolean(),
     'share.requirePassword': z.boolean(),
     'share.maxDays': z.number().int().min(0).max(3650),
@@ -172,6 +173,10 @@ const settingsSchema = z
     'push.enabled': z.boolean(),
     'push.private': z.boolean(),
     'integrity.schedule': z.enum(['off', 'weekly', 'monthly']),
+    'security.ransomware': z.boolean(),
+    'security.burst': z.boolean(),
+    'security.burstPause': z.boolean(),
+    'security.burstLimit': z.number().int().min(20, 'Mindestens 20').max(10_000, 'Höchstens 10.000'),
     'security.contact': z
       .string()
       .trim()

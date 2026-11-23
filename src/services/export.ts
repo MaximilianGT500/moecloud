@@ -1,3 +1,4 @@
+import { formsOfUser } from './forms.ts';
 import type { Readable } from 'node:stream';
 import { all } from '../lib/db.ts';
 import { type NodeRow } from './nodes.ts';
@@ -177,6 +178,11 @@ export function accountData(user: UserRow) {
        WHERE c.user_id = ? ORDER BY c.created_at`,
       user.id
     ).map((row) => ({ file: path(row.node_id) ?? row.name, text: row.text, createdAt: iso(row.created_at) })),
+    reactions: all<{ node_id: string; name: string; emoji: string; created_at: number }>(
+      `SELECT c.node_id, n.name, r.emoji, r.created_at FROM comment_reactions r JOIN comments c ON c.id = r.comment_id
+       JOIN nodes n ON n.id = c.node_id WHERE r.user_id = ? ORDER BY r.created_at`,
+      user.id
+    ).map((row) => ({ file: path(row.node_id) ?? row.name, emoji: row.emoji, createdAt: iso(row.created_at) })),
     searches: listSearches(user).map((search) => ({ name: search.name, query: search.query })),
     passkeys: all<{ name: string; created_at: number; last_used_at: number | null }>(
       'SELECT name, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY created_at',
@@ -186,6 +192,13 @@ export function accountData(user: UserRow) {
       'SELECT name, created_at, last_used_at FROM app_passwords WHERE user_id = ? ORDER BY created_at',
       user.id
     ).map((row) => ({ name: row.name, createdAt: iso(row.created_at), lastUsedAt: iso(row.last_used_at) })),
+    forms: formsOfUser(user.id).map((form) => ({
+      title: form.title,
+      description: form.description,
+      questions: form.questions,
+      createdAt: iso(form.createdAt),
+      responses: form.answers.map((response) => ({ createdAt: iso(response.createdAt), answers: response.answers })),
+    })),
   };
 }
 

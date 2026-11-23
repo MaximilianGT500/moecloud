@@ -48,6 +48,7 @@ export function userBoot(request: FastifyRequest) {
     webdav: `${baseUrl(request)}/dav/`,
     setup2fa: pending,
     plugins: pluginBoot(pending ? null : user, request.lang),
+    forms: settings.get('forms.enabled') && user.role !== 'guest',
   };
 }
 

@@ -226,6 +226,29 @@ export function securityChecks(request: FastifyRequest): Check[] {
     add('scan', 'hint', t(lang, 'Der Virenscan ist aus'), t(lang, 'Mit ClamAV prüft MoeCloud jede Datei beim Hochladen.'), '/admin/scan');
   }
 
+  const shield = settings.get('security.ransomware');
+  const burst = settings.get('security.burst');
+  if (shield && burst) {
+    add(
+      'ransomware',
+      'ok',
+      t(lang, 'Der Schutz vor Erpressungstrojanern ist an'),
+      settings.get('security.burstPause')
+        ? t(lang, 'Bekannte Endungen weist MoeCloud ab, und Geräte, die auffällig viele Dateien ändern, hält es an.')
+        : t(lang, 'Bekannte Endungen weist MoeCloud ab und meldet Geräte, die auffällig viele Dateien ändern.')
+    );
+  } else {
+    add(
+      'ransomware',
+      'hint',
+      shield ? t(lang, 'Auffällig viele Änderungen bleiben unbemerkt') : t(lang, 'Dateien von Erpressungstrojanern werden angenommen'),
+      t(
+        lang,
+        'Schalte unten den Schutz vor Erpressungstrojanern ganz ein. Er erkennt typische Dateien und Geräte, die in kurzer Zeit sehr viel ändern.'
+      )
+    );
+  }
+
   const last = Number(settings.get('backup.last')) || 0;
   if (!settings.get('backup.enabled')) {
     add(
@@ -446,6 +469,12 @@ export function securityReport(request: FastifyRequest) {
     lockouts: lockouts(),
     contact: settings.get('security.contact'),
     networks: adminNetworks().entries.join('\n'),
+    ransomware: {
+      names: settings.get('security.ransomware'),
+      burst: settings.get('security.burst'),
+      pause: settings.get('security.burstPause'),
+      limit: settings.get('security.burstLimit'),
+    },
     address: plainAddress(request.ip),
     stats: {
       sessions: value<number>('SELECT COUNT(*) FROM sessions WHERE expires_at > ?', now) ?? 0,

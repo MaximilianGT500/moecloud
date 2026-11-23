@@ -23,6 +23,8 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import ScheduleRounded from '@mui/icons-material/ScheduleRounded';
 import StickyNote2Outlined from '@mui/icons-material/StickyNote2Outlined';
 import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
+import AssignmentOutlined from '@mui/icons-material/AssignmentOutlined';
+import AssignmentRounded from '@mui/icons-material/AssignmentRounded';
 import LibraryMusicOutlined from '@mui/icons-material/LibraryMusicOutlined';
 import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
 import StarOutlineRounded from '@mui/icons-material/StarOutlineRounded';
@@ -66,6 +68,7 @@ export type Destination =
   | 'photos'
   | 'recent'
   | 'notes'
+  | 'forms'
   | 'music'
   | 'starred'
   | 'tags'
@@ -135,6 +138,17 @@ function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
           icon: <LibraryMusicOutlined />,
           activeIcon: <LibraryMusicRounded />,
         },
+        ...(boot().forms
+          ? [
+              {
+                key: 'forms' as const,
+                href: '/files/forms',
+                label: t('Formulare'),
+                icon: <AssignmentOutlined />,
+                activeIcon: <AssignmentRounded />,
+              },
+            ]
+          : []),
       ];
   return [
     HOME,

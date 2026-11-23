@@ -1,3 +1,4 @@
+import { devicePaused, noteDeviceChange } from '../services/ransomware.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Readable } from 'node:stream';
 import { randomUUID } from 'node:crypto';
@@ -240,9 +241,13 @@ async function handle(request: FastifyRequest, reply: FastifyReply) {
   if (auth.readOnly && !READ_METHODS.has(request.method)) {
     return reply.code(403).type('text/plain; charset=utf-8').send(t(request.lang, 'Dieses App-Passwort darf nur lesen'));
   }
+  const paused = () => reply.code(403).type('text/plain; charset=utf-8').send(t(request.lang, devicePaused().message));
+  if (auth.paused && !READ_METHODS.has(request.method)) return paused();
   const segments = segmentsOf(request.url);
   const mounts = mountsOf(user, auth.shared);
   const target = resolve(user, segments, mounts);
+  const risky = request.method === 'DELETE' || request.method === 'MOVE' || (request.method === 'PUT' && Boolean(target.node));
+  if (risky && noteDeviceChange(user, auth.id) === 'paused') return paused();
 
   switch (request.method) {
     case 'PROPFIND': {

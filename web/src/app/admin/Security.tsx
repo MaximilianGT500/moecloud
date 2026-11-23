@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
@@ -43,6 +45,7 @@ interface Report {
   contact: string;
   networks: string;
   address: string;
+  ransomware: { names: boolean; burst: boolean; pause: boolean; limit: number };
   stats: { sessions: number; appPasswords: number; failedLogins: number };
 }
 
@@ -292,6 +295,91 @@ function IntegrityCard({ onDone }: { onDone: () => void }) {
   );
 }
 
+function RansomwareCard({ value, onSaved }: { value: Report['ransomware']; onSaved: () => void }) {
+  const [state, setState] = useState(value);
+  const [limit, setLimit] = useState(String(value.limit));
+
+  const save = async (patch: Partial<Report['ransomware']>) => {
+    const before = state;
+    const next = { ...state, ...patch };
+    setState(next);
+    try {
+      await api.patch('/api/admin/settings', {
+        'security.ransomware': next.names,
+        'security.burst': next.burst,
+        'security.burstPause': next.pause,
+        'security.burstLimit': next.limit,
+      });
+      toast(t('Gespeichert'));
+      onSaved();
+    } catch (error) {
+      setState(before);
+      setLimit(String(before.limit));
+      toast(errorText(error));
+    }
+  };
+
+  const toggle = (key: 'names' | 'burst' | 'pause', label: string, text: string, disabled = false) => (
+    <FormControlLabel
+      sx={{ m: 0, alignItems: 'flex-start', gap: 1.5 }}
+      disabled={disabled}
+      control={<Switch checked={state[key]} onChange={(event) => void save({ [key]: event.target.checked })} />}
+      label={
+        <Box sx={{ pt: 0.75 }}>
+          <Typography variant="body1">{label}</Typography>
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+            {text}
+          </Typography>
+        </Box>
+      }
+    />
+  );
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }} data-ransomware>
+      {toggle(
+        'names',
+        t('Bekannte Erpressungstrojaner abweisen'),
+        t(
+          'Dateien mit typischen Endungen wie .locky oder .wncry und bekannte Erpresserbriefe nimmt MoeCloud nicht an, auch nicht beim Umbenennen.'
+        )
+      )}
+      {toggle(
+        'burst',
+        t('Auffällig viele Änderungen erkennen'),
+        t(
+          'Ändert, benennt oder löscht ein Gerät über WebDAV in zehn Minuten sehr viele vorhandene Dateien, bekommt die Person eine Nachricht, auch per E-Mail.'
+        )
+      )}
+      {toggle(
+        'pause',
+        t('Das Gerät dabei anhalten'),
+        t('Das App-Passwort kann dann nur noch lesen, bis die Person es unter Konto › App-Passwörter wieder freigibt.'),
+        !state.burst
+      )}
+      <TextField
+        type="number"
+        label={t('Ab so vielen Änderungen in zehn Minuten')}
+        value={limit}
+        disabled={!state.burst}
+        onChange={(event) => setLimit(event.target.value)}
+        onBlur={() => {
+          const number = Math.trunc(Number(limit));
+          if (!Number.isFinite(number) || number < 20 || number > 10000) {
+            setLimit(String(state.limit));
+            toast(t('Zwischen 20 und 10.000'));
+            return;
+          }
+          if (number !== state.limit) void save({ limit: number });
+        }}
+        helperText={t('Neue Dateien zählen nicht mit, nur Überschreiben, Umbenennen, Verschieben und Löschen.')}
+        slotProps={{ htmlInput: { min: 20, max: 10000 } }}
+        sx={{ maxWidth: 360 }}
+      />
+    </Box>
+  );
+}
+
 export function SecuritySection() {
   const [report, setReport] = useState<Report | null>(null);
   const [contact, setContact] = useState('');
@@ -416,6 +504,15 @@ export function SecuritySection() {
             ))}
           </Box>
         )}
+      </Section>
+
+      <Section
+        title={t('Schutz vor Erpressungstrojanern')}
+        description={t(
+          'Ein Erpressungstrojaner auf einem Gerät verschlüsselt Dateien, und über WebDAV landet das in der Cloud. MoeCloud erkennt typische Spuren und hält das Gerät an. Was schon passiert ist, holst du mit Auf früheren Stand zurücksetzen im Ordner zurück.'
+        )}
+      >
+        <RansomwareCard value={report.ransomware} onSaved={() => void load()} />
       </Section>
 
       <Section

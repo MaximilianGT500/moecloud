@@ -515,6 +515,12 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           label={t('Passwort für Links verlangen')}
         />
         <Toggle
+          checked={Boolean(draft['forms.enabled'])}
+          onChange={(value) => set('forms.enabled', value)}
+          label={t('Formulare')}
+          hint={t('Mitglieder legen Umfragen und Anmeldungen an, die jeder mit dem Link ausfüllen kann.')}
+        />
+        <Toggle
           checked={Boolean(draft['share.stripLocation'])}
           onChange={(value) => set('share.stripLocation', value)}
           label={t('Standort aus Fotos in Links entfernen')}

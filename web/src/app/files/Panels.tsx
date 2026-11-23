@@ -32,6 +32,9 @@ import SlideshowRounded from '@mui/icons-material/SlideshowRounded';
 import TableChartRounded from '@mui/icons-material/TableChartRounded';
 import CloudDownloadRounded from '@mui/icons-material/CloudDownloadRounded';
 import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
+import MicRounded from '@mui/icons-material/MicRounded';
+import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
+import ScreenShareRounded from '@mui/icons-material/ScreenShareRounded';
 import { AnimatePresence, m } from 'motion/react';
 import { formatBytes } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
@@ -39,6 +42,7 @@ import { useUploads, type Uploader } from '../../lib/upload';
 import { c, elevation, mix, radius, srOnly } from '../../theme/tokens';
 import { DRAG_TYPE } from './Items';
 import type { Crumb } from './model';
+import { canRecord, canRecordScreen, type RecordMode } from './record';
 
 export function Breadcrumbs({
   crumbs,
@@ -211,6 +215,7 @@ export function useNewMenu({
   onOffice,
   onImport,
   onDavImport,
+  onRecord,
   disabled,
 }: {
   onUploadFiles: () => void;
@@ -222,6 +227,7 @@ export function useNewMenu({
   onOffice?: (kind: 'document' | 'spreadsheet' | 'presentation') => void;
   onImport?: () => void;
   onDavImport?: () => void;
+  onRecord?: (mode: RecordMode) => void;
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -251,6 +257,10 @@ export function useNewMenu({
       {onTemplate && item(<PostAddRounded />, t('Neu aus Vorlage'), onTemplate)}
       {onImport && item(<CloudDownloadRounded />, t('Aus dem Internet laden'), onImport)}
       {onDavImport && item(<CloudSyncRounded />, t('Per WebDAV importieren'), onDavImport)}
+      {onRecord && canRecord() && <Divider sx={{ my: 0.5 }} />}
+      {onRecord && canRecord() && item(<MicRounded />, t('Sprachnotiz aufnehmen'), () => onRecord('audio'))}
+      {onRecord && canRecord() && item(<PhotoCameraRounded />, t('Foto oder Video aufnehmen'), () => onRecord('camera'))}
+      {onRecord && canRecordScreen() && item(<ScreenShareRounded />, t('Bildschirm aufnehmen'), () => onRecord('screen'))}
     </Menu>
   );
   return {

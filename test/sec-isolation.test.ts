@@ -178,6 +178,12 @@ const writes: Case[] = [
   { name: 'Beschreibung', method: 'PUT', url: () => `/api/nodes/${x.file}/description`, body: () => ({ text: 'fremd' }) },
   { name: 'Favorit', method: 'PUT', url: () => `/api/nodes/${x.file}/star`, body: () => ({ starred: true }) },
   { name: 'Kommentar', method: 'POST', url: () => `/api/nodes/${x.file}/comments`, body: () => ({ text: 'Hallo' }) },
+  {
+    name: 'Reaktion',
+    method: 'POST',
+    url: () => `/api/nodes/${x.file}/comments/${x.comment}/reactions`,
+    body: () => ({ emoji: '👍', on: true }),
+  },
   { name: 'Kommentar löschen', method: 'DELETE', url: () => `/api/nodes/${x.file}/comments/${x.comment}` },
   { name: 'Erinnerung', method: 'PUT', url: () => `/api/nodes/${x.file}/reminder`, body: () => ({ dueAt: Date.now() + 86_400_000 }) },
   { name: 'Erinnerung entfernen', method: 'DELETE', url: () => `/api/nodes/${x.file}/reminder`, quiet: 'removed' },

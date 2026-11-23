@@ -8,7 +8,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 
 | Version | Sicherheitsupdates |
 | ------- | ------------------ |
-| 1.7.x   | Ja                 |
+| 1.8.x   | Ja                 |
 | Älter   | Nein               |
 
 ## Eine Lücke melden
@@ -43,6 +43,7 @@ Du bekommst eine Rückmeldung, sobald die Meldung geprüft ist. Bestätigt sich 
 - Schalte den [Virenscan](README.md#virenscan-mit-clamav) ein, sobald andere Dateien hochladen.
 - Lass die [Versionsprüfung](README.md#versionsprüfung) an und spiel Updates zeitnah ein.
 - Bewahre [Sicherungen](README.md#datensicherung) so sicher auf wie den Server selbst. Sie enthalten Passwort-Hashes und die Schlüssel der Authenticator-Apps.
+- Lass den Schutz vor Erpressungstrojanern unter **Admin › Sicherheit** an, samt Anhalten von Geräten. Kommt eine Nachricht über auffällig viele Änderungen, gib das Gerät erst frei, wenn du weißt, woher sie kamen, und setz den Ordner sonst auf den Stand davor zurück.
 - Lass unter **Admin › Sicherheit** regelmäßig die gespeicherten Dateien prüfen. So merkst du, wenn ein Datenträger Dateien verliert oder verändert, solange die Sicherung sie noch hat.
 - Schalte nur [Plugins](README.md#plugins) ein, deren Code du gelesen hast oder deren Quelle du vertraust. Sie laufen mit allen Rechten von MoeCloud. Lass `PLUGIN_UPLOAD` aus, solange du Plugins nicht im Browser einspielen musst.
 - Schau ab und zu ins Protokoll unter **Admin › Protokoll**, dort stehen auch fehlgeschlagene Anmeldungen.
@@ -57,6 +58,8 @@ Zu jeder Version läuft eine eigene Testreihe für die Sicherheit (`test/sec-*.t
 - Die Version steht in `/healthz` und im Quelltext geteilter Seiten, auch für Unangemeldete.
 - Sperren nach Fehlversuchen und die Beschränkung der Verwaltung auf bestimmte Netze stützen sich auf die Adresse, die MoeCloud sieht. Geräte, denen MoeCloud die Angaben eines Proxys glaubt, in der Voreinstellung der eigene Rechner und das lokale Netz, können eine andere Adresse angeben. Wer das ausschließen will, trägt in `TRUST_PROXY` nur die Adresse des eigenen Proxys ein.
 - Ein fälliger Passwortwechsel gilt für die Anmeldung im Browser. App-Passwörter des Kontos arbeiten weiter, bis du sie widerrufst.
+- Der Schutz vor Erpressungstrojanern erkennt bekannte Endungen und Erpresserbriefe und zählt Änderungen pro App-Passwort. Ein Trojaner mit neuer Endung, einer, der nur wenige Dateien auf einmal ändert, oder einer, der im Browser angemeldet ist, fällt damit nicht auf. Er ersetzt keine Sicherung, und **Auf früheren Stand zurücksetzen** holt nur zurück, wovon es noch eine Version oder einen Eintrag im Papierkorb gibt.
+- Wer ein Formular ausfüllen darf, entscheidet allein der Link. Er verrät nichts über deine Dateien, aber jeder, der ihn kennt, kann antworten. Antworten ohne Konto lassen sich nicht einer Person zuordnen.
 - Links nur zum Ansehen verhindern das Herunterladen in der Oberfläche. Wer eine Datei ansehen darf, kann ihren Inhalt technisch immer auch speichern.
 
 Deine Dateien liegen unverschlüsselt im Datenordner. Wer Zugriff auf den Server oder eine Sicherung hat, kann sie lesen. Das ist eine bewusste Grenze von MoeCloud und keine Lücke. Gleiches gilt für Schadsoftware, die ClamAV nicht erkennt: Das meldest du am besten direkt an [ClamAV](https://www.clamav.net).

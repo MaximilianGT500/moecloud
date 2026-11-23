@@ -1,5 +1,5 @@
 import { deviceOf } from '../lib/agent.ts';
-import { all, placeholders, run, value } from '../lib/db.ts';
+import { all, one, placeholders, run, value } from '../lib/db.ts';
 import { publish } from '../lib/events.ts';
 import { longDate, sizeIn, t, type Lang } from '../lib/i18n.ts';
 import { log } from '../lib/log.ts';
@@ -16,6 +16,7 @@ export type NotifyKind =
   | 'team_storage'
   | 'automation'
   | 'request_upload'
+  | 'form_response'
   | 'comment'
   | 'mention'
   | 'reminder'
@@ -30,6 +31,7 @@ export type NotifyKind =
   | 'dav_import_failed'
   | 'login_new'
   | 'account_change'
+  | 'device_burst'
   | 'cleanup'
   | 'account_expiring'
   | 'lock_removed'
@@ -46,6 +48,7 @@ export type NotifyKind =
   | 'admin_backup'
   | 'admin_disk'
   | 'admin_integrity'
+  | 'admin_burst'
   | 'admin_update'
   | 'admin_logins'
   | 'admin_plugin';
@@ -133,6 +136,28 @@ const KINDS: Record<NotifyKind, Kind> = {
     text: (lang, p) => t(lang, 'Du findest sie im Ordner „{folder}“.', p),
     pref: 'mailUploads',
     action: 'Zum Ordner',
+  },
+  device_burst: {
+    urgent: true,
+    title: (lang, p) => (Number(p.paused) ? t(lang, '„{name}“ ist angehalten', p) : t(lang, 'Auffällig viele Änderungen über „{name}“', p)),
+    text: (lang, p) =>
+      Number(p.paused)
+        ? t(
+            lang,
+            'Über dieses App-Passwort kamen in wenigen Minuten {count} Änderungen. Bis du es wieder freigibst, kann es nur noch lesen. Warst du das nicht, setz deine Dateien auf den Stand davor zurück.',
+            p
+          )
+        : t(
+            lang,
+            'Über dieses App-Passwort kamen in wenigen Minuten {count} Änderungen. Warst du das nicht, widerruf es und setz deine Dateien auf den Stand davor zurück.',
+            p
+          ),
+    action: 'Ansehen',
+  },
+  form_response: {
+    title: (lang, p) => many(lang, Number(p.count), 'Eine neue Antwort auf „{title}“', '{count} neue Antworten auf „{title}“', p),
+    pref: 'mailUploads',
+    action: 'Antworten ansehen',
   },
   comment: {
     title: (lang, p) => t(lang, '{by} hat „{name}“ kommentiert', p),
@@ -360,6 +385,16 @@ const KINDS: Record<NotifyKind, Kind> = {
     action: 'Zur Übersicht',
     event: 'disk_low',
   },
+  admin_burst: {
+    urgent: true,
+    title: (lang, p) =>
+      Number(p.paused) ? t(lang, 'Ein Gerät von {user} wurde angehalten', p) : t(lang, 'Auffällig viele Änderungen bei {user}', p),
+    text: (lang, p) =>
+      t(lang, 'Über das App-Passwort „{name}“ kamen in wenigen Minuten {count} Änderungen, Umbenennungen oder Löschungen.', p),
+    pref: 'mailAdmin',
+    action: 'Zum Protokoll',
+    event: 'changes_burst',
+  },
   admin_integrity: {
     urgent: true,
     title: (lang) => t(lang, 'Bei der Prüfung der Dateien ist etwas aufgefallen'),
@@ -508,6 +543,26 @@ async function mail(user: UserRow, kind: NotifyKind, params: Params, url: string
   }
 }
 
+export function notifyMerged(userId: number, kind: NotifyKind, params: Params, url: string, windowMs = 60 * 60 * 1000) {
+  const now = Date.now();
+  const open = one<{ id: number; params: string | null }>(
+    'SELECT id, params FROM notifications WHERE user_id = ? AND kind = ? AND url = ? AND read_at IS NULL AND created_at > ? ORDER BY id DESC LIMIT 1',
+    userId,
+    kind,
+    url,
+    now - windowMs
+  );
+  if (!open) return notify(userId, kind, { ...params, count: 1 }, url);
+  const previous = open.params ? (JSON.parse(open.params) as Params) : {};
+  run(
+    'UPDATE notifications SET params = ?, created_at = ? WHERE id = ?',
+    JSON.stringify({ ...previous, ...params, count: Number(previous.count ?? 1) + 1 }),
+    now,
+    open.id
+  );
+  publish([userId], 'notification', { id: open.id, unread: unreadCount(userId) });
+}
+
 export function notify(
   userId: number,
   kind: NotifyKind,
@@ -618,8 +673,8 @@ export async function flushSummaries(now = Date.now()) {
 
 const adminIds = () => all<{ id: number }>(`SELECT id FROM users WHERE role = 'admin' AND ${ACTIVE}`, Date.now()).map((row) => row.id);
 
-export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string | null = '/admin') {
-  for (const id of adminIds()) notify(id, kind, params, url);
+export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string | null = '/admin', except?: number) {
+  for (const id of adminIds()) if (id !== except) notify(id, kind, params, url);
   const spec = KINDS[kind];
   if (!spec.event) return;
   const lang = settings.get('site.language');
@@ -628,7 +683,16 @@ export function notifyAdmins(kind: NotifyKind, params: Params = {}, url: string 
     event: spec.event,
     title: spec.title(lang, params),
     text,
-    level: ['admin_virus', 'admin_scan', 'admin_backup', 'admin_disk', 'admin_integrity', 'admin_logins', 'admin_plugin'].includes(kind)
+    level: [
+      'admin_virus',
+      'admin_scan',
+      'admin_backup',
+      'admin_disk',
+      'admin_integrity',
+      'admin_burst',
+      'admin_logins',
+      'admin_plugin',
+    ].includes(kind)
       ? 'error'
       : 'info',
   }).catch(() => undefined);

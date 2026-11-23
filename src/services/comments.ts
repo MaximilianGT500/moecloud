@@ -18,6 +18,46 @@ interface CommentRow {
 
 const MENTION = /(?<![\w@.-])@([a-zA-Z0-9._-]{3,32})/g;
 
+export const REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅'];
+
+interface Reaction {
+  emoji: string;
+  count: number;
+  mine: boolean;
+  people: string[];
+}
+
+interface ReactionRow {
+  comment_id: string;
+  emoji: string;
+  user_id: number;
+}
+
+function summarize(rows: ReactionRow[], viewer: UserRow) {
+  const out = new Map<string, Reaction[]>();
+  const names = new Map<number, string | null>();
+  for (const row of rows) {
+    const list = out.get(row.comment_id) ?? [];
+    let entry = list.find((item) => item.emoji === row.emoji);
+    if (!entry) {
+      entry = { emoji: row.emoji, count: 0, mine: false, people: [] };
+      list.push(entry);
+    }
+    entry.count++;
+    if (row.user_id === viewer.id) entry.mine = true;
+    else if (entry.people.length < 10) {
+      if (!names.has(row.user_id)) {
+        const person = getUser(row.user_id);
+        names.set(row.user_id, person && !inactive(person) ? person.name : null);
+      }
+      const name = names.get(row.user_id);
+      if (name) entry.people.push(name);
+    }
+    out.set(row.comment_id, list);
+  }
+  return out;
+}
+
 function mentioned(text: string, people: Map<string, UserRow>) {
   const found = new Map<number, UserRow>();
   for (const match of text.matchAll(MENTION)) {
@@ -51,7 +91,7 @@ export function commentPeople(user: UserRow, nodeId: string) {
     }));
 }
 
-function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>) {
+function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>, reactions: Map<string, Reaction[]> = new Map()) {
   const author = row.user_id ? getUser(row.user_id) : null;
   return {
     id: row.id,
@@ -61,6 +101,7 @@ function present(row: CommentRow, viewer: UserRow, people: Map<string, UserRow>)
     mine: row.user_id === viewer.id,
     edited: row.updated_at > row.created_at,
     createdAt: row.created_at,
+    reactions: reactions.get(row.id) ?? [],
   };
 }
 
@@ -73,9 +114,41 @@ function commentUrl(person: UserRow, node: NodeRow) {
 export function listComments(user: UserRow, nodeId: string) {
   requireAccess(user, nodeId, 'view');
   const people = peopleOf(nodeId);
-  return all<CommentRow>('SELECT * FROM comments WHERE node_id = ? ORDER BY created_at LIMIT 500', nodeId).map((row) =>
-    present(row, user, people)
+  const reactions = summarize(
+    all<ReactionRow>(
+      `SELECT r.comment_id, r.emoji, r.user_id FROM comment_reactions r JOIN comments c ON c.id = r.comment_id
+       WHERE c.node_id = ? ORDER BY r.created_at, r.user_id`,
+      nodeId
+    ),
+    user
   );
+  return all<CommentRow>('SELECT * FROM comments WHERE node_id = ? ORDER BY created_at LIMIT 500', nodeId).map((row) =>
+    present(row, user, people, reactions)
+  );
+}
+
+export function reactToComment(user: UserRow, nodeId: string, id: string, emoji: string, on: boolean) {
+  requireAccess(user, nodeId, 'view');
+  if (!REACTIONS.includes(emoji)) throw badRequest('Diese Reaktion gibt es nicht');
+  const row = one<CommentRow>('SELECT * FROM comments WHERE id = ? AND node_id = ?', id, nodeId);
+  if (!row) throw notFound('Diesen Kommentar gibt es nicht mehr');
+  if (on) {
+    run(
+      'INSERT INTO comment_reactions (comment_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      id,
+      user.id,
+      emoji,
+      Date.now()
+    );
+  } else {
+    run('DELETE FROM comment_reactions WHERE comment_id = ? AND user_id = ? AND emoji = ?', id, user.id, emoji);
+  }
+  publish(audience([nodeId]), 'comment', { nodeId });
+  const reactions = summarize(
+    all<ReactionRow>('SELECT comment_id, emoji, user_id FROM comment_reactions WHERE comment_id = ? ORDER BY created_at, user_id', id),
+    user
+  );
+  return present(row, user, peopleOf(nodeId), reactions);
 }
 
 export function addComment(user: UserRow, nodeId: string, raw: string) {

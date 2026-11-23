@@ -16,6 +16,8 @@ export interface AppPasswordRow {
   scope: string;
   shared: number;
   expires_at: number | null;
+  paused_at: number | null;
+  paused_reason: string | null;
 }
 
 export interface AppAuth {
@@ -24,6 +26,7 @@ export interface AppAuth {
   readOnly: boolean;
   shared: boolean;
   admin: boolean;
+  paused: boolean;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -80,7 +83,27 @@ export function presentAppPassword(row: AppPasswordRow) {
     admin: row.scope === 'admin',
     expiresAt: row.expires_at,
     expired: row.expires_at !== null && row.expires_at <= Date.now(),
+    paused: row.paused_at === null ? null : { at: Number(row.paused_at), ...pauseReason(row.paused_reason) },
   };
+}
+
+function pauseReason(text: string | null) {
+  try {
+    const parsed = text ? (JSON.parse(text) as { count?: unknown; since?: unknown }) : {};
+    return {
+      count: typeof parsed.count === 'number' ? parsed.count : 0,
+      since: typeof parsed.since === 'number' ? parsed.since : null,
+    };
+  } catch {
+    return { count: 0, since: null };
+  }
+}
+
+export function resumeAppPassword(user: UserRow, id: string) {
+  const row = one<AppPasswordRow>('SELECT * FROM app_passwords WHERE id = ? AND user_id = ?', id, user.id);
+  if (!row) throw notFound('Dieses App-Passwort gibt es nicht mehr');
+  run('UPDATE app_passwords SET paused_at = NULL, paused_reason = NULL WHERE id = ?', row.id);
+  return one<AppPasswordRow>('SELECT * FROM app_passwords WHERE id = ?', row.id)!;
 }
 
 export const purgeAppPasswords = (now = Date.now()) =>
@@ -115,6 +138,13 @@ export function basicAuth(header: string | undefined, ip: string): AppAuth | nul
   }
   const current = getUser(row.user_id);
   return current
-    ? { user: current, id: row.id, readOnly: row.scope === 'read', shared: Boolean(row.shared), admin: row.scope === 'admin' }
+    ? {
+        user: current,
+        id: row.id,
+        readOnly: row.scope === 'read',
+        shared: Boolean(row.shared),
+        admin: row.scope === 'admin',
+        paused: row.paused_at !== null,
+      }
     : null;
 }

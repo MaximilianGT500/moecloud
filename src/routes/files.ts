@@ -10,13 +10,14 @@ import { me } from '../lib/request.ts';
 import { id, ids, intOf, parse } from '../lib/validate.ts';
 import { forNode, forUser, record } from '../services/activity.ts';
 import { isZip, listArchive, openEntry } from '../services/archive.ts';
+import { isTarLike, listTar, openTarEntry } from '../services/tar.ts';
 import { EPUB_CSP, epubFile, epubInfo } from '../services/epub.ts';
 import { officePdf, officePrepared } from '../services/office.ts';
 import { extractArchive } from '../services/extract.ts';
 import { rotateImage } from '../services/rotate.ts';
 import { editImage, OUTPUTS } from '../services/editor.ts';
 import { blobPath, getBlob, metaOf, receive, typeOf } from '../services/blobs.ts';
-import { addComment, commentPeople, deleteComment, listComments } from '../services/comments.ts';
+import { addComment, commentPeople, deleteComment, listComments, reactToComment } from '../services/comments.ts';
 import { CONVERT_FORMATS, convertNode, convertOptions } from '../services/convert.ts';
 import { homeFor } from '../services/home.ts';
 import { ingest } from '../services/ingest.ts';
@@ -124,10 +125,13 @@ export async function sendEmailAttachment(reply: FastifyReply, node: NodeRow, in
 export async function sendArchiveEntry(reply: FastifyReply, node: NodeRow, path: string) {
   if (!node.sha256 || node.type !== 'file') throw notFound();
   assertNotInfected(node.sha256);
-  const entry = await openEntry(blobPath(node.sha256), path, 512 * 1024 * 1024);
+  const entry =
+    !isZip(node) && isTarLike(node)
+      ? await openTarEntry(blobPath(node.sha256), node.name, path, 512 * 1024 * 1024)
+      : await openEntry(blobPath(node.sha256), path, 512 * 1024 * 1024);
   const name = path.split('/').pop() || 'datei';
   reply.header('Content-Type', 'application/octet-stream');
-  reply.header('Content-Length', entry.size);
+  if (entry.size !== null) reply.header('Content-Length', entry.size);
   reply.header('Content-Disposition', contentDisposition(name, 'attachment'));
   reply.header('Content-Security-Policy', "sandbox; default-src 'none'");
   reply.header('Cache-Control', 'private, no-cache');
@@ -178,8 +182,9 @@ export async function sendEpubFile(reply: FastifyReply, node: NodeRow, path: str
 export async function archiveListing(node: NodeRow) {
   if (!node.sha256 || node.type !== 'file') throw notFound();
   assertNotInfected(node.sha256);
-  if (!isZip(node)) throw badRequest('Den Inhalt zeigt MoeCloud nur für ZIP-Archive');
-  return listArchive(blobPath(node.sha256));
+  if (isZip(node)) return listArchive(blobPath(node.sha256));
+  if (isTarLike(node)) return listTar(blobPath(node.sha256), node.name, node.modified_at);
+  throw badRequest('Den Inhalt zeigt MoeCloud nur für ZIP-, TAR- und GZ-Archive');
 }
 
 export function nodeMeta(node: NodeRow) {
@@ -652,6 +657,15 @@ export async function fileRoutes(app: FastifyInstance) {
     const { text } = parse(z.object({ text: z.string().max(5000) }), request.body);
     return { comment: addComment(me(request), request.params.id, text) };
   });
+
+  app.post<{ Params: { id: string; comment: string } }>(
+    '/api/nodes/:id/comments/:comment/reactions',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request) => {
+      const { emoji, on } = parse(z.object({ emoji: z.string().max(16), on: z.boolean() }), request.body);
+      return { comment: reactToComment(me(request), request.params.id, request.params.comment, emoji, on) };
+    }
+  );
 
   app.delete<{ Params: { id: string; comment: string } }>('/api/nodes/:id/comments/:comment', async (request) => {
     deleteComment(me(request), request.params.id, request.params.comment);
