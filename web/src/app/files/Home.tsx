@@ -21,6 +21,7 @@ import { StorageMeter } from '../common/bits';
 import { teamRoleLabel, type Team } from '../common/teams';
 import { toast } from '../common/toast';
 import { FileIcon, Thumb, type Item } from './kinds';
+import { shownByFeature } from '../../lib/features';
 
 interface Reminder {
   nodeId: string;
@@ -29,6 +30,92 @@ interface Reminder {
   dueAt: number;
   note: string | null;
   url: string;
+}
+
+interface Planning {
+  events: {
+    eventId: string;
+    recurrenceId: string | null;
+    title: string;
+    location: string;
+    start: number;
+    end: number;
+    allDay: boolean;
+    startDate: string | null;
+    color: string | null;
+  }[];
+  tasks: { id: string; title: string; due: number | null; allDay: boolean; priority: number; color: string | null }[];
+  invitations: number;
+}
+
+const dayStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+
+function whenText(start: number, allDay: boolean, startDate: string | null) {
+  const date = allDay && startDate ? new Date(`${startDate}T00:00:00`) : new Date(start);
+  const days = Math.round((dayStart(date) - dayStart(new Date())) / 86_400_000);
+  const day =
+    days === 0
+      ? t('Heute')
+      : days === 1
+        ? t('Morgen')
+        : new Intl.DateTimeFormat(document.documentElement.lang || undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(
+            date
+          );
+  if (allDay) return day;
+  return `${day}, ${new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
+}
+
+function PlanRow({
+  color,
+  title,
+  detail,
+  onOpen,
+  late = false,
+}: {
+  color: string | null;
+  title: string;
+  detail: string;
+  onOpen: () => void;
+  late?: boolean;
+}) {
+  return (
+    <ButtonBase
+      component="li"
+      onClick={onOpen}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        gap: 1.5,
+        px: 1,
+        py: 0.75,
+        mx: -1,
+        borderRadius: `${radius.tile}px`,
+        textAlign: 'left',
+        '&:hover': { bgcolor: mix(c.onSurface, 6) },
+        '&:focus-visible': { outline: `2px solid ${c.primary}`, outlineOffset: -2 },
+      }}
+    >
+      <Box sx={{ width: 4, alignSelf: 'stretch', minHeight: 32, borderRadius: 2, bgcolor: color ?? c.primary, flex: 'none' }} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {title}
+        </Typography>
+        <Typography
+          variant="caption"
+          sx={{
+            color: late ? c.error : c.onSurfaceVariant,
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {detail}
+        </Typography>
+      </Box>
+    </ButtonBase>
+  );
 }
 
 interface HomeData {
@@ -42,6 +129,7 @@ interface HomeData {
   memories: { year: number; items: Item[] }[];
   storage: Storage;
   layout?: Arrangement | null;
+  planning?: Planning | null;
 }
 
 function greeting(name: string) {
@@ -183,7 +271,7 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
   }, []);
 
   useLive((event) => {
-    if (event === 'reconnect' || event === 'shared') void load();
+    if (event === 'reconnect' || event === 'shared' || event === 'events') void load();
   });
 
   if (!data) return null;
@@ -280,6 +368,37 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
       ),
     },
     {
+      key: 'events',
+      label: t('Nächste Termine'),
+      available: Boolean(data.planning),
+      node: data.planning ? (
+        <Card title={t('Nächste Termine')} more={{ label: t('Kalender'), href: '/calendar' }}>
+          {data.planning.invitations > 0 && (
+            <Button size="small" sx={{ alignSelf: 'flex-start' }} onClick={() => navigate('/calendar')}>
+              {tn(data.planning.invitations, 'Eine offene Einladung', '{count} offene Einladungen')}
+            </Button>
+          )}
+          {data.planning.events.length > 0 ? (
+            <List>
+              {data.planning.events.map((event) => (
+                <PlanRow
+                  key={`${event.eventId}-${event.recurrenceId ?? ''}`}
+                  color={event.color}
+                  title={event.title || t('Ohne Titel')}
+                  detail={[whenText(event.start, event.allDay, event.startDate), event.location].filter(Boolean).join(' · ')}
+                  onOpen={() =>
+                    (location.href = `/calendar?event=${encodeURIComponent(event.eventId)}${event.recurrenceId ? `&rid=${encodeURIComponent(event.recurrenceId)}` : ''}`)
+                  }
+                />
+              ))}
+            </List>
+          ) : (
+            <Hint>{t('In den nächsten zwei Wochen steht nichts an.')}</Hint>
+          )}
+        </Card>
+      ) : null,
+    },
+    {
       key: 'starred',
       label: t('Favoriten'),
       available: true,
@@ -303,6 +422,31 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
           </Card>
         </>
       ),
+    },
+    {
+      key: 'tasks',
+      label: t('Offene Aufgaben'),
+      available: Boolean(data.planning),
+      node: data.planning ? (
+        <Card title={t('Offene Aufgaben')} more={{ label: t('Alle'), href: '/calendar/tasks' }}>
+          {data.planning.tasks.length > 0 ? (
+            <List>
+              {data.planning.tasks.map((task) => (
+                <PlanRow
+                  key={task.id}
+                  color={task.color}
+                  title={task.title || t('Ohne Titel')}
+                  detail={task.due ? whenText(task.due, task.allDay, null) : t('Ohne Fälligkeit')}
+                  late={Boolean(task.due && task.due < Date.now())}
+                  onOpen={() => (location.href = `/calendar/tasks?event=${encodeURIComponent(task.id)}`)}
+                />
+              ))}
+            </List>
+          ) : (
+            <Hint>{t('Alles erledigt.')}</Hint>
+          )}
+        </Card>
+      ) : null,
     },
     {
       key: 'shared',
@@ -426,6 +570,7 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
         </>
       ),
     },
+
     {
       key: 'storage',
       label: t('Speicher'),
@@ -442,7 +587,10 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
     },
   ];
   const layout = data.layout ?? null;
-  const shown = arrange(cards, layout);
+  const shown = arrange(
+    cards.filter((card) => shownByFeature(card.key)),
+    layout
+  );
 
   return (
     <Box sx={{ px: { xs: 1.5, md: 3 }, pb: 4, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
@@ -467,7 +615,7 @@ export function HomeView({ onOpen, onReveal }: { onOpen: (item: Item) => void; o
         <ArrangeDialog
           title={t('Startseite anpassen')}
           text={t('Schieb die Bereiche in deine Reihenfolge und blende aus, was du nicht brauchst. Das gilt auf allen deinen Geräten.')}
-          entries={cards.filter((card) => card.available).map((card) => ({ key: card.key, label: card.label }))}
+          entries={cards.filter((card) => card.available && shownByFeature(card.key)).map((card) => ({ key: card.key, label: card.label }))}
           value={layout}
           onClose={() => setArranging(false)}
           onSave={async (home) => {

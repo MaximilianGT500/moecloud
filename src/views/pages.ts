@@ -432,3 +432,89 @@ export function maintenancePage(request: FastifyRequest, text: string) {
     </div>`
   );
 }
+
+export interface RsvpView {
+  csrf: string;
+  token: string;
+  title: string;
+  when: string;
+  location: string;
+  conference: string | null;
+  organizer: string;
+  name: string;
+  status: string;
+  preset: string | null;
+  notice?: string | null;
+  error?: string | null;
+}
+
+export function rsvpPage(request: FastifyRequest, view: RsvpView) {
+  const lang = request.lang;
+  const current = view.status.toLowerCase();
+  const answered = current === 'accepted' || current === 'declined' || current === 'tentative';
+  const label = (status: string) =>
+    status === 'accepted' ? t(lang, 'Zusagen') : status === 'declined' ? t(lang, 'Absagen') : t(lang, 'Vielleicht');
+  const statusText =
+    current === 'accepted'
+      ? t(lang, 'Du hast zugesagt.')
+      : current === 'declined'
+        ? t(lang, 'Du hast abgesagt.')
+        : current === 'tentative'
+          ? t(lang, 'Du hast mit Vielleicht geantwortet.')
+          : '';
+  return shell(
+    request,
+    html`<div class="message message--left">
+        <div class="message__icon">${icon('event')}</div>
+        <h1>${view.title}</h1>
+        <p class="auth__lead">${t(lang, '{organizer} lädt dich ein.', { organizer: view.organizer || t(lang, 'Jemand') })}</p>
+      </div>
+      <dl class="facts">
+        <div>
+          <dt>${t(lang, 'Wann')}</dt>
+          <dd>${view.when}</dd>
+        </div>
+        ${
+          view.location
+            ? html`<div>
+                <dt>${t(lang, 'Wo')}</dt>
+                <dd>${view.location}</dd>
+              </div>`
+            : null
+        }
+        ${
+          view.conference
+            ? html`<div>
+                <dt>${t(lang, 'Video')}</dt>
+                <dd><a href=${view.conference} rel="noopener noreferrer" target="_blank">${view.conference}</a></dd>
+              </div>`
+            : null
+        }
+        <div>
+          <dt>${t(lang, 'Für')}</dt>
+          <dd>${view.name}</dd>
+        </div>
+      </dl>
+      ${alert('success', view.notice)} ${alert('error', view.error)} ${!view.notice && answered ? alert('info', statusText) : null}
+      <form method="post" action=${`/rsvp/${view.token}`} class="form">
+        ${hidden('_csrf', view.csrf)}
+        <div class="field">
+          <textarea id="field-comment" name="comment" placeholder=" " maxlength="500" rows="2"></textarea>
+          <label for="field-comment">${t(lang, 'Nachricht an den Gastgeber (freiwillig)')}</label>
+        </div>
+        <div class="rsvp-choices">
+          ${['accepted', 'tentative', 'declined'].map(
+            (status) =>
+              html`<button
+                class=${`button ${status === (view.preset ?? (answered ? current : 'accepted')) ? 'button--filled' : 'button--tonal'}`}
+                type="submit"
+                name="status"
+                value=${status}
+              >
+                ${label(status)}
+              </button>`
+          )}
+        </div>
+      </form>`
+  );
+}

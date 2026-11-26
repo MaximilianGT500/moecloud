@@ -30,6 +30,12 @@ import { tools } from '../services/media.ts';
 import { forgetOwners, getNode } from '../services/nodes.ts';
 import { officeReady } from '../services/office.ts';
 import type { Readable } from 'node:stream';
+import { FEATURES } from '../../shared/features.ts';
+import { isRegion } from '../../shared/holidays.ts';
+import { rescheduleUser } from '../calendar/alarms.ts';
+import { transferCalendars } from '../calendar/calendars.ts';
+import { transferBooks } from '../contacts/books.ts';
+import { isZone } from '../../shared/time.ts';
 import { readLimited } from '../services/avatars.ts';
 import { BRANDING, removeBranding, setBranding } from '../services/branding.ts';
 import { cleanDomains, validDomains } from '../services/confirmations.ts';
@@ -148,6 +154,26 @@ const settingsSchema = z
     'storage.versionDays': z.number().int().min(0).max(3650),
     'share.links': z.boolean(),
     'forms.enabled': z.boolean(),
+    'calendar.enabled': z.boolean(),
+    'accounts.features': z.array(z.enum(FEATURES)).max(FEATURES.length),
+    'calendar.zone': z.string().max(64).refine(isZone, 'Diese Zeitzone kennt MoeCloud nicht'),
+    'calendar.holidays': z
+      .string()
+      .max(10)
+      .refine((value) => value === '' || isRegion(value), 'Diese Region kennt MoeCloud nicht'),
+    'calendar.caldav': z.boolean(),
+    'calendar.publicLinks': z.boolean(),
+    'calendar.subscriptions': z.boolean(),
+    'calendar.subscriptionsPrivate': z.boolean(),
+    'calendar.imports': z.boolean(),
+    'contacts.enabled': z.boolean(),
+    'calendar.maxSubscriptions': z.number().int().min(0).max(500),
+    'calendar.minRefresh': z.number().int().min(5).max(1440),
+    'calendar.booking': z.boolean(),
+    'calendar.polls': z.boolean(),
+    'calendar.externalInvites': z.boolean(),
+    'calendar.freebusy': z.boolean(),
+    'calendar.trashDays': z.number().int().min(0).max(3650),
     'share.users': z.boolean(),
     'share.requirePassword': z.boolean(),
     'share.maxDays': z.number().int().min(0).max(3650),
@@ -395,7 +421,10 @@ export async function adminRoutes(app: FastifyInstance) {
         details: { from: user.username, folder: folder.name },
       });
     }
+    const calendars = transferTo && transferTo.role !== 'guest' ? transferCalendars(user.id, transferTo.id, user.name) : 0;
+    if (transferTo && transferTo.role !== 'guest') transferBooks(user.id, transferTo.id, user.name);
     deleteUser(user.id);
+    if (transferTo && calendars) rescheduleUser(transferTo.id);
     audit('user_deleted', {
       actor: actor.id,
       request,

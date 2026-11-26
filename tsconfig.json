@@ -17,5 +17,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "test", "tools", "cli.ts"]
+  "include": ["src", "shared", "test", "tools", "cli.ts"]
 }

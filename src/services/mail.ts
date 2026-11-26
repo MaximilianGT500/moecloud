@@ -9,6 +9,8 @@ export interface Mail {
   subject: string;
   text: string;
   html: string;
+  ical?: { method: 'REQUEST' | 'CANCEL' | 'REPLY' | 'PUBLISH'; content: string };
+  replyTo?: string;
 }
 
 export const outbox: Mail[] = [];
@@ -57,7 +59,15 @@ function sender() {
 export async function sendMail(mail: Mail) {
   if (!mailReady()) throw new Error('mail-not-configured');
   const mailer = await transport();
-  await mailer.sendMail({ from: sender(), to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+  await mailer.sendMail({
+    from: sender(),
+    to: mail.to,
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html,
+    ...(mail.replyTo ? { replyTo: mail.replyTo } : {}),
+    ...(mail.ical ? { icalEvent: { method: mail.ical.method, filename: 'einladung.ics', content: mail.ical.content } } : {}),
+  });
   if (config.test) outbox.push(mail);
 }
 
@@ -73,6 +83,8 @@ export interface Template {
   title: string;
   lines: string[];
   action?: { label: string; url: string };
+  actions?: { label: string; url: string; tone?: 'primary' | 'tonal' }[];
+  details?: { label: string; value: string }[];
   note?: string;
 }
 
@@ -88,8 +100,11 @@ export function render(template: Template, to: string): Mail {
   const text = [
     template.title,
     '',
+    ...(template.details ?? []).map((detail) => `${detail.label}: ${detail.value}`),
+    ...(template.details?.length ? [''] : []),
     ...template.lines,
     ...(template.action ? ['', `${template.action.label}: ${template.action.url}`] : []),
+    ...(template.actions ?? []).map((action) => `${action.label}: ${action.url}`),
     ...(template.note ? ['', template.note] : []),
     '',
     '-- ',
@@ -102,6 +117,24 @@ export function render(template: Template, to: string): Mail {
     ? `<p style="margin:24px 0"><a href="${escapeHtml(template.action.url)}" style="display:inline-block;padding:12px 24px;border-radius:999px;background:${primary};color:${onPrimary};font-weight:700;font-size:15px;text-decoration:none">${escapeHtml(template.action.label)}</a></p>
 <p style="margin:0 0 14px;font-size:12px;line-height:1.5;color:${muted};word-break:break-all">${escapeHtml(template.action.url)}</p>`
     : '';
+  const secondary = palette.secondaryContainer ?? '#e8def8';
+  const onSecondary = palette.onSecondaryContainer ?? '#1d192b';
+  const extra = template.actions?.length
+    ? `<p style="margin:24px 0 8px">${template.actions
+        .map(
+          (action) =>
+            `<a href="${escapeHtml(action.url)}" style="display:inline-block;margin:0 8px 8px 0;padding:11px 20px;border-radius:999px;background:${action.tone === 'primary' ? primary : secondary};color:${action.tone === 'primary' ? onPrimary : onSecondary};font-weight:700;font-size:14px;text-decoration:none">${escapeHtml(action.label)}</a>`
+        )
+        .join('')}</p>`
+    : '';
+  const details = template.details?.length
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse;width:100%">${template.details
+        .map(
+          (detail) =>
+            `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:${muted};vertical-align:top;white-space:nowrap">${escapeHtml(detail.label)}</td><td style="padding:6px 0;font-size:15px;color:${ink};line-height:1.5">${escapeHtml(detail.value)}</td></tr>`
+        )
+        .join('')}</table>`
+    : '';
   const note = template.note
     ? `<p style="margin:16px 0 0;font-size:13px;line-height:1.5;color:${muted}">${escapeHtml(template.note)}</p>`
     : '';
@@ -112,13 +145,13 @@ export function render(template: Template, to: string): Mail {
 <tr><td style="padding:28px 28px 8px;font-size:14px;font-weight:700;color:${primary}">${escapeHtml(site)}</td></tr>
 <tr><td style="padding:4px 28px 28px">
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${ink}">${escapeHtml(template.title)}</h1>
-${paragraphs}${button}${note}
+${details}${paragraphs}${button}${extra}${note}
 </td></tr></table>
 <p style="margin:16px 0 0;font-size:12px;color:${muted}">${escapeHtml(footer)}</p>
 </td></tr></table></body></html>`;
   return { to, subject: template.title, text, html };
 }
 
-export async function deliver(to: string, template: Template) {
-  await sendMail(render(template, to));
+export async function deliver(to: string, template: Template, extra: Pick<Mail, 'ical' | 'replyTo'> = {}) {
+  await sendMail({ ...render(template, to), ...extra });
 }

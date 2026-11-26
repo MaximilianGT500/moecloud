@@ -701,6 +701,286 @@ const MIGRATIONS = [
   ALTER TABLE app_passwords ADD COLUMN paused_at INTEGER;
   ALTER TABLE app_passwords ADD COLUMN paused_reason TEXT;
   `,
+  `
+  CREATE TABLE calendars (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    color TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'local',
+    components TEXT NOT NULL DEFAULT 'VEVENT,VTODO',
+    zone TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    alarms TEXT,
+    allday_alarms TEXT,
+    public_token TEXT UNIQUE,
+    public_mode TEXT,
+    source_url TEXT,
+    refresh_minutes INTEGER,
+    synced_at INTEGER,
+    sync_error TEXT,
+    sync_etag TEXT,
+    sync_failures INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    trashed_at INTEGER
+  );
+  CREATE UNIQUE INDEX calendars_slug ON calendars(owner_id, slug);
+  CREATE INDEX calendars_owner ON calendars(owner_id, position);
+  CREATE INDEX calendars_kind ON calendars(kind, synced_at);
+
+  CREATE TABLE calendar_shares (
+    calendar_id TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL,
+    color TEXT,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    notify INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (calendar_id, user_id)
+  );
+  CREATE INDEX calendar_shares_user ON calendar_shares(user_id);
+
+  CREATE TABLE events (
+    id TEXT PRIMARY KEY,
+    calendar_id TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+    uid TEXT NOT NULL,
+    href TEXT NOT NULL,
+    component TEXT NOT NULL,
+    title TEXT NOT NULL,
+    location TEXT,
+    description TEXT,
+    categories TEXT,
+    start_at INTEGER,
+    end_at INTEGER,
+    all_day INTEGER NOT NULL DEFAULT 0,
+    recurring INTEGER NOT NULL DEFAULT 0,
+    range_end INTEGER,
+    status TEXT,
+    due_at INTEGER,
+    completed_at INTEGER,
+    has_alarms INTEGER NOT NULL DEFAULT 0,
+    organizer_id INTEGER,
+    data TEXT NOT NULL,
+    ics TEXT NOT NULL,
+    etag TEXT NOT NULL,
+    sequence INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER,
+    updated_by INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    trashed_at INTEGER
+  );
+  CREATE UNIQUE INDEX events_href ON events(calendar_id, href);
+  CREATE INDEX events_uid ON events(calendar_id, uid);
+  CREATE INDEX events_range ON events(calendar_id, trashed_at, start_at, range_end);
+  CREATE INDEX events_trash ON events(trashed_at);
+  CREATE INDEX events_due ON events(calendar_id, component, due_at);
+
+  CREATE TABLE attendees (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    name TEXT,
+    status TEXT NOT NULL DEFAULT 'NEEDS-ACTION',
+    role TEXT,
+    token_hash TEXT UNIQUE,
+    calendar_id TEXT REFERENCES calendars(id) ON DELETE SET NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    notified_at INTEGER,
+    responded_at INTEGER,
+    comment TEXT,
+    PRIMARY KEY (event_id, email)
+  );
+  CREATE INDEX attendees_user ON attendees(user_id, hidden);
+
+  CREATE TABLE changes (
+    calendar_id TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+    href TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (calendar_id, href)
+  );
+  CREATE INDEX changes_revision ON changes(calendar_id, revision);
+
+  CREATE TABLE alarms (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    next_at INTEGER NOT NULL,
+    occurrence INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    fired_until INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id, user_id)
+  );
+  CREATE INDEX alarms_next ON alarms(next_at);
+
+  CREATE TABLE event_templates (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    data TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX event_templates_user ON event_templates(user_id, position);
+
+  CREATE TABLE booking_pages (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT,
+    calendar_id TEXT REFERENCES calendars(id) ON DELETE SET NULL,
+    durations TEXT NOT NULL,
+    availability TEXT NOT NULL,
+    zone TEXT NOT NULL,
+    buffer_before INTEGER NOT NULL DEFAULT 0,
+    buffer_after INTEGER NOT NULL DEFAULT 0,
+    notice_minutes INTEGER NOT NULL DEFAULT 0,
+    window_days INTEGER NOT NULL DEFAULT 60,
+    max_per_day INTEGER NOT NULL DEFAULT 0,
+    step_minutes INTEGER NOT NULL DEFAULT 30,
+    conflicts TEXT,
+    location_kind TEXT NOT NULL DEFAULT 'none',
+    location TEXT,
+    questions TEXT,
+    color TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX booking_pages_owner ON booking_pages(owner_id);
+
+  CREATE TABLE bookings (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL REFERENCES booking_pages(id) ON DELETE CASCADE,
+    event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    notes TEXT,
+    answers TEXT,
+    start_at INTEGER NOT NULL,
+    end_at INTEGER NOT NULL,
+    zone TEXT,
+    token_hash TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    cancelled_at INTEGER
+  );
+  CREATE INDEX bookings_page ON bookings(page_id, start_at);
+
+  CREATE TABLE polls (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT,
+    location TEXT,
+    zone TEXT NOT NULL,
+    options TEXT NOT NULL,
+    settings TEXT,
+    deadline INTEGER,
+    closed_at INTEGER,
+    final_option TEXT,
+    event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX polls_owner ON polls(owner_id, created_at);
+
+  CREATE TABLE poll_votes (
+    id TEXT PRIMARY KEY,
+    poll_id TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    answers TEXT NOT NULL,
+    comment TEXT,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX poll_votes_poll ON poll_votes(poll_id, created_at);
+  ALTER TABLE nodes ADD COLUMN expires_at INTEGER;
+  ALTER TABLE nodes ADD COLUMN expires_by INTEGER;
+  CREATE INDEX nodes_expiry ON nodes(expires_at) WHERE expires_at IS NOT NULL;
+
+  CREATE TABLE address_books (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX address_books_slug ON address_books(owner_id, slug);
+
+  CREATE TABLE address_book_shares (
+    book_id TEXT NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (book_id, user_id)
+  );
+  CREATE INDEX address_book_shares_user ON address_book_shares(user_id);
+
+  CREATE TABLE contacts (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+    uid TEXT NOT NULL,
+    href TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'individual',
+    name TEXT NOT NULL,
+    search TEXT NOT NULL,
+    birthday TEXT,
+    data TEXT NOT NULL,
+    vcard TEXT NOT NULL,
+    etag TEXT NOT NULL,
+    created_by INTEGER,
+    updated_by INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    trashed_at INTEGER
+  );
+  CREATE UNIQUE INDEX contacts_href ON contacts(book_id, href);
+  CREATE INDEX contacts_uid ON contacts(book_id, uid);
+  CREATE INDEX contacts_book ON contacts(book_id, trashed_at);
+  CREATE INDEX contacts_trash ON contacts(trashed_at);
+
+  CREATE TABLE contact_emails (
+    contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    PRIMARY KEY (contact_id, email)
+  );
+  CREATE INDEX contact_emails_email ON contact_emails(email);
+
+  CREATE TABLE contact_stars (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, contact_id)
+  );
+  CREATE INDEX contact_stars_contact ON contact_stars(contact_id);
+
+  CREATE TABLE contact_changes (
+    book_id TEXT NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+    href TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (book_id, href)
+  );
+  CREATE INDEX contact_changes_revision ON contact_changes(book_id, revision);
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

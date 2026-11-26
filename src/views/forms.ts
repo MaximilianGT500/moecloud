@@ -1,7 +1,7 @@
 import { html } from 'htm/preact';
 import type { FastifyRequest } from 'fastify';
 import { t, type Lang } from '../lib/i18n.ts';
-import { FORM_LIMITS, visibleQuestions, type FormRow, type Question } from '../services/forms.ts';
+import { acceptList, fileLimit, FORM_LIMITS, formUploads, visibleQuestions, type FormRow, type Question } from '../services/forms.ts';
 import { icon } from './icons.ts';
 import { alert, hidden, shell } from './pages.ts';
 
@@ -80,6 +80,26 @@ function control(lang: Lang, entry: Question, values: Record<string, unknown>, d
         ${entry.high ? html`<span class="scale__end">${entry.high}</span>` : null}
       </div>`;
     }
+    case 'file': {
+      const types = acceptList(entry.accept);
+      const size = Math.max(0.1, Math.round((fileLimit(entry) / 1048576) * 10) / 10);
+      return html`<input
+          id=${id}
+          name=${name}
+          class="question__input question__file"
+          type="file"
+          accept=${types.length ? types.map((type) => `.${type}`).join(',') : undefined}
+          required=${entry.required}
+          aria-describedby=${[describedBy, `${id}-grenze`].filter(Boolean).join(' ')}
+        />
+        <p class="question__hint question__limit" id=${`${id}-grenze`}>
+          ${
+            types.length
+              ? t(lang, 'Eine Datei bis {size} MB, erlaubt: {types}', { size, types: types.join(', ') })
+              : t(lang, 'Eine Datei bis {size} MB', { size })
+          }
+        </p>`;
+    }
     default: {
       const type = entry.kind === 'email' ? 'email' : entry.kind === 'date' ? 'date' : 'text';
       return html`<input
@@ -140,7 +160,7 @@ export function formPage(request: FastifyRequest, view: FormView) {
       </div>
       ${view.person ? html`<p class="form-page__person">${t(lang, 'Du antwortest als {name}.', { name: view.person })}</p>` : null}
       ${alert('error', view.error)}
-      <form method="post" class="form form-page__form">
+      <form method="post" class="form form-page__form" enctype=${formUploads(view.form).length ? 'multipart/form-data' : undefined}>
         ${hidden('_csrf', view.csrf)}
         <div class="form-page__trap" aria-hidden="true">
           <label>${t(lang, 'Bitte leer lassen')}<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>

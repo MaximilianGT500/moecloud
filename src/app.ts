@@ -34,6 +34,12 @@ import { accountRoutes } from './routes/account.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { eventRoutes } from './routes/events.ts';
 import { davRoutes } from './routes/dav.ts';
+import { calendarRoutes } from './calendar/api.ts';
+import { caldavRoutes } from './calendar/caldav.ts';
+import { contactRoutes } from './contacts/api.ts';
+import { carddavRoutes } from './contacts/carddav.ts';
+import { calendarPublicRoutes } from './calendar/public.ts';
+import { schedulingRoutes } from './calendar/scheduling.ts';
 import { systemAdminRoutes } from './routes/system-admin.ts';
 import { metricsRoutes } from './routes/metrics.ts';
 import { groupRoutes } from './routes/groups.ts';
@@ -47,6 +53,8 @@ import { tagRoutes } from './routes/tags.ts';
 import { albumRoutes } from './routes/albums.ts';
 import { formRoutes } from './routes/forms.ts';
 import { rewindRoutes } from './routes/rewind.ts';
+import { pulseRoutes } from './routes/pulse.ts';
+import { pulse } from './services/pulse.ts';
 import { toolRoutes } from './routes/tools.ts';
 import { themeRoutes } from './routes/themes.ts';
 import { pluginRoutes } from './routes/plugins.ts';
@@ -72,7 +80,18 @@ function loggerOptions() {
   };
 }
 
-function pagePolicy(nonce: string) {
+const isDav = (url: string) =>
+  url === '/dav' ||
+  url.startsWith('/dav/') ||
+  url.startsWith('/dav?') ||
+  url === '/caldav' ||
+  url.startsWith('/caldav/') ||
+  url.startsWith('/.well-known/caldav') ||
+  url === '/carddav' ||
+  url.startsWith('/carddav/') ||
+  url.startsWith('/.well-known/carddav');
+
+function pagePolicy(nonce: string, frames = "'none'") {
   const dev = config.devServer ? new URL(config.devServer).origin : '';
   const office = officeOrigin();
   const directives: [string, ...string[]][] = [
@@ -89,7 +108,7 @@ function pagePolicy(nonce: string) {
     ['object-src', "'none'"],
     ['base-uri', "'none'"],
     ['form-action', "'self'", ...(office ? [office] : [])],
-    ['frame-ancestors', "'none'"],
+    ['frame-ancestors', frames],
   ];
   return directives.map((parts) => parts.join(' ')).join('; ');
 }
@@ -113,9 +132,12 @@ function inMaintenance(request: FastifyRequest) {
   return !OPEN_DURING_MAINTENANCE.test(request.url);
 }
 
-const OPEN_API = /^\/api\/(public\/|setup(\/|$)|auth\/passkey\/|language$)/;
+const OPEN_API = /^\/api\/(public\/|calendar\/public\/|setup(\/|$)|auth\/passkey\/|language$)/;
 
 const SESSION_ONLY = new Set([
+  'PUT /api/admin/pulse',
+  'POST /api/admin/pulse/forget',
+  'POST /api/admin/moepulse/support',
   'POST /api/account/app-passwords',
   'DELETE /api/account/app-passwords/:id',
   'POST /api/account/app-passwords/:id/resume',
@@ -171,7 +193,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     routerOptions: { ignoreTrailingSlash: true, maxParamLength: 500 },
   });
 
-  for (const method of ['PROPFIND', 'PROPPATCH', 'MKCOL', 'COPY', 'MOVE', 'LOCK', 'UNLOCK']) {
+  for (const method of ['PROPFIND', 'PROPPATCH', 'MKCOL', 'COPY', 'MOVE', 'LOCK', 'UNLOCK', 'MKCALENDAR', 'REPORT']) {
     app.addHttpMethod(method, { hasBody: true });
   }
 
@@ -190,6 +212,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorateRequest('lang', 'de');
   app.decorateRequest('nonce', '');
   app.decorateRequest('csrf', '');
+  app.decorateRequest('embeddable', false);
 
   await app.register(cookie);
   await app.register(compress, { global: true, threshold: 1024, encodings: ['br', 'gzip'] });
@@ -225,7 +248,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('onRequest', async (request, reply) => {
     request.nonce = randomBytes(16).toString('base64');
     if (isAsset(request.url)) return;
-    if (request.url.startsWith('/dav')) {
+    if (isDav(request.url)) {
       request.lang = languageOf(request, null);
       if (settings.get('maintenance.enabled')) {
         return reply
@@ -354,9 +377,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (request.protocol === 'https' && !isLocalHost(request.host)) reply.header('Strict-Transport-Security', 'max-age=15552000');
     const type = String(reply.getHeader('content-type') ?? '');
     if (type.startsWith('text/html')) {
-      if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', pagePolicy(request.nonce));
+      if (!reply.hasHeader('Content-Security-Policy'))
+        reply.header('Content-Security-Policy', pagePolicy(request.nonce, request.embeddable ? '*' : "'none'"));
       reply.header('Cross-Origin-Opener-Policy', 'same-origin');
-      if (!reply.hasHeader('X-Frame-Options')) reply.header('X-Frame-Options', 'DENY');
+      if (!reply.hasHeader('X-Frame-Options') && !request.embeddable) reply.header('X-Frame-Options', 'DENY');
     }
     return payload;
   });
@@ -371,7 +395,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, request, reply) => {
     const known = error instanceof HttpError;
     const status = known ? error.status : error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
-    if (status >= 500) request.log.error(error);
+    if (status >= 500) {
+      request.log.error(error);
+      if (!known || status === 500) pulse().capture(error, { route: `${request.method} ${request.routeOptions.url ?? '?'}` });
+    }
     const message = known
       ? t(request.lang, error.message, error.params)
       : status === 413
@@ -381,7 +408,7 @@ export async function buildApp(): Promise<FastifyInstance> {
           : status < 500
             ? t(request.lang, 'Die Anfrage ist ungültig')
             : t(request.lang, 'Da ist etwas schiefgelaufen, versuch es noch einmal');
-    if (request.url.startsWith('/dav')) return reply.code(status).type('text/plain; charset=utf-8').send(message);
+    if (isDav(request.url)) return reply.code(status).type('text/plain; charset=utf-8').send(message);
     const wantsHtml = request.method === 'GET' && !request.url.startsWith('/api/') && (request.headers.accept ?? '').includes('text/html');
     if (wantsHtml) {
       return renderDocument(request, reply, {
@@ -423,6 +450,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(albumRoutes);
   await app.register(formRoutes);
   await app.register(rewindRoutes);
+  await app.register(pulseRoutes);
   await app.register(toolRoutes);
   await app.register(themeRoutes);
   await app.register(pluginRoutes);
@@ -442,6 +470,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(eventRoutes);
   await app.register(securityRoutes);
   await app.register(davRoutes);
+  await app.register(calendarRoutes);
+  await app.register(schedulingRoutes);
+  await app.register(calendarPublicRoutes);
+  await app.register(caldavRoutes);
+  await app.register(contactRoutes);
+  await app.register(carddavRoutes);
   await app.register(metricsRoutes);
 
   return app;

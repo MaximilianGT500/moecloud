@@ -12,9 +12,11 @@ import { api, errorText } from '../../lib/api';
 import { formatBytes, formatDay, formatNumber, formatRelative } from '../../lib/format';
 import { language, t, tn } from '../../lib/i18n';
 import { navigate } from '../../lib/router';
+import { PulseNotices } from '../../moepulse';
 import { c, fileTypeColor, radius } from '../../theme/tokens';
 import { Section, UserAvatar } from '../common/bits';
 import { toast } from '../common/toast';
+import { supportClient } from './pulseClient';
 import { Loading, Stat, StatusDot } from './shared';
 import { UsageSection, type UsageDay } from './UsageChart';
 
@@ -33,6 +35,8 @@ export interface UpdateInfo {
     security: boolean;
     notes: { de: string[]; en: string[] };
     checkedAt: number;
+    yanked?: boolean;
+    source?: 'pulse' | 'feed';
   } | null;
 }
 
@@ -95,12 +99,16 @@ export function updateCommand(install: string) {
   return 'git pull && npm ci && npm run build && npm start';
 }
 
+export function NoticesBanner() {
+  return <PulseNotices load={supportClient.notices} language={language} storageKey="moecloud.pulse.notices" />;
+}
+
 export function UpdateBanner({ updates }: { updates: UpdateInfo }) {
   if (!updates.available || !updates.latest) return null;
   const notes = updates.latest.notes[language] ?? [];
   return (
     <Alert
-      severity={updates.latest.security ? 'error' : 'info'}
+      severity={updates.latest.security || updates.latest.yanked ? 'error' : 'info'}
       icon={<NewReleasesRounded />}
       action={
         updates.latest.url ? (
@@ -115,6 +123,11 @@ export function UpdateBanner({ updates }: { updates: UpdateInfo }) {
           ? t('MoeCloud {version} ist da und schließt Sicherheitslücken', { version: updates.latest.version })
           : t('MoeCloud {version} ist da', { version: updates.latest.version })}
       </Typography>
+      {updates.latest.yanked && (
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          {t('MoeStudio hat deine Version {version} zurückgezogen. Aktualisiere am besten gleich.', { version: updates.current })}
+        </Typography>
+      )}
       {notes.length > 0 && (
         <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
           {notes.slice(0, 5).map((note) => (
@@ -191,6 +204,7 @@ export function OverviewSection() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <NoticesBanner />
       <UpdateBanner updates={data.updates} />
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', xl: 'repeat(4, 1fr)' }, gap: 2 }}>
         <Stat

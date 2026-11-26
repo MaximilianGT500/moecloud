@@ -7,13 +7,15 @@ import { publish } from '../lib/events.ts';
 import { t, type Lang } from '../lib/i18n.ts';
 import { notifyMerged } from './notify.ts';
 import * as settings from './settings.ts';
-import { getUser, inactive, type UserRow } from './users.ts';
+import { getUser, inactive, preferredLanguage, type UserRow } from './users.ts';
 
-export const QUESTION_KINDS = ['text', 'longtext', 'email', 'number', 'date', 'single', 'multiple', 'scale'] as const;
+export const QUESTION_KINDS = ['text', 'longtext', 'email', 'number', 'date', 'single', 'multiple', 'scale', 'file'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 export type FormState = 'open' | 'closed' | 'ended' | 'full';
 
-export const FORM_LIMITS = { questions: 100, options: 50, text: 1000, longtext: 4000, responses: 50_000 };
+export const FORM_LIMITS = { questions: 100, options: 50, text: 1000, longtext: 4000, responses: 50_000, fileMb: 100, files: 20 };
+
+const MB = 1024 * 1024;
 
 const ID = /^[A-Za-z0-9_-]{1,24}$/;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,63}$/;
@@ -33,6 +35,7 @@ const question = z.object({
   max: z.number().int().min(-1_000_000_000).max(1_000_000_000).nullable().default(null),
   low: z.string().trim().max(60).default(''),
   high: z.string().trim().max(60).default(''),
+  accept: z.string().trim().max(200).default(''),
 });
 
 export type Question = z.infer<typeof question>;
@@ -81,7 +84,31 @@ interface ResponseRow {
   created_at: number;
 }
 
-export type Answer = string | string[] | number;
+export interface FileAnswer {
+  name: string;
+  size: number;
+  node: string | null;
+}
+
+export interface FormUpload {
+  path: string;
+  size: number;
+  sha256: string;
+  name: string;
+  truncated: boolean;
+}
+
+export type Answer = string | string[] | number | FileAnswer;
+
+export const isFileAnswer = (answer: unknown): answer is FileAnswer =>
+  Boolean(answer) && typeof answer === 'object' && !Array.isArray(answer) && typeof (answer as FileAnswer).name === 'string';
+
+export const acceptList = (accept: string) =>
+  accept
+    .split(/[\s,;]+/)
+    .map((entry) => entry.trim().toLowerCase().replace(/^\./, ''))
+    .filter((entry) => /^[a-z0-9]{1,10}$/.test(entry))
+    .slice(0, 20);
 export type Answers = Record<string, Answer>;
 
 export class FormInputError extends HttpError {
@@ -95,6 +122,8 @@ export class FormInputError extends HttpError {
 export const formsEnabled = () => settings.get('forms.enabled');
 
 function normalize(list: Question[]) {
+  if (list.filter((entry) => entry.kind === 'file').length > FORM_LIMITS.files)
+    throw badRequest('Ein Formular kann höchstens {count} Fragen mit Datei haben', { count: FORM_LIMITS.files });
   const seen = new Set<string>();
   return list.map((entry) => {
     if (seen.has(entry.id)) throw badRequest('Zwei Fragen haben dieselbe Kennung');
@@ -113,6 +142,9 @@ function normalize(list: Question[]) {
     } else if (entry.kind === 'number') {
       if (min !== null && max !== null && min > max)
         throw badRequest('Bei „{title}“ ist das Minimum größer als das Maximum', { title: entry.title });
+    } else if (entry.kind === 'file') {
+      min = null;
+      max = Math.min(FORM_LIMITS.fileMb, Math.max(1, max ?? 10));
     } else {
       min = null;
       max = null;
@@ -124,6 +156,7 @@ function normalize(list: Question[]) {
       max,
       low: entry.kind === 'scale' ? entry.low : '',
       high: entry.kind === 'scale' ? entry.high : '',
+      accept: entry.kind === 'file' ? acceptList(entry.accept ?? '').join(', ') : '',
     };
   });
 }
@@ -194,6 +227,7 @@ const STARTER = (lang: Lang): Question[] => [
     max: null,
     low: '',
     high: '',
+    accept: '',
   },
 ];
 
@@ -303,7 +337,12 @@ function validDate(text: string) {
   return year >= 1 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
-export function parseAnswers(form: Pick<FormRow, 'questions'>, fields: Record<string, unknown>, lang: Lang) {
+export function parseAnswers(
+  form: Pick<FormRow, 'questions'>,
+  fields: Record<string, unknown>,
+  lang: Lang,
+  files: Map<string, FormUpload> = new Map()
+) {
   const answers: Answers = {};
   const errors: Record<string, string> = {};
   const field = (name: string) => {
@@ -315,6 +354,21 @@ export function parseAnswers(form: Pick<FormRow, 'questions'>, fields: Record<st
     const fail = (message: string, params?: Record<string, string | number>) => {
       errors[entry.id] = t(lang, message, params);
     };
+    if (entry.kind === 'file') {
+      const upload = files.get(entry.id);
+      if (!upload || (!upload.size && !upload.truncated)) {
+        if (entry.required) fail('Lade eine Datei hoch');
+        continue;
+      }
+      const limit = fileLimit(entry);
+      const extension = /\.([a-z0-9]{1,10})$/i.exec(upload.name)?.[1]?.toLowerCase() ?? '';
+      const allowed = acceptList(entry.accept ?? '');
+      if (upload.truncated || upload.size > limit) fail('Die Datei darf höchstens {size} MB groß sein', { size: megabytes(limit) });
+      else if (allowed.length && !allowed.includes(extension))
+        fail('Erlaubt sind nur diese Dateien: {types}', { types: allowed.join(', ') });
+      else answers[entry.id] = { name: upload.name, size: upload.size, node: null };
+      continue;
+    }
     if (entry.kind === 'multiple') {
       const picked = entry.options.filter((choice) => field(`${name}-${choice.id}`) !== '').map((choice) => choice.id);
       if (picked.length) answers[entry.id] = picked;
@@ -324,8 +378,8 @@ export function parseAnswers(form: Pick<FormRow, 'questions'>, fields: Record<st
     const text = field(name).replace(/\r\n?/g, '\n');
     const trimmed = text.trim();
     if (!trimmed) {
-      if (entry.required)
-        fail(entry.kind === 'single' || entry.kind === 'scale' ? 'Wähl eine Antwort' : 'Diese Frage braucht eine Antwort');
+      if (entry.required && (entry.kind === 'single' || entry.kind === 'scale')) fail('Wähl eine Antwort');
+      else if (entry.required) fail('Diese Frage braucht eine Antwort');
       continue;
     }
     switch (entry.kind) {
@@ -368,11 +422,19 @@ export function parseAnswers(form: Pick<FormRow, 'questions'>, fields: Record<st
   return { answers, errors };
 }
 
-export function submitResponse(form: FormRow, user: UserRow | null, fields: Record<string, unknown>, lang: Lang) {
+export async function submitResponse(
+  form: FormRow,
+  user: UserRow | null,
+  fields: Record<string, unknown>,
+  lang: Lang,
+  files: Map<string, FormUpload> = new Map()
+) {
   if (form.signed_in && !user) throw new HttpError(401, 'Melde dich an, um zu antworten', 'unauthorized');
   if (form.signed_in && user && form.once && hasAnswered(form, user)) throw new HttpError(409, 'Du hast schon geantwortet', 'answered');
-  const { answers, errors } = parseAnswers(form, fields, lang);
+  const { answers, errors } = parseAnswers(form, fields, lang, files);
   if (Object.keys(errors).length) throw new FormInputError(errors);
+  if (formState(form) !== 'open') throw new HttpError(410, 'Dieses Formular nimmt keine Antworten mehr an', `form_${formState(form)}`);
+  await storeUploads(form, answers, files, lang);
   const id = randomId(16);
   tx(() => {
     const state = formState(form);
@@ -392,8 +454,80 @@ export function submitResponse(form: FormRow, user: UserRow | null, fields: Reco
   return id;
 }
 
+export const safeName = (raw: string, fallback: string) => {
+  const name = raw
+    .normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f/\\\u202a-\u202e\u2066-\u2069]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+  return !name || name === '.' || name === '..' ? fallback : name;
+};
+
+export const fileLimit = (entry: Pick<Question, 'max'>) => {
+  const max = settings.get('storage.maxUpload');
+  const own = Math.min(FORM_LIMITS.fileMb, Math.max(1, entry.max ?? 10)) * MB;
+  return max > 0 ? Math.min(own, max) : own;
+};
+
+const megabytes = (bytes: number) => Math.max(0.1, Math.round((bytes / MB) * 10) / 10);
+
+export const formUploads = (form: Pick<FormRow, 'questions'>) => visibleQuestions(form).filter((entry) => entry.kind === 'file');
+
+async function storeUploads(form: FormRow, answers: Answers, files: Map<string, FormUpload>, lang: Lang) {
+  const pending = [...files.entries()].filter(([questionId]) => isFileAnswer(answers[questionId]));
+  if (!pending.length) return;
+  const owner = getUser(form.owner_id);
+  if (!owner || inactive(owner)) throw new HttpError(410, 'Dieses Formular nimmt keine Antworten mehr an', 'form_closed');
+  const { ingest } = await import('./ingest.ts');
+  const { placeIncoming } = await import('./uploads.ts');
+  const { remaining } = await import('./nodes.ts');
+  const { assertAllowedName } = await import('./filetypes.ts');
+  const errors: Record<string, string> = {};
+  const total = pending.reduce((sum, [, upload]) => sum + upload.size, 0);
+  if (remaining(owner.id) < total) {
+    for (const [questionId] of pending) errors[questionId] = t(lang, 'Gerade ist hier kein Platz für weitere Dateien');
+    throw new FormInputError(errors);
+  }
+  const stored: { answer: FileAnswer; upload: FormUpload; name: string }[] = [];
+  for (const [questionId, upload] of pending) {
+    const name = safeName(upload.name, t(lang, 'Datei'));
+    try {
+      assertAllowedName(name);
+      await ingest({ path: upload.path, size: upload.size, sha256: upload.sha256 }, { userId: null, name, via: 'link' });
+      stored.push({ answer: answers[questionId] as FileAnswer, upload, name });
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      errors[questionId] = t(lang, error.message, error.params);
+    }
+  }
+  if (Object.keys(errors).length) throw new FormInputError(errors);
+  const ownLang = preferredLanguage(owner);
+  const folder = [t(ownLang, 'Formular-Uploads'), safeName(form.title, t(ownLang, 'Formular'))];
+  for (const { answer, upload, name } of stored) {
+    const node = placeIncoming(owner, folder, name, upload, { form: form.title });
+    answer.name = node.name;
+    answer.node = node.id;
+  }
+}
+
+function fileLink(answer: FileAnswer) {
+  const node = answer.node
+    ? one<{ id: string; parent_id: string | null; trashed_at: number | null }>(
+        'SELECT id, parent_id, trashed_at FROM nodes WHERE id = ?',
+        answer.node
+      )
+    : null;
+  return {
+    name: answer.name,
+    size: answer.size,
+    url: node && !node.trashed_at && node.parent_id ? `/files/folder/${node.parent_id}?select=${node.id}` : null,
+  };
+}
+
 function labelOf(entry: Question, answer: Answer | undefined) {
   if (answer === undefined) return '';
+  if (isFileAnswer(answer)) return answer.name;
   if (entry.kind === 'single') return entry.options.find((choice) => choice.id === answer)?.label ?? '';
   if (entry.kind === 'multiple' && Array.isArray(answer))
     return answer
@@ -410,7 +544,15 @@ function presentResponse(form: FormRow, row: ResponseRow, questions: Question[])
     id: row.id,
     createdAt: Number(row.created_at),
     person: person ? { id: person.id, name: person.name, username: person.username } : null,
-    answers: questions.map((entry) => ({ question: entry.id, value: answers[entry.id] ?? null, text: labelOf(entry, answers[entry.id]) })),
+    answers: questions.map((entry) => {
+      const value = answers[entry.id] ?? null;
+      return {
+        question: entry.id,
+        value,
+        text: labelOf(entry, value ?? undefined),
+        ...(isFileAnswer(value) ? { file: fileLink(value) } : {}),
+      };
+    }),
   };
 }
 
@@ -483,6 +625,7 @@ export function formResults(user: UserRow, id: string) {
           max: numbers.length ? Math.max(...numbers) : null,
         };
       }
+      if (entry.kind === 'file') return { ...base, latest: given.slice(0, 20).map((answer) => (isFileAnswer(answer) ? answer.name : '')) };
       return { ...base, latest: given.slice(0, 20).map(String) };
     }),
   };

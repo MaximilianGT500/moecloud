@@ -16,15 +16,17 @@ async function files(dir: string): Promise<string[]> {
 
 const STRING = String.raw`'((?:[^'\\]|\\.)*)'`;
 const SENTENCE = String.raw`'([A-ZÄÖÜ](?:[^'\\]|\\.)* (?:[^'\\]|\\.)*)'`;
-const ERRORS = 'badRequest|unauthorized|forbidden|notFound|conflict|tooLarge|insufficientStorage|tooMany';
+const ERRORS = 'badRequest|unauthorized|forbidden|notFound|conflict|tooLarge|insufficientStorage|tooMany|fail';
 
 interface Rule {
   pattern: RegExp;
   files?: RegExp;
   notAfter?: RegExp;
+  words?: boolean;
 }
 
 const RULES: Rule[] = [
+  { pattern: new RegExp(String.raw`\btr\(\s*${STRING}`, 'g'), files: /shared\/rrule\.ts$/, words: true },
   { pattern: new RegExp(String.raw`\btp?\(\s*(?:[\w.]+(?:\([^()]*\))?\s*,\s*)?${STRING}`, 'g') },
   { pattern: new RegExp(String.raw`\btn\(\s*[^,]+,\s*${STRING}\s*,\s*${STRING}`, 'g') },
   { pattern: new RegExp(String.raw`\bmany\(\s*[^,]+,\s*[^,]+,\s*${STRING}\s*,\s*${STRING}`, 'g') },
@@ -40,6 +42,16 @@ const RULES: Rule[] = [
   },
   { pattern: new RegExp(String.raw`\bmessage = ${STRING}`, 'g'), files: /src\/lib\/errors\.ts$/ },
   { pattern: new RegExp(String.raw`\baction:\s*${STRING}`, 'g'), files: /src\/services\/notify\.ts$/ },
+  {
+    pattern: new RegExp(String.raw`new (?:SourceError|DavClientError|RemoteError)\(\s*${STRING}`, 'g'),
+    files: /src\/calendar\/[\w-]+\.ts$/,
+  },
+  { pattern: new RegExp(String.raw`\bmessage:\s*${STRING}`, 'g'), files: /src\/calendar\/importer\.ts$/ },
+  {
+    pattern: new RegExp(String.raw`new (?:ContactImportError|VCardError)\(\s*${STRING}`, 'g'),
+    files: /src\/contacts\/[\w-]+\.ts$/,
+  },
+  { pattern: new RegExp(String.raw`\bmessage:\s*${STRING}`, 'g'), files: /src\/contacts\/transfer\.ts$/ },
   {
     pattern: new RegExp(String.raw`new \w*Error\(\s*(?:[\w.?]+(?:\([^()]*\))?\s*\|\|\s*)?${SENTENCE}`, 'g'),
     files: /src\/(lib\/(clamav|fetch)|services\/updates)\.ts$/,
@@ -58,7 +70,7 @@ const RULES: Rule[] = [
 ];
 
 const keys = new Set<string>();
-const sources = [...(await files(join(root, 'src'))), ...(await files(join(root, 'web/src')))];
+const sources = [...(await files(join(root, 'src'))), ...(await files(join(root, 'web/src'))), ...(await files(join(root, 'shared')))];
 for (const file of sources) {
   const code = await readFile(file, 'utf8');
   const path = file.replaceAll('\\', '/');
@@ -69,7 +81,7 @@ for (const file of sources) {
       for (const value of match.slice(1)) {
         if (value === undefined) continue;
         const text = value.replace(/\\'/g, "'");
-        if (/[A-Za-zÄÖÜäöüß]/.test(text) && !/^[a-z][\w.-]*$/.test(text)) keys.add(text);
+        if (/[A-Za-zÄÖÜäöüß]/.test(text) && (rule.words || !/^[a-z][\w.-]*$/.test(text))) keys.add(text);
       }
     }
   }

@@ -8,7 +8,7 @@ Sicherheitsupdates gibt es für die neueste Version. Aktualisiere am besten bald
 
 | Version | Sicherheitsupdates |
 | ------- | ------------------ |
-| 1.8.x   | Ja                 |
+| 1.9.x   | Ja                 |
 | Älter   | Nein               |
 
 ## Eine Lücke melden
@@ -29,7 +29,7 @@ Schick dabei keine echten Passwörter, Tokens oder Dateien anderer Personen mit 
 
 ## Wie es weitergeht
 
-Du bekommst eine Rückmeldung, sobald die Meldung geprüft ist. Bestätigt sich die Lücke, erscheint so bald wie möglich eine neue Version. Sie ist in der [`version.json`](https://moecloud.moestudio.net/version.json) als Sicherheitsupdate markiert, damit alle Installationen mit eingeschalteter Versionsprüfung einen Hinweis zeigen. Erst danach steht die Lücke im [Changelog](CHANGELOG.md), auf Wunsch mit deinem Namen.
+Du bekommst eine Rückmeldung, sobald die Meldung geprüft ist. Bestätigt sich die Lücke, erscheint so bald wie möglich eine neue Version. Sie ist bei MoePulse und in der [`version.json`](https://moecloud.moestudio.net/version.json) als Sicherheitsupdate markiert, damit alle Installationen mit eingeschalteter Versionsprüfung einen Hinweis zeigen, auch unter **Admin › Hilfe**. Erst danach steht die Lücke im [Changelog](CHANGELOG.md), auf Wunsch mit deinem Namen.
 
 ## Sicher betreiben
 
@@ -50,7 +50,7 @@ Du bekommst eine Rückmeldung, sobald die Meldung geprüft ist. Bestätigt sich 
 
 ## Wie MoeCloud geprüft wird
 
-Zu jeder Version läuft eine eigene Testreihe für die Sicherheit (`test/sec-*.test.ts`, mit `npm test`). Sie ruft jede Route ohne Anmeldung, mit fremdem Konto, als Gast, mit einem App-Passwort und ohne Formular-Kennzeichen auf und prüft öffentliche Links, hochgeladene Inhalte, Weiterleitungen, Anfragen ins eigene Netz, Pfade, WebDAV und eingeschleuste Eingaben. Eine neue Route ohne Einordnung lässt die Tests scheitern. Das ersetzt keine Prüfung von außen: Wer MoeCloud für Vertrauliches einsetzt, lässt die eigene Einrichtung am besten zusätzlich von jemandem prüfen, der sie nicht gebaut hat.
+Zu jeder Version läuft eine eigene Testreihe für die Sicherheit (`test/sec-*.test.ts`, mit `npm test`). Sie ruft jede Route ohne Anmeldung, mit fremdem Konto, als Gast, mit einem App-Passwort und ohne Formular-Kennzeichen auf und prüft öffentliche Links, hochgeladene Inhalte, Weiterleitungen, Anfragen ins eigene Netz, Pfade, WebDAV, CalDAV, CardDAV, Kalender, Kontakte, Buchungsseiten, Umfragen und eingeschleuste Eingaben. Eine neue Route ohne Einordnung lässt die Tests scheitern. Das ersetzt keine Prüfung von außen: Wer MoeCloud für Vertrauliches einsetzt, lässt die eigene Einrichtung am besten zusätzlich von jemandem prüfen, der sie nicht gebaut hat.
 
 ## Bewusste Grenzen
 
@@ -59,7 +59,10 @@ Zu jeder Version läuft eine eigene Testreihe für die Sicherheit (`test/sec-*.t
 - Sperren nach Fehlversuchen und die Beschränkung der Verwaltung auf bestimmte Netze stützen sich auf die Adresse, die MoeCloud sieht. Geräte, denen MoeCloud die Angaben eines Proxys glaubt, in der Voreinstellung der eigene Rechner und das lokale Netz, können eine andere Adresse angeben. Wer das ausschließen will, trägt in `TRUST_PROXY` nur die Adresse des eigenen Proxys ein.
 - Ein fälliger Passwortwechsel gilt für die Anmeldung im Browser. App-Passwörter des Kontos arbeiten weiter, bis du sie widerrufst.
 - Der Schutz vor Erpressungstrojanern erkennt bekannte Endungen und Erpresserbriefe und zählt Änderungen pro App-Passwort. Ein Trojaner mit neuer Endung, einer, der nur wenige Dateien auf einmal ändert, oder einer, der im Browser angemeldet ist, fällt damit nicht auf. Er ersetzt keine Sicherung, und **Auf früheren Stand zurücksetzen** holt nur zurück, wovon es noch eine Version oder einen Eintrag im Papierkorb gibt.
-- Wer ein Formular ausfüllen darf, entscheidet allein der Link. Er verrät nichts über deine Dateien, aber jeder, der ihn kennt, kann antworten. Antworten ohne Konto lassen sich nicht einer Person zuordnen.
+- Wer ein Formular ausfüllen darf, entscheidet allein der Link. Er verrät nichts über deine Dateien, aber jeder, der ihn kennt, kann antworten. Antworten ohne Konto lassen sich nicht einer Person zuordnen. Hat das Formular eine Frage zum Datei-Upload, legt jeder mit dem Link Dateien in deinen Speicher, bis zur Grenze der Frage und solange Platz ist. Ist der Virenscan an, prüft er sie.
+- Buchungsseiten zeigen jedem mit dem Link, wann du frei bist. Terminumfragen zeigen allen mit dem Link die Namen und Stimmen der anderen, außer du blendest sie in der Umfrage aus. Einladungen an Gäste ohne Konto enthalten einen Link, mit dem jeder antworten kann, der die E-Mail hat.
+- Abonniert oder importiert jemand einen Kalender aus dem Netz, ruft MoeCloud dessen Adresse ab, bei Abos regelmäßig. Adressen im lokalen Netz sind dabei gesperrt, solange die Verwaltung sie unter **Admin › Kalender** nicht erlaubt. Beim Import aus einem CalDAV-Konto schickt MoeCloud Benutzername und Passwort nur an diesen Server und folgt Weiterleitungen nur innerhalb derselben Domain. Die Zugangsdaten bleiben nur für die Dauer des Imports im Speicher und landen weder in der Datenbank noch im Protokoll.
+- Wer ein Adressbuch zum Bearbeiten geteilt bekommt, kann darin alles ändern und löschen, auch über CardDAV. Gelöschtes bleibt im Papierkorb, bis er geleert wird. Ein App-Passwort mit **Nur lesen** ändert auch an Kontakten nichts.
 - Links nur zum Ansehen verhindern das Herunterladen in der Oberfläche. Wer eine Datei ansehen darf, kann ihren Inhalt technisch immer auch speichern.
 
 Deine Dateien liegen unverschlüsselt im Datenordner. Wer Zugriff auf den Server oder eine Sicherung hat, kann sie lesen. Das ist eine bewusste Grenze von MoeCloud und keine Lücke. Gleiches gilt für Schadsoftware, die ClamAV nicht erkennt: Das meldest du am besten direkt an [ClamAV](https://www.clamav.net).

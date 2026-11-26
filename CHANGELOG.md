@@ -2,6 +2,83 @@
 
 Alle wichtigen Änderungen an MoeCloud stehen in dieser Datei. Die Versionsnummern folgen [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.9.0] · 2026-11-26
+
+Mit dieser Version bekommt MoeCloud einen Kalender mit Aufgaben, Einladungen, Buchungsseiten und Terminumfragen und Adressbücher für deine Kontakte, beides mit CalDAV und CardDAV für Handy und Rechner. Termine und Kontakte aus Google, Apple, Outlook, Nextcloud und anderen Diensten übernimmst du mit wenigen Klicks. Damit die Oberfläche trotzdem übersichtlich bleibt, blendet jede Person aus, was sie nicht braucht. Dazu kommen ein Dokumentenscanner, ein Ablaufdatum für Dateien und Ordner, Datei-Uploads in Formularen und Hilfe von MoeStudio direkt in der Verwaltung.
+
+### Neu
+
+- **Kalender** in der Navigation: Tag, drei Tage, Arbeitswoche, Woche, Monat, Jahr und Terminliste, Termine aufziehen und verschieben mit Rückgängig, Schnelleingabe wie „Kaffee mit Mia morgen 15 Uhr #privat“, Wiederholungen nach RFC 5545 mit Ausnahmen, ganztägige Termine, Geburtstage, Fokuszeiten und Abwesenheiten, Zeitzonen pro Termin, mehrere Kalender mit Farben und Standard-Erinnerungen, Feiertage für Deutschland, Österreich, die Schweiz, das Vereinigte Königreich und die USA, Videokonferenzen über Jitsi, Suche, Papierkorb, Statistik und Drucken
+- **Aufgaben** mit Fälligkeit, Uhrzeit, Priorität, Fortschritt und Schlagwörtern, als eigene Liste und auf Wunsch zwischen den Terminen
+- **Aufgaben als Board** mit den Spalten Offen, In Arbeit und Erledigt. Karten ziehst du mit der Maus in die nächste Spalte oder verschiebst sie über ihr Menü
+- **Aufgaben zuweisen**: In geteilten Kalendern legst du fest, wer sich um eine Aufgabe kümmert. Die Person bekommt eine Benachrichtigung, und der Filter **Mir zugewiesen** zeigt, was bei dir liegt
+- **Gemeinsam planen**: Kalender mit anderen Konten teilen, nur frei und beschäftigt, mit allen Details oder zum Bearbeiten, Einladungen mit Zusage, Absage und Vielleicht, Gäste ohne Konto per E-Mail mit Kalenderdatei und Antwort-Link und **Gemeinsame Zeit finden** mit Vorschlägen
+- **Buchungsseiten** unter `/b/…`: Andere buchen freie Zeiten ohne Konto, mit Verfügbarkeit pro Wochentag, mehreren Dauern, Puffer, Vorlauf, Höchstzahl pro Tag und eigenen Fragen. Gebuchtes steht sofort im Kalender und lässt sich vom Gast selbst absagen
+- **Terminumfragen** unter `/u/…` mit Ja, Vielleicht und Nein, auch ohne Konto. Den besten Termin trägst du mit einem Klick ein
+- **Öffentliche Kalender und Abos**: Kalender als Seite, zum Einbetten und als ICS-Feed veröffentlichen, Kalender aus dem Netz per iCal- oder webcal-Adresse abonnieren und als ICS, ZIP oder CSV exportieren. Ein Abo machst du mit einem Klick zum eigenen Kalender
+- **Kalender aus anderen Diensten übernehmen**: ICS-Dateien, auch mehrere auf einmal, ZIP-Archive aus Google Takeout und von Apple, CSV aus Google und Outlook, eine iCal-Adresse einmalig oder ein ganzes CalDAV-Konto von Nextcloud, iCloud, Fastmail, mailbox.org, Posteo, Radicale und anderen. Eine Vorschau zeigt jeden gefundenen Kalender, und du wählst, was in einen neuen oder vorhandenen Kalender kommt, mit Name und Farbe und was mit schon vorhandenen Terminen passiert. ICS-Dateien aus deinen Dateien übernimmst du mit **In Kalender importieren**
+- **Kontakte** in der Navigation: mehrere Adressbücher, Kontakte mit Fotos, Telefonnummern, E-Mail-Adressen, Anschriften, Webseiten, Geburtstagen und Jahrestagen, Labels, Favoriten, Suche, Sortierung nach Vor- oder Nachnamen, Papierkorb und eine Übersicht der nächsten Geburtstage. Adressbücher teilst du mit anderen Konten zum Ansehen oder Bearbeiten
+- **Kontakte übernehmen und exportieren**: vCard 2.1, 3.0 und 4.0 von iPhone, Android, Outlook und Thunderbird, CSV aus Google Kontakte und Outlook auf Deutsch und Englisch und ZIP aus Google Takeout, mit Vorschau. Hinaus gehen Adressbücher als vCard oder als CSV für Google. **Doppelte zusammenführen** findet Kontakte mit gleicher E-Mail-Adresse, Nummer oder gleichem Namen und führt sie verlustfrei zusammen
+- **CardDAV** unter `/carddav/` für iPhone, Mac, Android mit DAVx⁵ und Thunderbird, mit den App-Passwörtern aus dem Konto. Apps finden die Adresse über `/.well-known/carddav` selbst, unbekannte Felder aus den Apps bleiben erhalten
+- **Geburtstage im Kalender**: Die Geburtstage deiner Kontakte stehen von selbst im Kalender, mit Alter und einem Weg zurück zum Kontakt. Beim Einladen schlägt MoeCloud auch Kontakte mit E-Mail-Adresse vor
+- **Erinnerungen an Termine und Aufgaben** in der Glocke, als Push und per E-Mail, dazu eine Übersicht per E-Mail, täglich oder für die ganze Woche
+- **CalDAV** unter `/caldav/` für iPhone, Mac, Android, Thunderbird und Outlook, mit den App-Passwörtern aus dem Konto. Apps von Apple finden die Adresse über `/.well-known/caldav` selbst
+- **Startseite**: neue Bereiche für die nächsten Termine samt offenen Einladungen und für offene Aufgaben
+- **Funktionen auswählen** unter **Konto › Funktionen**: Fotos, Musik, Notizen, Formulare, Schlagwörter, Kalender, Aufgaben, Buchungsseiten, Umfragen und Kontakte lassen sich einzeln ausblenden, aus Navigation, Startseite und Schnellzugriff. Die Daten bleiben. Was neue Konten sehen, legt die Verwaltung unter **Admin › Einstellungen › Anmeldung** fest
+- **Dokument scannen** unter **Neu**: Seiten mit der Kamera aufnehmen oder als Fotos auswählen, drehen, sortieren, als Dokument, in Graustufen oder in Farbe und als eine PDF im offenen Ordner speichern. Die Fotos verlassen den Browser nicht
+- **Ablaufdatum** im Menü von Dateien und Ordnern: Zum gewählten Zeitpunkt wandern sie von selbst in den Papierkorb, mit Benachrichtigung. Eine Sanduhr hinter dem Namen und die Details zeigen das Datum
+- **Datei-Upload in Formularen**: eine neue Art von Frage, die pro Antwort eine Datei annimmt, mit Grenze zwischen 1 und 100 MB und auf Wunsch nur bestimmten Dateitypen. Die Dateien landen unter **Formular-Uploads** in deinen Dateien, gehen durch den Virenscan und sind in den Antworten verlinkt
+- **Admin › Hilfe**: Nachrichten an MoeStudio direkt aus der Verwaltung, mit Antworten, auf Wunsch mit Diagnose, dazu Hinweise von MoeStudio zu deiner Version und die Prüfung auf Updates mit Changelog
+- **Daten an MoeStudio** unter **Admin › System**: Nutzungsstatistik und Fehlerberichte, beide aus, bis du sie einschaltest, mit Vorschau dessen, was gesendet würde, und einem Knopf, der alles Gesendete löschen lässt
+- **Admin › Kalender**: Kalender, CalDAV, öffentliche Kalender, Abos, Importe aus anderen Diensten, Buchungsseiten, Umfragen, Einladungen nach außen, die Frei/beschäftigt-Suche und Kontakte einzeln schalten, dazu Papierkorb, Zeitzone und Feiertage für neue Konten
+
+### Verbessert
+
+- Die Versionsprüfung fragt bei MoePulse nach und weiß so auch, ob es für deine Version ein Sicherheitsupdate gibt oder ob sie zurückgezogen wurde. Dabei geht nur die Versionsnummer mit, und antwortet MoePulse nicht, fragt MoeCloud die bisherige `version.json`
+- Der Datenexport enthält deine Kalender als ICS-Dateien im Ordner `kalender/` und deine Adressbücher als vCard-Dateien im Ordner `kontakte/`
+- Beim Löschen einer Person wandern ihre Kalender und Adressbücher mit den Dateien zur gewählten Person
+- Unter **Konto › WebDAV und App-Passwörter** steht jetzt auch die Adresse für CalDAV
+- Für vCard-Dateien gibt es in den Dateien und in der Vorschau **In Kontakte importieren**
+- Neue Benachrichtigungen lassen sich unter **Konto** für Erinnerungen an Termine, Einladungen und Buchungen einzeln schalten
+
+### Behoben
+
+- Die Meldungen beim Ausfüllen von Formularen, etwa „Wähl eine Antwort“ oder „Das ist keine Zahl“, erscheinen auf Englisch jetzt auch auf Englisch
+
+### API
+
+- Kalender unter `/api/calendar/`: `calendars` mit Freigaben, Veröffentlichung, Import und Export, `occurrences?from=&to=` mit allen Wiederholungen, `events` für Termine und Aufgaben samt `rsvp`, `complete`, `duplicate` und Papierkorb, `tasks`, `upcoming`, `search`, `stats`, `freebusy`, `templates`, `subscriptions`, `prefs`, `booking-pages`, `polls`, `export.zip` und `export.csv`. Zeiten gehen in Millisekunden, als `YYYY-MM-DD` oder ISO
+- Kalender-Import: `POST /api/calendar/import` mit Dateien als `multipart/form-data` oder JSON `{ "node" }`, `{ "url" }` oder `{ "caldav": { "url", "username", "password" } }`, dazu `GET` und `DELETE /api/calendar/import/:id` und `POST /api/calendar/import/:id/run`. `POST /api/calendar/calendars/:id/detach` macht ein Abo zum eigenen Kalender
+- Aufgaben haben `assignee` als ID einer Person, die den Kalender bearbeiten darf, und in `/tasks` ein Objekt mit `id`, `name` und `initials`. `GET /api/calendar/calendars/:id/members` nennt, wer infrage kommt. `GET /api/calendar/people?q=&contacts=1` liefert zusätzlich `contacts`
+- Kontakte unter `/api/contacts/`: `books` mit Freigaben, Kontakte mit `photo`, `vcard`, `favorite`, `restore` und `forever`, `labels`, `suggest`, `birthdays?from=&to=`, `duplicates`, `merge`, `move`, `delete`, `trash`, `import` mit `run` und `export?book=&format=csv`
+- CalDAV unter `/caldav/` und CardDAV unter `/carddav/` mit HTTP Basic und App-Passwort, öffentlich `/b/:slug`, `/u/:token`, `/p/:token`, `/rsvp/:token`, `/holidays/:region` und `/api/calendar/public/`
+- Ablaufdatum: `PUT /api/nodes/:id/expiry` mit JSON `{ "at" }` in Millisekunden oder `null`, Elemente tragen das Feld `expiresAt`
+- Formulare: Fragen der Art `file` mit `max` in MB und `accept`, `POST /f/:token` nimmt dafür `multipart/form-data`. Datei-Antworten stehen in `/responses` als `value` mit `name`, `size` und `node` und zusätzlich als `file` mit `name`, `size` und `url`
+- Konto: `PATCH /api/account/prefs` kennt `features` mit den ausgeblendeten Funktionen sowie `mailInvites`, `mailBookings` und `pushReminders`. `GET /api/home` bringt unter `planning` Termine, Aufgaben und offene Einladungen mit
+- Verwaltung: `GET` und `PUT /api/admin/pulse`, `GET /api/admin/pulse/preview`, `POST /api/admin/pulse/forget` und `POST /api/admin/moepulse/support`. Die Einstellungen kennen `calendar.*`, `contacts.enabled`, `accounts.features`, `pulse.stats` und `pulse.errors`, `GET /api/admin/updates` nennt unter `latest` zusätzlich `yanked`, `title`, `markdown` und `releases`, das Protokoll die Aktionen `pulse_changed`, `pulse_forgotten` und `support_ticket`
+- Benachrichtigungen haben die neuen Arten `event_reminder`, `task_due`, `invitation`, `invitation_updated`, `invitation_cancelled`, `invitation_reply`, `calendar_shared`, `booking_new`, `booking_cancelled`, `poll_vote`, `subscription_failed`, `calendar_import`, `contacts_shared`, `task_assigned` und `node_expired`, die Live-Ereignisse `events`, `calendars` und `contacts`
+- Alle anderen Adressen und Felder bleiben, wie sie sind
+
+### Kleinigkeiten
+
+- Die Datenbank bekommt Stand 13. Vorher legt MoeCloud wie gewohnt eine Sicherung an
+- Mit `MOEPULSE_DISABLED=1` oder `MOEPULSE_ENDPOINT=off` ist der Kontakt zu MoeStudio fest aus. `TZ` gibt jetzt auch die Zeitzone neuer Konten im Kalender vor
+- Abhängigkeiten auf dem neuesten Stand, darunter MUI 9.6, music-metadata 12.8 und @fastify/rate-limit 11.3
+- 1139 neue Texte mit englischer Übersetzung
+- 649 Tests statt 579, auf SQLite und auf PostgreSQL
+
+### Update von 1.8.0
+
+Mit dem Installationsskript reicht `sudo moecloud update`, mit Docker `docker compose pull` und `docker compose up -d`, mit Git `git pull`, `npm ci` und `npm run build`.
+
+Beim ersten Start sichert MoeCloud die Datenbank nach `data/backups/` und legt danach die Tabellen für Kalender, Termine, Aufgaben, Gäste, Erinnerungen, Vorlagen, Buchungsseiten, Umfragen, Adressbücher und Kontakte an, dazu zwei Spalten für das Ablaufdatum von Dateien und Ordnern. An deinen Dateien ändert sich nichts.
+
+**Kalender** und **Kontakte** sind nach dem Update für alle Mitglieder da, Gastkonten haben keine. Unter **Admin › Kalender** schaltest du beides ganz ab oder nur einzelne Teile. Die Zeitzone neuer Konten nimmt MoeCloud aus `TZ`, sonst `Europe/Berlin`. CalDAV liegt unter `/caldav/` und CardDAV unter `/carddav/`, denn unter `/dav/` liegen die Dateien. Steht ein Reverse Proxy vor MoeCloud, reicht er `/.well-known/caldav` und `/.well-known/carddav` einfach durch.
+
+**Daten an MoeStudio** bleibt aus, bis du es unter **Admin › System** einschaltest. Die Versionsprüfung fragt ab jetzt zuerst MoePulse unter `pulse.moestudio.net` und schickt dabei die installierte Version mit. Wer das nicht möchte, setzt `MOEPULSE_DISABLED=1`, dann bleibt es bei der `version.json`.
+
+Geprüft ist das Scannen in Chrome mit nachgebildeter Kamera, auf echten Handys noch nicht. CalDAV und CardDAV sind mit nachgebauten Abfragen geprüft, wie sie Apple, DAVx⁵ und Thunderbird schicken, der Import aus einem CalDAV-Konto gegen den eigenen Server. Mit echten Geräten und mit iCloud oder Nextcloud ist beides noch nicht ausprobiert.
+
 ## [1.8.0] · 2026-11-22
 
 Diese Version bringt Formulare für Umfragen und Anmeldungen, die jeder über einen Link ausfüllt, und schützt deine Dateien vor Erpressungstrojanern: MoeCloud weist ihre Dateien ab, hält Geräte an, die auffällig viele Dateien ändern, und setzt einen Ordner samt Inhalt auf einen früheren Stand zurück, ohne dabei etwas zu verlieren. Dazu kommen Aufnahmen direkt im Browser, Reaktionen auf Kommentare und das Entpacken von TAR- und GZ-Archiven.
@@ -765,6 +842,7 @@ Die erste Version.
 - Kommandozeile für Konten, Sicherung, Aufräumen und Prüfen
 - Gleiche Dateien liegen nur einmal auf der Platte
 
+[1.9.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.9.0
 [1.8.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.8.0
 [1.7.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.7.0
 [1.6.0]: https://github.com/MaximilianGT500/moecloud/releases/tag/v1.6.0

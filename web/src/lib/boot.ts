@@ -36,6 +36,21 @@ export interface SessionUser {
   rootId: string;
   initials: string;
   avatar?: string | null;
+  zone: string;
+}
+
+export interface CalendarFeatures {
+  caldav: boolean;
+  publicLinks: boolean;
+  subscriptions: boolean;
+  imports?: boolean;
+  booking: boolean;
+  polls: boolean;
+  externalInvites: boolean;
+  freebusy: boolean;
+  directory: boolean;
+  trashDays: number;
+  minRefresh: number;
 }
 
 export interface Storage {
@@ -101,6 +116,12 @@ export interface Boot {
   setup2fa?: boolean;
   plugins?: PluginBoot;
   forms?: boolean;
+  calendarOn?: { booking: boolean; polls: boolean; caldav?: string | null } | null;
+  contactsOn?: { carddav: string } | null;
+  directory?: boolean;
+  featuresOff?: string[];
+  caldav?: string;
+  calendarFeatures?: CalendarFeatures;
 }
 
 let cached: Boot | null = null;

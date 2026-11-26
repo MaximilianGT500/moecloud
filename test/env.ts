@@ -8,6 +8,7 @@ process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'moecloud-test-'));
 process.env.TEST_FEED_PORT = String(40_000 + Math.floor(Math.random() * 20_000));
 process.env.UPDATE_CHECK_URL = `http://127.0.0.1:${process.env.TEST_FEED_PORT}/version.json`;
 process.env.METRICS_TOKEN = '';
+process.env.MOEPULSE_DISABLED = '1';
 
 const server = process.env.TEST_POSTGRES;
 if (server && isMainThread) {

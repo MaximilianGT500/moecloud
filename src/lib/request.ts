@@ -19,6 +19,7 @@ declare module 'fastify' {
     lang: Lang;
     nonce: string;
     csrf: string;
+    embeddable: boolean;
   }
 }
 

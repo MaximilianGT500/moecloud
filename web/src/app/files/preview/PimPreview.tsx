@@ -1,14 +1,19 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import CakeRounded from '@mui/icons-material/CakeRounded';
+import EventAvailableRounded from '@mui/icons-material/EventAvailableRounded';
+import ContactsRounded from '@mui/icons-material/ContactsRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import MailOutlineRounded from '@mui/icons-material/MailOutlineRounded';
 import NotesRounded from '@mui/icons-material/NotesRounded';
 import PhoneRounded from '@mui/icons-material/PhoneRounded';
 import PlaceRounded from '@mui/icons-material/PlaceRounded';
+import { boot } from '../../../lib/boot';
+import { featureOn } from '../../../lib/features';
 import { formatDay } from '../../../lib/format';
 import { locale, t, tn } from '../../../lib/i18n';
 import { c, radius } from '../../../theme/tokens';
@@ -103,9 +108,21 @@ export function CalendarPreview({ item, base }: { item: Item; base: string }) {
         if (!events.length) return <Fallback item={item} text={t('In dieser Datei steht kein Termin.')} />;
         return (
           <>
-            <Typography variant="body2" sx={{ color: c.onSurfaceVariant, px: 0.5 }}>
-              {tn(events.length, 'Ein Termin', '{count} Termine')}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', px: 0.5 }}>
+              <Typography variant="body2" sx={{ color: c.onSurfaceVariant, flex: 1 }}>
+                {tn(events.length, 'Ein Termin', '{count} Termine')}
+              </Typography>
+              {base === '/api' && boot().calendarOn && featureOn('calendar') && (
+                <Button
+                  size="small"
+                  variant="tonal"
+                  startIcon={<EventAvailableRounded />}
+                  href={`/calendar?import=${encodeURIComponent(item.id)}`}
+                >
+                  {t('In Kalender importieren')}
+                </Button>
+              )}
+            </Box>
             <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
               {events.map((event, index) => (
                 <Box
@@ -252,9 +269,21 @@ export function ContactPreview({ item, base }: { item: Item; base: string }) {
         if (!contacts.length) return <Fallback item={item} text={t('In dieser Datei steht kein Kontakt.')} />;
         return (
           <>
-            <Typography variant="body2" sx={{ color: c.onSurfaceVariant, px: 0.5 }}>
-              {tn(contacts.length, 'Ein Kontakt', '{count} Kontakte')}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', px: 0.5 }}>
+              <Typography variant="body2" sx={{ color: c.onSurfaceVariant, flex: 1 }}>
+                {tn(contacts.length, 'Ein Kontakt', '{count} Kontakte')}
+              </Typography>
+              {base === '/api' && boot().contactsOn && featureOn('contacts') && (
+                <Button
+                  size="small"
+                  variant="tonal"
+                  startIcon={<ContactsRounded />}
+                  href={`/contacts?import=${encodeURIComponent(item.id)}`}
+                >
+                  {t('In Kontakte importieren')}
+                </Button>
+              )}
+            </Box>
             <Box
               component="ul"
               sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}

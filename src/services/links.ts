@@ -7,6 +7,7 @@ import type { Lang } from '../lib/i18n.ts';
 import { record } from './activity.ts';
 import { chain, getNode, requireAccess, resolveAccess, type NodeRow } from './nodes.ts';
 import { notify } from './notify.ts';
+import { countPulse } from './pulse.ts';
 import * as settings from './settings.ts';
 import { findTheme } from './themes.ts';
 import { getUser, inactive, type UserRow } from './users.ts';
@@ -289,6 +290,7 @@ export async function createLink(user: UserRow, nodeId: string, input: LinkInput
     Date.now()
   );
   record({ owner: node.owner_id, actor: user.id, node: node.id, parent: node.parent_id, action: 'share_link', name: node.name });
+  countPulse('share');
   return getLink(id)!;
 }
 

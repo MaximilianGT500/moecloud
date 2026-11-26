@@ -10,7 +10,7 @@ interface Chunk {
   imports?: string[];
 }
 
-export type Entry = 'files' | 'admin' | 'account' | 'setup' | 'share' | 'auth';
+export type Entry = 'files' | 'admin' | 'account' | 'setup' | 'share' | 'auth' | 'calendar' | 'contacts' | 'public' | 'book' | 'poll';
 
 const SOURCES: Record<Entry, string> = {
   files: 'src/entries/files.tsx',
@@ -19,6 +19,11 @@ const SOURCES: Record<Entry, string> = {
   setup: 'src/entries/setup.tsx',
   share: 'src/entries/share.tsx',
   auth: 'src/entries/auth.ts',
+  calendar: 'src/entries/calendar.tsx',
+  contacts: 'src/entries/contacts.tsx',
+  public: 'src/entries/public.tsx',
+  book: 'src/entries/book.tsx',
+  poll: 'src/entries/poll.tsx',
 };
 
 const MANIFEST = join(config.web, '.vite', 'manifest.json');

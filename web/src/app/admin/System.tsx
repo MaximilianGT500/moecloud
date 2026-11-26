@@ -14,6 +14,7 @@ import { CopyField, Section } from '../common/bits';
 import { confirm } from '../common/dialogs';
 import { toast } from '../common/toast';
 import { UpdateBanner, updateCommand, type UpdateInfo } from './Overview';
+import { PulseConsentSection } from './Pulse';
 import { Facts, Loading, StatusDot, Toggle } from './shared';
 import { ServerLog } from './ServerLog';
 
@@ -241,6 +242,8 @@ export function SystemSection() {
           </Box>
         )}
       </Section>
+
+      <PulseConsentSection />
 
       <ServerLog />
     </Box>

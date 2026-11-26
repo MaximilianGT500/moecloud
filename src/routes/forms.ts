@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises';
+import { finished } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from '../lib/errors.ts';
@@ -9,6 +11,10 @@ import { intOf, parse } from '../lib/validate.ts';
 import {
   copyForm,
   createForm,
+  fileLimit,
+  formUploads,
+  FORM_LIMITS,
+  type FormUpload,
   deleteForm,
   deleteResponses,
   formByToken,
@@ -27,6 +33,7 @@ import {
   updateForm,
   type FormRow,
 } from '../services/forms.ts';
+import { receive } from '../services/blobs.ts';
 import { formDonePage, formPage } from '../views/forms.ts';
 import { messagePage } from '../views/pages.ts';
 
@@ -34,6 +41,49 @@ type IdParams = { Params: { id: string } };
 type TokenParams = { Params: { token: string } };
 
 const answeredCookie = (form: Pick<FormRow, 'id'>) => `moe_form_${form.id}`;
+
+async function discard(files: Map<string, FormUpload>) {
+  await Promise.all([...files.values()].map((upload) => rm(upload.path, { force: true })));
+}
+
+async function readSubmission(request: FastifyRequest, form: FormRow) {
+  const files = new Map<string, FormUpload>();
+  if (!request.isMultipart()) return { fields: body<Record<string, unknown>>(request), files };
+  const questions = new Map(formUploads(form).map((entry) => [`q-${entry.id}`, entry]));
+  const fields: Record<string, unknown> = Object.create(null);
+  try {
+    const options = {
+      limits: {
+        fields: 1000,
+        fieldSize: 64 * 1024,
+        files: Math.max(1, Math.min(questions.size, FORM_LIMITS.files)),
+        fileSize: Math.max(1, ...[...questions.values()].map(fileLimit)),
+        parts: 1100,
+      },
+      throwFileSizeLimit: false,
+    };
+    const parts = request.parts(options);
+    for await (const part of parts) {
+      if (part.type === 'field') {
+        if (typeof part.value === 'string' && !(part.fieldname in fields)) fields[part.fieldname] = part.value;
+        continue;
+      }
+      const entry = questions.get(part.fieldname);
+      if (!entry || files.has(entry.id) || !part.filename) {
+        await finished(part.file.resume());
+        continue;
+      }
+      const received = await receive(part.file);
+      files.set(entry.id, { ...received, name: part.filename, truncated: part.file.truncated });
+    }
+  } catch (error) {
+    await discard(files);
+    if (error instanceof HttpError) throw error;
+    request.log.debug({ error: (error as Error).message }, 'Formularantwort unlesbar');
+    throw new HttpError(400, 'Die Antwort kam nicht vollständig an. Versuch es bitte noch einmal.', 'form_body');
+  }
+  return { fields, files };
+}
 
 function closedPage(request: FastifyRequest, reply: FastifyReply, form: FormRow | null) {
   const state = form ? formState(form) : null;
@@ -174,15 +224,17 @@ export async function formRoutes(app: FastifyInstance) {
     reply.header('Referrer-Policy', 'no-referrer');
     const form = formByToken(request.params.token);
     if (!form) return closedPage(request, reply, null);
-    const fields = body<Record<string, unknown>>(request);
+    let fields: Record<string, unknown> = {};
+    let files = new Map<string, FormUpload>();
     const user = request.auth?.session ? request.auth.user : null;
     const done = () => reply.redirect(`/f/${form.token}?gesendet`, 303);
     try {
+      ({ fields, files } = await readSubmission(request, form));
       checkFormCsrf(request, fields._csrf);
       if (typeof fields.website === 'string' && fields.website.trim()) return done();
       if (form.signed_in && !user) return loginPage(request, reply, form);
       if (form.once && !form.signed_in && request.cookies?.[answeredCookie(form)] === '1') return answeredPage(request, reply, form);
-      submitResponse(form, user, fields, request.lang);
+      await submitResponse(form, user, fields, request.lang, files);
     } catch (error) {
       if (error instanceof FormInputError) return showForm(request, reply, form, { values: fields, errors: error.errors, status: 400 });
       if (!(error instanceof HttpError)) throw error;
@@ -193,6 +245,8 @@ export async function formRoutes(app: FastifyInstance) {
         error: t(request.lang, error.message, error.params),
         status: error.status,
       });
+    } finally {
+      await discard(files);
     }
     if (form.once && !form.signed_in) {
       reply.setCookie(answeredCookie(form), '1', {

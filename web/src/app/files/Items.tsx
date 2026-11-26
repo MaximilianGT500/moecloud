@@ -13,6 +13,7 @@ import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import AlarmRounded from '@mui/icons-material/AlarmRounded';
+import HourglassBottomRounded from '@mui/icons-material/HourglassBottomRounded';
 import { m } from 'motion/react';
 import { formatBytes, formatDate, formatDateTime, formatDay } from '../../lib/format';
 import { t, tn, tp } from '../../lib/i18n';
@@ -107,6 +108,21 @@ function ReminderBadge({ item }: { item: Item }) {
   return (
     <Tooltip title={label} describeChild>
       <AlarmRounded aria-hidden={false} role="img" aria-label={label} sx={{ fontSize: 16, flex: 'none', ml: 0.75, color: c.tertiary }} />
+    </Tooltip>
+  );
+}
+
+function ExpiryBadge({ item }: { item: Item }) {
+  if (!item.expiresAt) return null;
+  const label = t('Läuft am {date} ab', { date: formatDateTime(item.expiresAt) });
+  return (
+    <Tooltip title={label} describeChild>
+      <HourglassBottomRounded
+        aria-hidden={false}
+        role="img"
+        aria-label={label}
+        sx={{ fontSize: 16, flex: 'none', ml: 0.75, color: c.error }}
+      />
     </Tooltip>
   );
 }
@@ -452,6 +468,7 @@ export function Items(props: ItemsProps) {
                   </Typography>
                   <LockBadge item={item} />
                   <ReminderBadge item={item} />
+                  <ExpiryBadge item={item} />
                   <TagDots ids={item.tags} />
                   {actions(item, true)}
                 </Box>
@@ -592,6 +609,7 @@ export function Items(props: ItemsProps) {
                 </Typography>
                 <LockBadge item={item} />
                 <ReminderBadge item={item} />
+                <ExpiryBadge item={item} />
                 <TagDots ids={item.tags} />
               </Box>
               <Typography variant="caption" noWrap component="p" sx={{ color: 'inherit', opacity: 0.75, display: { sm: 'none' } }}>

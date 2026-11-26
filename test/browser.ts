@@ -10,7 +10,9 @@ import sharp from 'sharp';
 import yazl from 'yazl';
 import { fakeCollabora } from './collabora.ts';
 import { proRaw } from './images.ts';
+import { pulseSink } from './pulse-sink.ts';
 import { smtpSink } from './smtp.ts';
+import { addDays, atMinute, startOfWeek, todayKey } from '../shared/time.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const shots = resolve(process.env.SCREENSHOTS ?? join(root, 'docs/screenshots'));
@@ -27,6 +29,8 @@ if (!existsSync(join(root, 'dist/web/.vite/manifest.json'))) {
 const dataDir = await mkdtemp(join(tmpdir(), 'moecloud-browser-'));
 await mkdir(shots, { recursive: true });
 const smtp = await smtpSink();
+const version = (JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { version: string }).version;
+const moepulse = await pulseSink(version);
 
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.ts'], {
   cwd: root,
@@ -39,6 +43,8 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
     LOG_FORMAT: 'json',
     LOG_LEVEL: 'info',
     PUBLIC_URL: '',
+    MOEPULSE_ENDPOINT: moepulse.url,
+    MOEPULSE_DISABLED: '',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
@@ -66,6 +72,7 @@ const browser = await chromium
   .catch(async (error: Error) => {
     server.kill('SIGTERM');
     await smtp.close();
+    await moepulse.close();
     await rm(dataDir, { recursive: true, force: true });
     process.stderr.write(
       `Der Browser startet nicht: ${error.message.split('\n')[0]}\nSetze CHROME_PATH auf ein installiertes Chrome oder Chromium.\n`
@@ -1068,6 +1075,43 @@ try {
     await item(page, 'Protokoll für Mia.txt').waitFor();
   });
 
+  await step('Ablaufdatum setzen und entfernen', async () => {
+    await page.goto(`${base}/files`);
+    await item(page, 'Dokumente').dblclick();
+    await page.waitForURL('**/files/folder/**');
+    await item(page, 'Protokoll für Mia.txt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Ablaufdatum', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Ablaufdatum für „Protokoll für Mia.txt“' });
+    await dialog.getByRole('combobox', { name: 'Läuft ab' }).click();
+    await page.getByRole('option', { name: 'In einem Monat' }).click();
+    await shot(page, 'expiry-dialog');
+    await dialog.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page
+      .getByText(/^„Protokoll für Mia\.txt“ landet am .+ im Papierkorb$/)
+      .filter({ visible: true })
+      .first()
+      .waitFor();
+    await page
+      .getByRole('grid')
+      .getByRole('img', { name: /^Läuft am .+ ab$/ })
+      .first()
+      .waitFor();
+    await item(page, 'Protokoll für Mia.txt').click();
+    await page
+      .getByText(/, dann in den Papierkorb$/)
+      .first()
+      .waitFor();
+    await item(page, 'Protokoll für Mia.txt').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Ablaufdatum ändern', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Ablaufdatum entfernen' }).click();
+    await visible(page, 'Ablaufdatum entfernt');
+    await page
+      .getByRole('grid')
+      .getByRole('img', { name: /^Läuft am .+ ab$/ })
+      .waitFor({ state: 'detached' });
+  });
+
   await step('E-Book lesen und Office-Vorschau', async () => {
     await page.goto(`${base}/files`);
     await item(page, 'Dokumente').dblclick();
@@ -1721,6 +1765,564 @@ try {
       .getByRole('list', { name: 'Serverprotokoll' })
       .getByText(/MoeCloud .* läuft auf Port/)
       .waitFor();
+  });
+
+  await step('Hilfe und Rückmeldung an MoeStudio', async () => {
+    moepulse.state.notices = [
+      {
+        id: 3,
+        level: 'info',
+        title: 'Wartung am Samstag',
+        body: 'Am Samstagvormittag antwortet der Support etwas später.',
+        link: null,
+        minVersion: null,
+        maxVersion: null,
+        createdAt: Date.now(),
+      },
+    ];
+    await page.goto(`${base}/admin/system`);
+    const consent = page.locator('[data-pulse-consent]');
+    await consent.getByText('Noch nichts gesendet').waitFor();
+    await consent.getByRole('button', { name: 'Vorschau' }).click();
+    const preview = page.getByRole('dialog', { name: 'Das würde gesendet' });
+    await preview.getByText('"app": "moecloud"').waitFor();
+    if (/emi@example|Emi Sato/.test((await preview.textContent()) ?? '')) throw new Error('Die Vorschau enthält persönliche Daten');
+    await preview.getByRole('button', { name: 'Schließen' }).click();
+    await preview.waitFor({ state: 'hidden' });
+    await consent.getByRole('switch', { name: /Nutzungsstatistik teilen/ }).click();
+    await consent.getByRole('switch', { name: /Nutzungsstatistik teilen/, checked: true }).waitFor();
+    await consent.getByText(/^Zuletzt gesendet/).waitFor();
+    if (moepulse.state.heartbeats.length !== 1) throw new Error(`${moepulse.state.heartbeats.length} Meldungen statt einer`);
+    await consent.scrollIntoViewIfNeeded();
+    await shot(page, 'admin-pulse');
+
+    await page.goto(`${base}/admin/help`);
+    const help = page.locator('[data-help]');
+    await help.getByText('Wartung am Samstag').waitFor();
+    await help.getByText(`MoeCloud ${version} ist aktuell.`).waitFor();
+    await help.getByRole('button', { name: 'Neue Nachricht' }).click();
+    await help.getByLabel('Betreff').fill('Freigabe für Lea');
+    await help.getByLabel('Nachricht').fill('Lea sieht den Ordner Urlaub nicht, obwohl ich ihn mit ihr geteilt habe.');
+    await help.getByRole('button', { name: 'Senden' }).click();
+    await help.getByRole('button', { name: 'Ticket schließen' }).waitFor();
+    await help.getByText('Lea sieht den Ordner Urlaub nicht, obwohl ich ihn mit ihr geteilt habe.').waitFor();
+    await page.waitForLoadState('networkidle');
+    const sent = moepulse.state.tickets[0];
+    if (sent?.subject !== 'Freigabe für Lea' || sent.messages.length !== 1) throw new Error('Das Ticket kam nicht an');
+    moepulse.reply(sent.number, 'Danke Emi. Schau bitte unter Geteilt, ob Lea die Freigabe angenommen hat.');
+    await page.reload();
+    const nav = page.getByRole('navigation', { name: 'Bereiche der Verwaltung' }).first();
+    await nav.getByLabel('1 ungelesen').waitFor();
+    await help.getByText('Neue Antwort').waitFor();
+    await help.getByText('Freigabe für Lea').click();
+    await help.getByText('Danke Emi. Schau bitte unter Geteilt, ob Lea die Freigabe angenommen hat.').waitFor();
+    await nav.getByLabel('1 ungelesen').waitFor({ state: 'detached' });
+    await shot(page, 'admin-help');
+    const audit = await api(page, 'GET', '/api/admin/audit?action=support_ticket');
+    if (!JSON.stringify(audit).includes(String(sent.number))) throw new Error('Das Ticket fehlt im Protokoll');
+
+    await page.goto(`${base}/admin/system`);
+    await consent.getByRole('switch', { name: /Nutzungsstatistik teilen/ }).click();
+    await consent.getByRole('switch', { name: /Nutzungsstatistik teilen/, checked: false }).waitFor();
+    moepulse.state.notices = [];
+  });
+
+  await step('Kalender mit Terminen, Aufgaben und Einladungen', async () => {
+    const zone = 'Europe/Berlin';
+    const today = todayKey(zone);
+    const monday = startOfWeek(today, 1);
+    const day = (offset: number) => addDays(monday, offset);
+    const at = (offset: number, hour: number, minute = 0) => atMinute(day(offset), hour * 60 + minute, zone);
+    await page.goto(`${base}/calendar`);
+    await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Kalender' }).first().waitFor();
+    const { calendars } = await api<{ calendars: { id: string; name: string }[] }>(page, 'GET', '/api/calendar/calendars');
+    const personal = calendars[0].id;
+    const create = async (name: string, color: string) =>
+      (await api<{ calendar: { id: string } }>(page, 'POST', '/api/calendar/calendars', { name, color })).calendar.id;
+    const work = await create('Arbeit', '#3b82f6');
+    const family = await create('Familie', '#ec4899');
+    const sport = await create('Sport', '#10b981');
+    const event = (calendarId: string, payload: Record<string, unknown>) =>
+      api<{ id: string }>(page, 'POST', '/api/calendar/events', { calendarId, zone, ...payload });
+    await event(work, {
+      title: 'Daily Stand-up',
+      start: at(0, 9),
+      end: at(0, 9, 30),
+      rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+      conference: 'https://meet.jit.si/MoeCloud-Standup',
+    });
+    await event(work, {
+      title: 'Sprint-Planung',
+      start: at(1, 10),
+      end: at(1, 11, 30),
+      location: 'Raum Kirschblüte',
+      attendees: [
+        { email: 'mia@example.com', name: 'Mia Weber' },
+        { email: 'lea@example.org', name: 'Lea' },
+      ],
+      description: 'Ziele für den nächsten Sprint festlegen.',
+    });
+    await event(personal, { title: 'Mittagessen mit Mia', start: at(2, 12, 30), end: at(2, 13, 30), location: 'Ramen-Bar am Markt' });
+    await event(work, { title: 'Fokuszeit', kind: 'focus', start: at(2, 14), end: at(2, 16) });
+    await event(work, { title: 'Design-Review', start: at(3, 14), end: at(3, 15), categories: ['Design'] });
+    await event(sport, { title: 'Yoga', start: at(3, 18, 30), end: at(3, 20), rrule: 'FREQ=WEEKLY' });
+    await event(family, { title: 'Spieleabend mit Lea', start: at(4, 18), end: at(4, 21), location: 'Bei Lea' });
+    await event(family, { title: 'Ausflug an den See', allDay: true, start: day(5), end: day(7) });
+    await event(personal, { component: 'VTODO', title: 'Steuererklärung abgeben', allDay: true, due: day(4), priority: 1 });
+    await event(personal, {
+      component: 'VTODO',
+      title: 'Geschenk für Lea besorgen',
+      allDay: true,
+      due: day(5),
+      categories: ['Geburtstag'],
+    });
+    await api(page, 'PUT', `/api/calendar/calendars/${sport}/public`, { mode: 'details' });
+
+    await page.goto(`${base}/calendar/week/${today}`);
+    await page.getByText('Design-Review').first().waitFor();
+    await page.getByText('Spieleabend mit Lea').first().waitFor();
+    await page.waitForTimeout(400);
+    await shot(page, 'calendar-week');
+
+    await page.getByText('Sprint-Planung').first().click();
+    await page.getByText('Raum Kirschblüte', { exact: true }).waitFor();
+    await shot(page, 'calendar-details');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByLabel('Titel').fill('Pizza mit Emi, Mia und Lea');
+    await page.waitForTimeout(300);
+    await shot(page, 'calendar-editor');
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await page.getByText('Termin gespeichert').waitFor();
+
+    await page.keyboard.press('q');
+    await page.getByLabel('Titel').fill('Kinoabend morgen 20 Uhr #Freizeit');
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await page.getByText('Termin gespeichert').first().waitFor();
+    const found = await api<{ items: { title: string }[] }>(page, 'GET', '/api/calendar/search?q=kinoabend');
+    if (!found.items.some((entry) => entry.title === 'Kinoabend')) throw new Error('Die Schnelleingabe hat den Titel nicht erkannt');
+
+    await page.goto(`${base}/calendar/month/${today}`);
+    await page.getByText('Ausflug an den See').first().waitFor();
+    await shot(page, 'calendar-month');
+
+    await page.goto(`${base}/calendar/tasks`);
+    await page.getByText('Steuererklärung abgeben').waitFor();
+    await shot(page, 'calendar-tasks');
+
+    await page.goto(`${base}/calendar/stats`);
+    await page.getByText('Zeit pro Kalender').waitFor();
+
+    await page.goto(`${base}/calendar/settings`);
+    await page.getByText('Arbeitszeit').first().waitFor();
+    const server = await page.getByLabel('Server-Adresse').inputValue();
+    if (server !== `${base}/caldav/`) throw new Error(`Die CalDAV-Adresse stimmt nicht: ${server}`);
+    await shot(page, 'calendar-settings');
+  });
+
+  await step('Buchungsseiten, Umfragen und öffentliche Kalender', async () => {
+    const zone = 'Europe/Berlin';
+    const monday = startOfWeek(todayKey(zone), 1);
+    const at = (offset: number, hour: number) => atMinute(addDays(monday, offset), hour * 60, zone);
+    const booking = await api<{ page: { slug: string } }>(page, 'POST', '/api/calendar/booking-pages', {
+      title: 'Kennenlerngespräch',
+      slug: 'emi-kennenlernen',
+      description: 'Lass uns 30 Minuten über dein Projekt sprechen.',
+      durations: [30, 60],
+      locationKind: 'video',
+      notice: 0,
+    });
+    const poll = await api<{ poll: { token: string } }>(page, 'POST', '/api/calendar/polls', {
+      title: 'Teamessen im Dezember',
+      description: 'Wann passt es euch am besten?',
+      location: 'Trattoria Luna',
+      options: [
+        { start: at(17, 19), end: at(17, 22) },
+        { start: at(18, 19), end: at(18, 22) },
+        { start: at(19, 19), end: at(19, 22) },
+      ],
+    });
+    const { calendars } = await api<{ calendars: { name: string; publicToken: string | null }[] }>(page, 'GET', '/api/calendar/calendars');
+    const sport = calendars.find((entry) => entry.name === 'Sport')!;
+
+    await page.goto(`${base}/calendar/polls`);
+    await page.getByText('Teamessen im Dezember').waitFor();
+    await page.goto(`${base}/calendar/booking`);
+    await page.getByText('Kennenlerngespräch').waitFor();
+    await shot(page, 'calendar-booking');
+
+    const guest = await context('light');
+    const visitor = await open(guest, 'Gast');
+    await visitor.goto(`${base}/b/${booking.page.slug}`);
+    await visitor.getByText('Kennenlerngespräch').first().waitFor();
+    await visitor.waitForTimeout(600);
+    await shot(visitor, 'calendar-booking-page');
+    await visitor.goto(`${base}/u/${poll.poll.token}`);
+    await visitor.getByText('Wann kannst du?').waitFor();
+    await visitor.getByLabel('Dein Name').fill('Lea');
+    await shot(visitor, 'calendar-poll');
+    await visitor.goto(`${base}/p/${sport.publicToken}`);
+    await visitor.getByText('Sport').first().waitFor();
+    await visitor.getByText('Bereitgestellt mit MoeCloud').waitFor();
+    await guest.close();
+  });
+
+  await step('Kalender aus anderen Diensten importieren', async () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Apple Inc.//macOS 26//EN',
+      'X-WR-CALNAME:Familie Sato',
+      'X-APPLE-CALENDAR-COLOR:#FF2968FF',
+      'BEGIN:VEVENT',
+      'UID:weihnachten-lea@example.com',
+      'DTSTAMP:20261101T100000Z',
+      'DTSTART;TZID=Europe/Berlin:20261212T180000',
+      'DTEND;TZID=Europe/Berlin:20261212T220000',
+      'SUMMARY:Weihnachtsfeier bei Lea',
+      'END:VEVENT',
+      'BEGIN:VTODO',
+      'UID:geschenk-emily@example.com',
+      'DTSTAMP:20261101T100000Z',
+      'DUE;VALUE=DATE:20261210',
+      'SUMMARY:Geschenk für Emily besorgen',
+      'END:VTODO',
+      'END:VCALENDAR',
+      '',
+    ].join('\r\n');
+    const csv = [
+      'Subject,Start Date,Start Time,End Date,End Time,All Day Event,Description,Location',
+      'Zahnarzt mit Mia,12/03/2026,9:30 AM,12/03/2026,10:15 AM,False,Kontrolle,Praxis',
+      'Skiurlaub,01/02/2027,,01/06/2027,,True,,',
+    ].join('\r\n');
+    await page.goto(`${base}/calendar`);
+    await page.getByRole('button', { name: 'Kalender hinzufügen' }).click();
+    await page.getByRole('menuitem', { name: /^Importieren/ }).click();
+    const wizard = page.locator('[data-import-wizard]');
+    await wizard.getByRole('heading', { name: 'Kalender importieren' }).waitFor();
+    await wizard.locator('input[type=file]').setInputFiles([
+      { name: 'familie.ics', mimeType: 'text/calendar', buffer: Buffer.from(ics) },
+      { name: 'Google Kalender.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) },
+    ]);
+    await wizard.locator('[data-import-calendar="Familie Sato"]').waitFor();
+    await wizard.locator('[data-import-calendar="Google Kalender"]').getByText('2 Termine', { exact: false }).waitFor();
+    await wizard.getByRole('textbox', { name: 'Name' }).last().fill('Google');
+    await shot(page, 'calendar-import');
+    await wizard.getByRole('button', { name: '2 Kalender importieren' }).click();
+    await wizard.locator('[data-import-done]').getByText('Familie Sato').waitFor();
+    await wizard.getByRole('button', { name: 'Fertig' }).click();
+    await wizard.waitFor({ state: 'detached' });
+    await page
+      .getByRole('complementary')
+      .getByText('Google', { exact: true })
+      .or(page.getByText('Google', { exact: true }))
+      .first()
+      .waitFor();
+
+    const { user } = await api<{ user: { rootId: string } }>(page, 'GET', '/api/session');
+    const lea = ics.replace('Familie Sato', 'Lea');
+    const init = await api<{ id: string }>(page, 'POST', '/api/uploads', {
+      parentId: user.rootId,
+      name: 'Termine von Lea.ics',
+      size: Buffer.byteLength(lea),
+    });
+    await page.evaluate(
+      async ({ id, body }) => {
+        const session = (await (await fetch('/api/session')).json()) as { csrf: string };
+        await fetch(`/api/uploads/${id}?offset=0`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/octet-stream', 'x-csrf-token': session.csrf },
+          body,
+        });
+      },
+      { id: init.id, body: lea }
+    );
+    await api(page, 'POST', `/api/uploads/${init.id}/complete`);
+    await page.goto(`${base}/files`);
+    await item(page, 'Termine von Lea.ics').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'In Kalender importieren' }).click();
+    await page.waitForURL(/\/calendar/);
+    await page.locator('[data-import-wizard] [data-import-calendar="Lea"]').waitFor();
+    await page.locator('[data-import-wizard]').getByRole('button', { name: 'Einen Kalender importieren' }).click();
+    await page.locator('[data-import-done]').getByText('Lea').waitFor();
+    await page.locator('[data-import-wizard]').getByRole('button', { name: 'Fertig' }).click();
+  });
+
+  await step('Kontakte mit Geburtstagen und CardDAV', async () => {
+    const zone = 'Europe/Berlin';
+    const today = todayKey(zone);
+    const soon = addDays(today, 2);
+    const later = addDays(today, 9);
+    const { books } = await api<{ books: { id: string; name: string }[] }>(page, 'GET', '/api/contacts/books');
+    const bookId = books[0].id;
+    const blank = {
+      kind: 'individual',
+      name: '',
+      prefix: '',
+      given: '',
+      additional: '',
+      family: '',
+      suffix: '',
+      nickname: '',
+      organization: '',
+      department: '',
+      title: '',
+      emails: [],
+      phones: [],
+      addresses: [],
+      urls: [],
+      birthday: null,
+      anniversary: null,
+      note: '',
+      categories: [],
+    };
+    const add = async (data: Record<string, unknown>) =>
+      (await api<{ contact: { id: string } }>(page, 'POST', '/api/contacts', { bookId, data: { ...blank, ...data } })).contact.id;
+    const mia = await add({
+      given: 'Mia',
+      family: 'Weber',
+      organization: 'Kirschblüte Studio',
+      title: 'Designerin',
+      emails: [{ type: 'work', value: 'mia@kirschbluete.example' }],
+      phones: [
+        { type: 'mobile', value: '+49 151 2345678' },
+        { type: 'work', value: '+49 30 1234560' },
+      ],
+      addresses: [
+        {
+          type: 'work',
+          street: 'Kastanienallee 12',
+          locality: 'Berlin',
+          region: '',
+          code: '10435',
+          country: 'Deutschland',
+          pobox: '',
+          extended: '',
+        },
+      ],
+      urls: [{ type: 'work', value: 'kirschbluete.example' }],
+      birthday: `1994-${soon.slice(5)}`,
+      note: 'Mag Matcha und Ramen am Markt.',
+      categories: ['Arbeit', 'Freunde'],
+    });
+    await add({
+      given: 'Lea',
+      family: 'Sato',
+      nickname: 'Leo',
+      emails: [{ type: 'home', value: 'lea@example.org' }],
+      phones: [{ type: 'mobile', value: '+49 170 9876543' }],
+      birthday: `--${later.slice(5)}`,
+      categories: ['Familie'],
+    });
+    await add({ given: 'Emily', family: 'Kobayashi', emails: [{ type: 'home', value: 'emily@example.net' }], categories: ['Freunde'] });
+    await add({ given: 'Emily', family: 'Kobayashi', phones: [{ type: 'mobile', value: '+44 7700 900123' }] });
+    await add({
+      kind: 'org',
+      organization: 'Ramen-Bar am Markt',
+      phones: [{ type: 'main', value: '+49 30 555123' }],
+      urls: [{ type: 'work', value: 'https://ramen.example' }],
+    });
+    await api(page, 'POST', `/api/contacts/${mia}/favorite`, { favorite: true });
+    await page.evaluate(
+      async ({ id }) => {
+        const session = (await (await fetch('/api/session')).json()) as { csrf: string };
+        const canvas = new OffscreenCanvas(320, 320);
+        const context = canvas.getContext('2d')!;
+        const gradient = context.createLinearGradient(0, 0, 320, 320);
+        gradient.addColorStop(0, '#f9a8d4');
+        gradient.addColorStop(1, '#8b5cf6');
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 320, 320);
+        context.fillStyle = 'rgba(255, 255, 255, 0.88)';
+        context.beginPath();
+        context.arc(160, 128, 58, 0, Math.PI * 2);
+        context.fill();
+        context.beginPath();
+        context.ellipse(160, 300, 108, 92, 0, 0, Math.PI * 2);
+        context.fill();
+        const body = new FormData();
+        body.append('file', await canvas.convertToBlob({ type: 'image/png' }), 'mia.png');
+        const response = await fetch(`/api/contacts/${id}/photo`, { method: 'PUT', body, headers: { 'x-csrf-token': session.csrf } });
+        if (!response.ok) throw new Error(`Foto: ${response.status}`);
+      },
+      { id: mia }
+    );
+
+    await page.goto(`${base}/contacts`);
+    await page.locator('[data-contact-row="Mia Weber"]').waitFor();
+    await page.locator('[data-contact-row="Ramen-Bar am Markt"]').waitFor();
+    await page.locator('[data-contact-row="Mia Weber"]').getByRole('button').first().click();
+    const detail = page.locator('[data-contact-detail="Mia Weber"]');
+    await detail.getByText('Kastanienallee 12').waitFor();
+    await detail.getByText('+49 151 2345678').waitFor();
+    await page.waitForTimeout(300);
+    await shot(page, 'contacts');
+
+    await page.getByRole('button', { name: 'Neuer Kontakt' }).first().click();
+    const editor = page.locator('[data-contact-editor]');
+    await editor.getByLabel('Vorname').fill('Emi');
+    await editor.getByLabel('Nachname').fill('Tanaka');
+    await editor.getByRole('button', { name: 'Telefonnummer hinzufügen' }).click();
+    await editor.getByRole('textbox', { name: 'Telefon' }).fill('+81 90 1234 5678');
+    await editor.getByRole('button', { name: 'E-Mail-Adresse hinzufügen' }).click();
+    await editor.getByRole('textbox', { name: 'E-Mail' }).fill('emi.tanaka@example.jp');
+    await editor.getByRole('group', { name: 'Geburtstag' }).getByLabel('Tag').fill('3');
+    await page.waitForTimeout(200);
+    await shot(page, 'contacts-editor');
+    await editor.getByRole('button', { name: 'Speichern' }).click();
+    await page.getByText('Kontakt angelegt').waitFor();
+    await page.locator('[data-contact-detail="Emi Tanaka"]').getByText('emi.tanaka@example.jp').waitFor();
+
+    await page.getByRole('textbox', { name: 'Kontakte durchsuchen' }).fill('leo');
+    await page.locator('[data-contact-row="Lea Sato"]').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('[data-contact-row]').length === 1);
+    await page.getByRole('textbox', { name: 'Kontakte durchsuchen' }).fill('');
+
+    await page.goto(`${base}/contacts/birthdays`);
+    await page.locator('[data-birthdays]').getByText('Mia Weber').waitFor();
+    await page.locator('[data-birthdays]').getByText('Lea Sato').waitFor();
+
+    await page.goto(`${base}/contacts/duplicates`);
+    const duplicates = page.locator('[data-duplicates]');
+    await duplicates.getByText('Emily Kobayashi').first().waitFor();
+    await duplicates.getByRole('button', { name: 'Zusammenführen' }).click();
+    await page.getByText('Kontakte zusammengeführt').waitFor();
+    await page.getByText('Keine doppelten Kontakte').waitFor();
+
+    const vcf = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:Hana Weber',
+      'N:Weber;Hana;;;',
+      'EMAIL;TYPE=INTERNET,HOME:hana@example.de',
+      'END:VCARD',
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:Kenji Sato',
+      'N:Sato;Kenji;;;',
+      'TEL;TYPE=CELL:+81 80 5555 1234',
+      'END:VCARD',
+      '',
+    ].join('\r\n');
+    await page.goto(`${base}/contacts`);
+    await page.getByRole('button', { name: 'Weitere Aktionen' }).click();
+    await page.getByRole('menuitem', { name: 'Importieren' }).click();
+    const dialog = page.locator('[data-contact-import]');
+    await dialog.locator('input[type=file]').setInputFiles([{ name: 'Telefon.vcf', mimeType: 'text/vcard', buffer: Buffer.from(vcf) }]);
+    await dialog.locator('[data-import-count="2"]').waitFor();
+    await dialog.getByRole('button', { name: '2 Kontakte importieren' }).click();
+    await dialog.locator('[data-import-done]').waitFor();
+    await dialog.getByRole('button', { name: 'Fertig' }).click();
+    await page.locator('[data-contact-row="Kenji Sato"]').waitFor();
+
+    await page.goto(`${base}/calendar/month/${today}`);
+    await page.getByRole('checkbox', { name: 'Geburtstage' }).waitFor();
+    await page.getByText('Mia Weber').first().waitFor();
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    const guests = page.getByRole('combobox', { name: 'Gäste einladen' }).or(page.getByLabel('Gäste einladen'));
+    await guests.first().fill('hana');
+    await page.getByRole('option', { name: /Hana Weber/ }).waitFor();
+    await page.keyboard.press('Escape');
+
+    const known = await page.evaluate(async () => {
+      const response = await fetch('/.well-known/carddav', { method: 'GET', redirect: 'manual' });
+      return response.type;
+    });
+    if (known !== 'opaqueredirect') throw new Error(`/.well-known/carddav leitet nicht um: ${known}`);
+  });
+
+  await step('Aufgaben als Board mit Zuständigen', async () => {
+    const zone = 'Europe/Berlin';
+    const today = todayKey(zone);
+    const people = await api<{ items: { id: number; username: string }[] }>(page, 'GET', '/api/admin/users');
+    const miaId = people.items.find((person) => person.username === 'mia')!.id;
+    const team = (
+      await api<{ calendar: { id: string } }>(page, 'POST', '/api/calendar/calendars', { name: 'Team Kirschblüte', color: '#14b8a6' })
+    ).calendar.id;
+    await api(page, 'PUT', `/api/calendar/calendars/${team}/shares/${miaId}`, { permission: 'write' });
+    const task = (payload: Record<string, unknown>) =>
+      api<{ id: string }>(page, 'POST', '/api/calendar/events', { calendarId: team, component: 'VTODO', zone, ...payload });
+    const mood = await task({
+      title: 'Moodboard für Kirschblüte',
+      allDay: true,
+      due: addDays(today, 3),
+      assignee: miaId,
+      categories: ['Design'],
+    });
+    await api(page, 'PATCH', `/api/calendar/events/${mood.id}`, { changes: { status: 'IN-PROCESS' }, scope: 'all' });
+    await task({ title: 'Ramen-Abend organisieren', allDay: true, due: addDays(today, 5), priority: 5 });
+    await task({ title: 'Fotos vom Ausflug sortieren', allDay: true, due: today });
+    const invoice = await task({ title: 'Rechnung an Lea schicken', allDay: true, due: addDays(today, -1) });
+    await api(page, 'POST', `/api/calendar/events/${invoice.id}/complete`, { completed: true, recurrenceId: null });
+
+    await page.goto(`${base}/calendar/tasks`);
+    await page.getByText('Moodboard für Kirschblüte').waitFor();
+    await page.getByText('Mia Weber').first().waitFor();
+    await page.getByRole('button', { name: 'Als Board zeigen' }).click();
+    const board = page.locator('[data-task-board]');
+    await board.locator('[data-board-column="progress"] [data-board-card="Moodboard für Kirschblüte"]').waitFor();
+    await board.locator('[data-board-column="done"] [data-board-card="Rechnung an Lea schicken"]').waitFor();
+    await page.waitForTimeout(300);
+    await shot(page, 'calendar-board');
+
+    await board.locator('[data-board-card="Ramen-Abend organisieren"]').dragTo(board.locator('[data-board-column="progress"]'));
+    await board.locator('[data-board-column="progress"] [data-board-card="Ramen-Abend organisieren"]').waitFor();
+    await board.getByRole('button', { name: 'Status von „Fotos vom Ausflug sortieren“ ändern' }).click();
+    await page.getByRole('menuitem', { name: 'Nach „Erledigt“ verschieben' }).click();
+    await board.locator('[data-board-column="done"] [data-board-card="Fotos vom Ausflug sortieren"]').waitFor();
+    await page.waitForFunction(async () => {
+      const response = await fetch('/api/calendar/tasks?completed=1');
+      const items = ((await response.json()) as { items: { title: string; status: string | null; completed: number | null }[] }).items;
+      const ramen = items.find((item) => item.title === 'Ramen-Abend organisieren');
+      const photos = items.find((item) => item.title === 'Fotos vom Ausflug sortieren');
+      return ramen?.status === 'IN-PROCESS' && Boolean(photos?.completed);
+    });
+
+    await board.locator('[data-board-card="Ramen-Abend organisieren"]').getByText('Ramen-Abend organisieren').click();
+    await page.getByRole('combobox', { name: 'Zuständig' }).click();
+    await page.getByRole('option', { name: 'Mia Weber' }).click();
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await page.getByText('Änderungen gespeichert').waitFor();
+    await page.waitForFunction(async () => {
+      const response = await fetch('/api/calendar/tasks');
+      const items = ((await response.json()) as { items: { title: string; assignee: { name: string } | null }[] }).items;
+      return items.find((item) => item.title === 'Ramen-Abend organisieren')?.assignee?.name === 'Mia Weber';
+    });
+    await page.getByRole('button', { name: 'Als Liste zeigen' }).click();
+    await page.getByRole('button', { name: 'Als Board zeigen' }).waitFor();
+  });
+
+  await step('Funktionen abwählen und Startseite mit Terminen', async () => {
+    await page.goto(`${base}/files/home`);
+    await page.getByRole('heading', { name: 'Nächste Termine' }).waitFor();
+    await page.getByRole('heading', { name: 'Offene Aufgaben' }).waitFor();
+    await page.getByText('Steuererklärung abgeben').waitFor();
+    await shot(page, 'home-calendar');
+
+    await page.goto(`${base}/account#funktionen`);
+    const features = page.locator('[data-features]');
+    await features.getByRole('switch', { name: /^Musik/ }).click();
+    await features.getByRole('switch', { name: /^Terminumfragen/ }).click();
+    await features.getByRole('switch', { name: /^Terminumfragen/, checked: false }).waitFor();
+    const rail = page.getByRole('navigation', { name: 'Hauptnavigation' }).first();
+    await rail.getByRole('link', { name: 'Kalender' }).first().waitFor();
+    await page.waitForFunction(
+      () => !document.querySelector('nav a[href="/calendar/polls"]') && !document.querySelector('nav a[href="/files/music"]')
+    );
+    await features.scrollIntoViewIfNeeded();
+    await shot(page, 'account-features');
+    const saved = await api<{ prefs: { features: string[] } }>(page, 'GET', '/api/account');
+    if (saved.prefs.features.join() !== 'music,polls') throw new Error(`Gespeichert ist ${saved.prefs.features.join()}`);
+    await page.goto(`${base}/files/home`);
+    await page.getByRole('heading', { name: 'Nächste Termine' }).waitFor();
+    if (await page.locator('nav a[href="/calendar/polls"]').count()) throw new Error('Umfragen stehen noch in der Navigation');
+    await api(page, 'PATCH', '/api/account/prefs', { features: [] });
+
+    await page.goto(`${base}/admin/calendar`);
+    await page.locator('[data-admin-calendar]').getByText('Kalender einschalten').waitFor();
+    await page.goto(`${base}/admin/settings`);
+    await page.locator('[data-new-features]').getByRole('checkbox', { name: 'Buchungsseiten' }).waitFor();
   });
 
   await step('Office-Dokument anlegen, bearbeiten und speichern', async () => {
@@ -2619,6 +3221,61 @@ try {
     await page.locator('[data-form]').first().waitFor();
   });
 
+  await step('Formular mit Datei-Upload', async () => {
+    await page.goto(`${base}/files/forms`);
+    await page.getByRole('button', { name: 'Neues Formular' }).first().click();
+    const ask = page.getByRole('dialog');
+    await ask.getByLabel('Titel').fill('Belege von Mia');
+    await ask.getByRole('button', { name: 'Anlegen' }).click();
+    await page.waitForURL(/\/files\/forms\/[A-Za-z0-9_-]+$/);
+    await page.getByRole('button', { name: 'Frage hinzufügen' }).click();
+    await page.getByRole('menuitem', { name: /^Datei-Upload/ }).click();
+    const upload = page.locator('[data-question-card]').nth(1);
+    await upload.getByLabel('Frage 2').fill('Dein Beleg');
+    await upload.getByLabel('Höchstens (MB)').fill('2');
+    await upload.getByLabel('Erlaubte Dateitypen').fill('pdf, txt');
+    await upload.getByLabel('Pflichtfrage').check();
+    await page.waitForFunction(async () => {
+      const data = (await (await fetch('/api/forms')).json()) as {
+        items: { title: string; questions: { kind: string; accept: string; required: boolean }[] }[];
+      };
+      return data.items.some(
+        (form) =>
+          form.title === 'Belege von Mia' &&
+          form.questions.some((entry) => entry.kind === 'file' && entry.accept === 'pdf, txt' && entry.required)
+      );
+    });
+    await shot(page, 'forms-file-question');
+
+    const { items } = await api<{ items: { id: string; url: string; title: string }[] }>(page, 'GET', '/api/forms');
+    const form = items.find((entry) => entry.title === 'Belege von Mia');
+    if (!form) throw new Error('Das Formular mit Upload fehlt');
+    const guest = await context('light');
+    const visitor = await guest.newPage();
+    await visitor.goto(`${base}${form.url}`);
+    await visitor.getByText('Eine Datei bis 2 MB, erlaubt: pdf, txt').waitFor();
+    await visitor.getByLabel('Wie heißt du?').fill('Mia');
+    await visitor
+      .getByLabel('Dein Beleg')
+      .setInputFiles({ name: 'Taxi Mia.txt', mimeType: 'text/plain', buffer: Buffer.from('Taxi 23,50 Euro') });
+    await shot(visitor, 'form-public-upload');
+    await Promise.all([visitor.waitForURL(/gesendet/), visitor.getByRole('button', { name: 'Absenden' }).click()]);
+    await visitor.getByRole('heading', { name: 'Danke für deine Antwort' }).waitFor();
+    await guest.close();
+
+    await page.getByRole('tab', { name: /^\d+ Antwort(en)?$/ }).click();
+    await page.locator('[data-total="1"]').waitFor();
+    await page.getByText('Taxi Mia.txt').first().waitFor();
+    await page.locator('[data-response] [aria-expanded]').first().click();
+    await page.locator('[data-form-file]').click();
+    await page.waitForURL(/\/files\/folder\/[\w-]+/);
+    await item(page, 'Taxi Mia.txt').waitFor();
+    await page
+      .getByText(/Formular-Uploads › Belege von Mia$/)
+      .first()
+      .waitFor();
+  });
+
   await step('Sprachnotiz, Foto und Video aufnehmen', async () => {
     const ready = () =>
       page.waitForFunction(() => {
@@ -2669,6 +3326,34 @@ try {
       .getByText(/^Video von Emi\.(mp4|webm)$/)
       .first()
       .waitFor();
+  });
+
+  await step('Dokument mit der Kamera scannen', async () => {
+    await page.goto(`${base}/files`);
+    await page.getByRole('button', { name: 'Neu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Dokument scannen' }).click();
+    const scanner = page.getByRole('dialog', { name: 'Dokument scannen' });
+    const shutter = scanner.getByRole('button', { name: 'Seite aufnehmen' });
+    await page.waitForFunction(() => {
+      const video = document.querySelector<HTMLVideoElement>('[data-scanner] video');
+      return Boolean(video && video.videoWidth > 0);
+    });
+    await shutter.click();
+    await shutter.click();
+    await scanner.locator('[data-scan-page]').nth(1).waitFor();
+    await scanner.getByRole('button', { name: 'Drehen' }).first().click();
+    await scanner.getByRole('button', { name: 'Graustufen' }).click();
+    await scanner.getByLabel('Name').fill('Mietvertrag Lea');
+    await page.waitForTimeout(300);
+    await shot(page, 'scan');
+    await scanner.getByRole('button', { name: 'Als PDF mit 2 Seiten speichern' }).click();
+    await scanner.waitFor({ state: 'detached' });
+    await item(page, 'Mietvertrag Lea.pdf').waitFor();
+    const found = await api<{ items: { id: string; name: string }[] }>(page, 'GET', '/api/search?q=Mietvertrag');
+    const pdf = found.items.find((entry) => entry.name === 'Mietvertrag Lea.pdf');
+    if (!pdf) throw new Error('Die PDF fehlt in der Suche');
+    const info = await api<{ pages: unknown[] }>(page, 'GET', `/api/nodes/${pdf.id}/pdf`);
+    if (info.pages.length !== 2) throw new Error(`Die PDF hat ${info.pages.length} Seiten statt zwei`);
   });
 
   await step('Ordner auf einen früheren Stand zurücksetzen', async () => {
@@ -2861,6 +3546,7 @@ try {
 } finally {
   await browser.close();
   await smtp.close();
+  await moepulse.close();
   server.kill('SIGTERM');
   await new Promise((done) => server.once('exit', done));
   await rm(dataDir, { recursive: true, force: true });

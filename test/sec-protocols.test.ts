@@ -233,6 +233,8 @@ describe('Einrichtung, Metriken und Erweiterungen', () => {
       '/api/admin/overview',
       '/api/admin/system',
       '/api/admin/log',
+      '/api/admin/pulse',
+      '/api/admin/pulse/preview',
       '/api/plugins',
       '/api/themes',
       '/api/office',

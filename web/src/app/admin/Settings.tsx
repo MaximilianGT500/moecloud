@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
@@ -20,6 +21,7 @@ import { toast } from '../common/toast';
 import { Loading, SaveBar, Toggle, loadSettings, saveSettings, useDraft, type Settings } from './shared';
 import { AppearanceSection } from './Appearance';
 import { BrandingSection } from './Branding';
+import { FEATURES, type Feature } from '../../../../shared/features';
 
 interface OfficeInfo {
   enabled: boolean;
@@ -166,6 +168,45 @@ function TermsState({ required, saved }: { required: boolean; saved: boolean }) 
       <Button variant="tonal" disabled={busy || !saved} onClick={() => void renew()}>
         {t('Alle neu zustimmen lassen')}
       </Button>
+    </Box>
+  );
+}
+
+function NewAccountFeatures({ value, onChange }: { value: string[]; onChange: (off: string[]) => void }) {
+  const labels: Record<Feature, string> = {
+    photos: t('Fotos'),
+    music: t('Musik'),
+    notes: t('Notizen'),
+    forms: t('Formulare'),
+    tags: t('Schlagwörter'),
+    calendar: t('Kalender'),
+    tasks: t('Aufgaben'),
+    booking: t('Buchungsseiten'),
+    polls: t('Terminumfragen'),
+    contacts: t('Kontakte'),
+  };
+  return (
+    <Box data-new-features sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+        {t('Funktionen für neue Konten')}
+      </Typography>
+      <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+        {t('Was hier aus ist, sehen neue Konten erst, wenn sie es unter Konto › Funktionen einschalten.')}
+      </Typography>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2 }}>
+        {FEATURES.map((key) => (
+          <FormControlLabel
+            key={key}
+            control={
+              <Checkbox
+                checked={!value.includes(key)}
+                onChange={(event) => onChange(event.target.checked ? value.filter((entry) => entry !== key) : [...value, key])}
+              />
+            }
+            label={labels[key]}
+          />
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -375,6 +416,10 @@ export function SettingsSection({ onChanged }: { onChanged?: (settings: Settings
           hint={t('Jede Person kann ihr Konto samt aller Dateien unter Konto selbst löschen. Den letzten Admin schützt MoeCloud.')}
         />
         <StarterState />
+        <NewAccountFeatures
+          value={(draft['accounts.features'] as unknown as string[] | undefined) ?? []}
+          onChange={(off) => set('accounts.features', off as unknown as string)}
+        />
         <TextField
           select
           label={t('Zwei-Faktor-Anmeldung vorschreiben')}

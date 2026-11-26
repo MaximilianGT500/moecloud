@@ -11,6 +11,7 @@ import * as settings from './services/settings.ts';
 import { startPlugins, stopPlugins } from './services/plugins.ts';
 import { refreshSiteTheme } from './services/themes.ts';
 import { isSetUp, setupCode } from './services/setup.ts';
+import { pulse, setPulseLogger } from './services/pulse.ts';
 
 await ensureDirs();
 openDatabase(config.database, config.paths.backups);
@@ -47,7 +48,10 @@ if (missing.length) app.log.info(`Ohne ${missing.join(', ')} gibt es weniger Vor
 const refreshed = refreshPreviews();
 if (refreshed?.pending) app.log.info(`${refreshed.pending} Dateien bekommen im Hintergrund neue Vorschauen`);
 
-process.on('unhandledRejection', (reason) => app.log.error(reason, 'Unbehandelter Fehler'));
+process.on('unhandledRejection', (reason) => {
+  app.log.error(reason, 'Unbehandelter Fehler');
+  pulse().capture(reason, { origin: 'unhandledRejection' }, 'fatal');
+});
 
 const stopJobs = startJobs(app.log);
 const stopProcessing = startProcessing();
@@ -71,6 +75,11 @@ if (!isSetUp()) {
 
 if (settings.get('maintenance.enabled')) app.log.warn('Der Wartungsmodus ist an, nur Admins kommen hinein');
 
+setPulseLogger({ warn: (message) => app.log.warn(message), debug: (message) => app.log.debug(message) });
+void pulse()
+  .start()
+  .catch((error: unknown) => app.log.warn(error, 'MoePulse ließ sich nicht starten'));
+
 let closing = false;
 
 async function shutdown(signal: string) {
@@ -82,6 +91,9 @@ async function shutdown(signal: string) {
   stopJobs();
   stopProcessing();
   try {
+    await pulse()
+      .stop()
+      .catch(() => undefined);
     await stopPlugins();
     await app.close();
   } finally {

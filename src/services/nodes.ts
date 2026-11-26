@@ -34,6 +34,7 @@ export interface NodeRow {
   color: string | null;
   description: string | null;
   icon: string | null;
+  expires_at: number | null;
 }
 
 export type Role = 'owner' | 'edit' | 'view';
@@ -578,7 +579,7 @@ export function trash(user: UserRow, ids: string[]) {
     for (const id of ids) {
       const { node } = requireMutable(user, id);
       run(`${TREE('WHERE n.trashed_at IS NULL')} UPDATE nodes SET trashed_at = ? WHERE id IN (SELECT id FROM tree)`, id, now);
-      run('UPDATE nodes SET trash_root = 1 WHERE id = ?', id);
+      run('UPDATE nodes SET trash_root = 1, expires_at = NULL, expires_by = NULL WHERE id = ?', id);
       record({ owner: node.owner_id, actor: user.id, node: id, parent: node.parent_id, action: 'trash', name: node.name });
       folders.add(node.parent_id);
     }
@@ -597,11 +598,17 @@ export function restore(user: UserRow, ids: string[], actorId: number = user.id)
       const parentId = parent && !parent.trashed_at ? parent.id : user.root_id;
       const name = uniqueName(node.name, node.type === 'folder', taken(parentId));
       run('UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, trash_root = 0 WHERE id = ?', parentId, name, nameKey(name), id);
+      const now = Date.now();
       run(
         `${TREE('WHERE n.trashed_at = ?')} UPDATE nodes SET trashed_at = NULL, updated_at = ? WHERE id IN (SELECT id FROM tree)`,
         id,
         node.trashed_at,
-        Date.now()
+        now
+      );
+      run(
+        `${TREE('WHERE n.trashed_at IS NULL')} UPDATE nodes SET expires_at = NULL, expires_by = NULL WHERE id IN (SELECT id FROM tree) AND expires_at <= ?`,
+        id,
+        now + 60_000
       );
       folders.add(parentId);
       restored.push(getNode(id)!);
@@ -1098,6 +1105,7 @@ export function present(nodes: NodeRow[], viewer: UserRow, role: Role | ((node: 
       location: 'parent_name' in node ? ((node as { parent_name: string | null }).parent_name ?? null) : undefined,
       snippet: 'snippet' in node ? ((node as { snippet?: string | null }).snippet ?? null) : undefined,
       progress: progress.get(node.id) ?? null,
+      expiresAt: node.expires_at ?? null,
       watching: watching.has(node.id),
       cleanup: cleanup.get(node.id) ?? null,
       lock: lockFor(locks.get(node.id), viewer.id),

@@ -6,6 +6,7 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import Link from '@mui/material/Link';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
@@ -42,8 +43,9 @@ import RadioButtonCheckedRounded from '@mui/icons-material/RadioButtonCheckedRou
 import RadioButtonUncheckedRounded from '@mui/icons-material/RadioButtonUncheckedRounded';
 import ShortTextRounded from '@mui/icons-material/ShortTextRounded';
 import SubjectRounded from '@mui/icons-material/SubjectRounded';
+import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
 import { api, errorText } from '../../lib/api';
-import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
+import { formatBytes, formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { navigate } from '../../lib/router';
@@ -52,7 +54,7 @@ import { CopyField, EmptyState, QrCode, Section, copyText } from '../common/bits
 import { confirm, prompt } from '../common/dialogs';
 import { toast } from '../common/toast';
 
-type Kind = 'text' | 'longtext' | 'email' | 'number' | 'date' | 'single' | 'multiple' | 'scale';
+type Kind = 'text' | 'longtext' | 'email' | 'number' | 'date' | 'single' | 'multiple' | 'scale' | 'file';
 type State = 'open' | 'closed' | 'ended' | 'full';
 
 interface Choice {
@@ -71,6 +73,7 @@ interface Question {
   max: number | null;
   low: string;
   high: string;
+  accept: string;
 }
 
 interface Form {
@@ -116,7 +119,7 @@ interface ResponseItem {
   id: string;
   createdAt: number;
   person: { id: number; name: string; username: string } | null;
-  answers: { question: string; value: unknown; text: string }[];
+  answers: { question: string; value: unknown; text: string; file?: { name: string; size: number; url: string | null } }[];
 }
 
 const KINDS: { kind: Kind; label: () => string; hint: () => string; icon: ReactNode }[] = [
@@ -127,6 +130,7 @@ const KINDS: { kind: Kind; label: () => string; hint: () => string; icon: ReactN
   { kind: 'scale', label: () => t('Skala'), hint: () => t('Eine Zahl auf einer Skala'), icon: <LinearScaleRounded /> },
   { kind: 'number', label: () => t('Zahl'), hint: () => t('Auch mit Komma'), icon: <NumbersRounded /> },
   { kind: 'date', label: () => t('Datum'), hint: () => t('Tag, Monat und Jahr'), icon: <EventRounded /> },
+  { kind: 'file', label: () => t('Datei-Upload'), hint: () => t('Eine Datei, landet in deinen Dateien'), icon: <UploadFileRounded /> },
   {
     kind: 'email',
     label: () => t('E-Mail-Adresse'),
@@ -155,16 +159,26 @@ function blank(kind: Kind): Question {
     required: false,
     options: kind === 'single' || kind === 'multiple' ? choices(2) : [],
     min: kind === 'scale' ? 1 : null,
-    max: kind === 'scale' ? 5 : null,
+    max: kind === 'scale' ? 5 : kind === 'file' ? 10 : null,
     low: '',
     high: '',
+    accept: '',
   };
 }
 
 function switchKind(question: Question, kind: Kind): Question {
   const fresh = blank(kind);
   const keepOptions = (kind === 'single' || kind === 'multiple') && question.options.length > 0;
-  return { ...question, kind, options: keepOptions ? question.options : fresh.options, min: fresh.min, max: fresh.max, low: '', high: '' };
+  return {
+    ...question,
+    kind,
+    options: keepOptions ? question.options : fresh.options,
+    min: fresh.min,
+    max: fresh.max,
+    low: '',
+    high: '',
+    accept: '',
+  };
 }
 
 const fullUrl = (form: Pick<Form, 'url'>) => `${location.origin}${form.url}`;
@@ -517,6 +531,36 @@ function NumberEditor({ question, onChange }: { question: Question; onChange: (q
   );
 }
 
+function FileEditor({ question, onChange }: { question: Question; onChange: (question: Question) => void }) {
+  return (
+    <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' } }} data-file-settings>
+      <TextField
+        size="small"
+        type="number"
+        label={t('Höchstens (MB)')}
+        value={question.max ?? 10}
+        onChange={(event) => {
+          const value = Math.trunc(Number(event.target.value));
+          onChange({ ...question, max: Number.isFinite(value) ? Math.min(100, Math.max(1, value)) : 10 });
+        }}
+        slotProps={{ htmlInput: { min: 1, max: 100, 'data-file-max': true } }}
+      />
+      <TextField
+        size="small"
+        label={t('Erlaubte Dateitypen')}
+        placeholder={t('z. B. pdf, jpg, png')}
+        value={question.accept ?? ''}
+        onChange={(event) => onChange({ ...question, accept: event.target.value.slice(0, 200) })}
+        helperText={t('Leer lassen, um alle zu erlauben')}
+        slotProps={{ htmlInput: { 'data-file-accept': true } }}
+      />
+      <Typography variant="body2" sx={{ color: c.onSurfaceVariant, gridColumn: '1 / -1' }}>
+        {t('Hochgeladene Dateien landen bei dir unter Formular-Uploads und zählen zu deinem Speicher.')}
+      </Typography>
+    </Box>
+  );
+}
+
 function QuestionCard({
   question,
   index,
@@ -574,12 +618,17 @@ function QuestionCard({
       {(question.kind === 'single' || question.kind === 'multiple') && <ChoiceEditor question={question} onChange={onChange} />}
       {question.kind === 'scale' && <ScaleEditor question={question} onChange={onChange} />}
       {question.kind === 'number' && <NumberEditor question={question} onChange={onChange} />}
-      {question.kind !== 'single' && question.kind !== 'multiple' && question.kind !== 'scale' && question.kind !== 'number' && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: c.onSurfaceVariant }}>
-          {kind.icon}
-          <Typography variant="body2">{kind.hint()}</Typography>
-        </Box>
-      )}
+      {question.kind === 'file' && <FileEditor question={question} onChange={onChange} />}
+      {question.kind !== 'single' &&
+        question.kind !== 'multiple' &&
+        question.kind !== 'scale' &&
+        question.kind !== 'number' &&
+        question.kind !== 'file' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: c.onSurfaceVariant }}>
+            {kind.icon}
+            <Typography variant="body2">{kind.hint()}</Typography>
+          </Box>
+        )}
       <Divider />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
         <FormControlLabel
@@ -948,7 +997,29 @@ function AnswersTab({ form, revision }: { form: Form; revision: number }) {
                         {titleOf(answer.question)}
                       </Typography>
                       <Typography component="dd" variant="body2" sx={{ m: 0, whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
-                        {answer.text || '–'}
+                        {answer.file ? (
+                          answer.file.url ? (
+                            <Link
+                              href={answer.file.url}
+                              data-form-file
+                              onClick={(event) => {
+                                event.preventDefault();
+                                navigate(answer.file!.url!);
+                              }}
+                            >
+                              {answer.file.name}
+                            </Link>
+                          ) : (
+                            t('{name} (nicht mehr da)', { name: answer.file.name })
+                          )
+                        ) : (
+                          answer.text || '–'
+                        )}
+                        {answer.file && (
+                          <Box component="span" sx={{ color: c.onSurfaceVariant }}>
+                            {` · ${formatBytes(answer.file.size)}`}
+                          </Box>
+                        )}
                       </Typography>
                     </Box>
                   ))}

@@ -97,6 +97,12 @@ export function auditLabel(action: string) {
       return t('Dateien geprüft');
     case 'device_burst':
       return t('Auffällig viele Änderungen über ein App-Passwort');
+    case 'pulse_changed':
+      return t('Nutzungsstatistik und Fehlerberichte geändert');
+    case 'pulse_forgotten':
+      return t('An MoeStudio gesendete Daten gelöscht');
+    case 'support_ticket':
+      return t('Nachricht an MoeStudio geschickt');
     case 'device_resumed':
       return t('Angehaltenes App-Passwort freigegeben');
     case 'mail_changed':
@@ -213,6 +219,13 @@ export function auditDetail(entry: AuditEntry) {
         .join(' · ');
     case 'device_resumed':
       return text('appPassword');
+    case 'pulse_changed':
+      return [
+        `${t('Nutzungsstatistik')}: ${d.stats ? t('an') : t('aus')}`,
+        `${t('Fehlerberichte')}: ${d.errors ? t('an') : t('aus')}`,
+      ].join(' · ');
+    case 'support_ticket':
+      return typeof d.number === 'number' ? t('Ticket {number}', { number: `#${d.number}` }) : '';
     case 'audit_exported':
       return typeof d.rows === 'number' ? tn(d.rows, '{count} Zeile', '{count} Zeilen') : '';
     case 'integrity_checked':

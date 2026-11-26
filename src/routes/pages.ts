@@ -23,6 +23,8 @@ import { checkFormCsrf } from '../lib/request.ts';
 import { pluginBoot } from '../services/plugins.ts';
 import { teamsFor } from '../services/teams.ts';
 import { prefsOf, publicUser, storageOf } from '../services/users.ts';
+import { calendarAllowed } from '../calendar/guard.ts';
+import { contactsAllowed } from '../contacts/books.ts';
 
 function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
   if (!isSetUp()) {
@@ -49,6 +51,35 @@ export function userBoot(request: FastifyRequest) {
     setup2fa: pending,
     plugins: pluginBoot(pending ? null : user, request.lang),
     forms: settings.get('forms.enabled') && user.role !== 'guest',
+    featuresOff: prefsOf(user).features,
+    calendarOn: calendarAllowed(user)
+      ? {
+          booking: settings.get('calendar.booking'),
+          polls: settings.get('calendar.polls'),
+          caldav: settings.get('calendar.caldav') ? `${baseUrl(request)}/caldav/` : null,
+        }
+      : null,
+    contactsOn: contactsAllowed(user) ? { carddav: `${baseUrl(request)}/carddav/` } : null,
+  };
+}
+
+export function calendarBoot(request: FastifyRequest) {
+  return {
+    ...userBoot(request),
+    caldav: `${baseUrl(request)}/caldav/`,
+    calendarFeatures: {
+      caldav: settings.get('calendar.caldav'),
+      publicLinks: settings.get('calendar.publicLinks'),
+      subscriptions: settings.get('calendar.subscriptions'),
+      imports: settings.get('calendar.imports'),
+      booking: settings.get('calendar.booking'),
+      polls: settings.get('calendar.polls'),
+      externalInvites: settings.get('calendar.externalInvites'),
+      freebusy: settings.get('calendar.freebusy'),
+      directory: settings.get('users.directory'),
+      trashDays: settings.get('calendar.trashDays'),
+      minRefresh: settings.get('calendar.minRefresh'),
+    },
   };
 }
 
@@ -96,6 +127,28 @@ export async function pageRoutes(app: FastifyInstance) {
   };
   app.get('/files', files);
   app.get('/files/*', files);
+
+  const calendar = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requirePageUser(request, reply);
+    if (!user) return reply;
+    if (!calendarAllowed(user)) throw notFound();
+    return renderApp(request, reply, { entry: 'calendar', title: t(request.lang, 'Kalender'), data: calendarBoot(request) });
+  };
+  app.get('/calendar', calendar);
+  app.get('/calendar/*', calendar);
+
+  const contacts = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requirePageUser(request, reply);
+    if (!user) return reply;
+    if (!contactsAllowed(user)) throw notFound();
+    return renderApp(request, reply, {
+      entry: 'contacts',
+      title: t(request.lang, 'Kontakte'),
+      data: { ...userBoot(request), directory: settings.get('users.directory'), trashDays: settings.get('calendar.trashDays') },
+    });
+  };
+  app.get('/contacts', contacts);
+  app.get('/contacts/*', contacts);
 
   const adminPage = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = requirePageUser(request, reply);

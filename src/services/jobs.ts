@@ -32,9 +32,18 @@ import { fireReminders } from './reminders.ts';
 import { sendWeeklyReports } from './report.ts';
 import { purgeReports } from './reports.ts';
 import { purgeVersions } from './versions.ts';
+import { expireNodes } from './expiry.ts';
+import { fireAlarms } from '../calendar/alarms.ts';
+import { purgeBookings } from '../calendar/booking.ts';
+import { purgeCalendars } from '../calendar/calendars.ts';
+import { purgeTrashedEvents } from '../calendar/events.ts';
+import { sendAgendas } from '../calendar/insights.ts';
+import { refreshDue } from '../calendar/transfer.ts';
+import { purgeContacts } from '../contacts/store.ts';
 
 export async function runMaintenance() {
   const cleaned = applyRules();
+  const expired = expireNodes();
   const trash = purgeTrash(settings.get('storage.trashDays'));
   const versions = purgeVersions(settings.get('storage.versionDays'));
   const uploads = await cleanupUploads();
@@ -52,11 +61,15 @@ export async function runMaintenance() {
   purgeInvites();
   purgeResets();
   purgeNotifications();
+  purgeBookings();
+  const events = purgeTrashedEvents(settings.get('calendar.trashDays'));
+  const calendars = purgeCalendars(settings.get('calendar.trashDays'));
+  const contacts = purgeContacts(settings.get('calendar.trashDays'));
   const audit = purgeAudit(settings.get('audit.days'));
   const activity = purgeActivity(settings.get('activity.days'));
   recordUsage();
   maintainDatabase();
-  return { cleaned, trash, versions, uploads, blobs, tmp, sessions, audit, activity };
+  return { cleaned, expired, trash, versions, uploads, blobs, tmp, sessions, audit, activity, events, calendars, contacts };
 }
 
 let diskAlert = 0;
@@ -90,7 +103,17 @@ export function startJobs(log: FastifyBaseLogger) {
     maintaining = true;
     try {
       const result = await runMaintenance();
-      if (result.cleaned || result.trash || result.versions || result.blobs || result.uploads) log.info(result, 'Aufräumen erledigt');
+      if (
+        result.cleaned ||
+        result.expired ||
+        result.trash ||
+        result.versions ||
+        result.blobs ||
+        result.uploads ||
+        result.events ||
+        result.calendars
+      )
+        log.info(result, 'Aufräumen erledigt');
     } catch (error) {
       log.error(error, 'Aufräumen fehlgeschlagen');
     } finally {
@@ -103,6 +126,7 @@ export function startJobs(log: FastifyBaseLogger) {
       expireGroupGrants();
       warnExpiringLinks();
       await autoBackup();
+      if (settings.get('calendar.enabled')) await sendAgendas();
       await sendWeeklyReports();
       await checkDisk();
       checkLogins();
@@ -123,9 +147,31 @@ export function startJobs(log: FastifyBaseLogger) {
     }
     if (scanEnabled() && settings.get('scan.rescanDays') > 0) rescan();
   };
+  let syncing = false;
+  const subscriptions = async () => {
+    if (syncing || !settings.get('calendar.enabled')) return;
+    syncing = true;
+    try {
+      await refreshDue();
+    } catch (error) {
+      log.error(error, 'Abos ließen sich nicht aktualisieren');
+    } finally {
+      syncing = false;
+    }
+  };
+  const alarms = () => {
+    if (!settings.get('calendar.enabled')) return;
+    try {
+      fireAlarms();
+    } catch (error) {
+      log.error(error, 'Erinnerungen an Termine fehlgeschlagen');
+    }
+  };
   const minute = async () => {
     try {
       fireReminders();
+      expireNodes();
+      alarms();
       await flushSummaries();
       await reconcilePlugins();
     } catch (error) {
@@ -134,6 +180,9 @@ export function startJobs(log: FastifyBaseLogger) {
   };
   const timers = [
     setInterval(minute, 60_000),
+    setInterval(alarms, 15_000),
+    setInterval(subscriptions, 2 * 60_000),
+    setTimeout(subscriptions, 20_000),
     setTimeout(maintenance, 30_000),
     setTimeout(frequent, 45_000),
     setTimeout(daily, 90_000),

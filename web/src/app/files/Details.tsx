@@ -389,6 +389,9 @@ function InfoTab({
           <Fact label={t('Deine Rechte')}>{item.role === 'edit' ? t('Kann bearbeiten') : t('Kann ansehen')}</Fact>
         )}
         {item.lock && <Fact label={t('Sperre')}>{lockText(item.lock)}</Fact>}
+        {item.expiresAt && (
+          <Fact label={t('Läuft ab')}>{t('{when}, dann in den Papierkorb', { when: formatDateTime(item.expiresAt) })}</Fact>
+        )}
         {item.reminder && (
           <Fact label={t('Erinnerung')}>
             {formatDateTime(item.reminder.dueAt)}

@@ -35,6 +35,7 @@ import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
 import MicRounded from '@mui/icons-material/MicRounded';
 import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
 import ScreenShareRounded from '@mui/icons-material/ScreenShareRounded';
+import DocumentScannerRounded from '@mui/icons-material/DocumentScannerRounded';
 import { AnimatePresence, m } from 'motion/react';
 import { formatBytes } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
@@ -216,6 +217,7 @@ export function useNewMenu({
   onImport,
   onDavImport,
   onRecord,
+  onScan,
   disabled,
 }: {
   onUploadFiles: () => void;
@@ -228,6 +230,7 @@ export function useNewMenu({
   onImport?: () => void;
   onDavImport?: () => void;
   onRecord?: (mode: RecordMode) => void;
+  onScan?: () => void;
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -257,10 +260,11 @@ export function useNewMenu({
       {onTemplate && item(<PostAddRounded />, t('Neu aus Vorlage'), onTemplate)}
       {onImport && item(<CloudDownloadRounded />, t('Aus dem Internet laden'), onImport)}
       {onDavImport && item(<CloudSyncRounded />, t('Per WebDAV importieren'), onDavImport)}
-      {onRecord && canRecord() && <Divider sx={{ my: 0.5 }} />}
+      {((onRecord && canRecord()) || onScan) && <Divider sx={{ my: 0.5 }} />}
       {onRecord && canRecord() && item(<MicRounded />, t('Sprachnotiz aufnehmen'), () => onRecord('audio'))}
       {onRecord && canRecord() && item(<PhotoCameraRounded />, t('Foto oder Video aufnehmen'), () => onRecord('camera'))}
       {onRecord && canRecordScreen() && item(<ScreenShareRounded />, t('Bildschirm aufnehmen'), () => onRecord('screen'))}
+      {onScan && item(<DocumentScannerRounded />, t('Dokument scannen'), onScan)}
     </Menu>
   );
   return {

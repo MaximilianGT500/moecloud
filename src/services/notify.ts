@@ -51,7 +51,22 @@ export type NotifyKind =
   | 'admin_burst'
   | 'admin_update'
   | 'admin_logins'
-  | 'admin_plugin';
+  | 'admin_plugin'
+  | 'event_reminder'
+  | 'task_due'
+  | 'invitation'
+  | 'invitation_updated'
+  | 'invitation_cancelled'
+  | 'invitation_reply'
+  | 'calendar_shared'
+  | 'contacts_shared'
+  | 'task_assigned'
+  | 'booking_new'
+  | 'booking_cancelled'
+  | 'poll_vote'
+  | 'subscription_failed'
+  | 'calendar_import'
+  | 'node_expired';
 
 type Params = Record<string, string | number>;
 
@@ -62,6 +77,8 @@ interface Kind {
   action?: string;
   event?: WebhookEvent;
   urgent?: boolean;
+  timely?: boolean;
+  mail?: boolean;
 }
 
 const many = (lang: Lang, count: number, one: string, other: string, params: Params) => t(lang, count === 1 ? one : other, params);
@@ -238,6 +255,102 @@ const KINDS: Record<NotifyKind, Kind> = {
     title: (lang, p) => t(lang, 'Der Import von {host} hat nicht geklappt', p),
     text: (_lang, p) => String(p.error ?? ''),
     action: 'Zum Ordner',
+  },
+  event_reminder: {
+    title: (lang, p) => (p.lead ? t(lang, '{title} {lead}', p) : String(p.title || t(lang, 'Termin'))),
+    text: (lang, p) => [String(p.when ?? ''), p.location ? t(lang, 'Ort: {location}', p) : ''].filter(Boolean).join(' · '),
+    pref: 'pushReminders',
+    action: 'Termin öffnen',
+    timely: true,
+    mail: false,
+  },
+  task_due: {
+    title: (lang, p) => t(lang, 'Aufgabe fällig: {title}', p),
+    text: (_lang, p) => String(p.when ?? ''),
+    pref: 'pushReminders',
+    action: 'Aufgabe öffnen',
+    timely: true,
+    mail: false,
+  },
+  invitation: {
+    title: (lang, p) => t(lang, '{by} lädt dich zu „{title}“ ein', p),
+    text: (_lang, p) => String(p.when ?? ''),
+    pref: 'mailInvites',
+    action: 'Einladung ansehen',
+  },
+  invitation_updated: {
+    title: (lang, p) => t(lang, '{by} hat „{title}“ geändert', p),
+    text: (_lang, p) => String(p.when ?? ''),
+    pref: 'mailInvites',
+    action: 'Termin ansehen',
+  },
+  invitation_cancelled: {
+    title: (lang, p) => t(lang, '{by} hat „{title}“ abgesagt', p),
+    text: (_lang, p) => String(p.when ?? ''),
+    pref: 'mailInvites',
+  },
+  invitation_reply: {
+    title: (lang, p) => t(lang, '{name} hat „{title}“ {status}', p),
+    text: (lang, p) => (p.comment ? t(lang, 'Nachricht: {comment}', p) : ''),
+    pref: 'mailInvites',
+    action: 'Termin ansehen',
+  },
+  calendar_shared: {
+    title: (lang, p) => t(lang, '{by} hat den Kalender „{name}“ mit dir geteilt', p),
+    text: (lang, p) =>
+      p.permission === 'write'
+        ? t(lang, 'Du kannst Termine ansehen, anlegen und ändern.')
+        : p.permission === 'read'
+          ? t(lang, 'Du kannst alle Termine mit Details ansehen.')
+          : t(lang, 'Du siehst, wann Termine sind, aber keine Details.'),
+    pref: 'mailShares',
+    action: 'Kalender öffnen',
+  },
+  task_assigned: {
+    title: (lang, p) => t(lang, '{by} hat dir die Aufgabe „{title}“ zugewiesen', p),
+    text: (lang, p) => (p.due ? t(lang, 'Fällig: {due}', p) : t(lang, 'Ohne Fälligkeit')),
+    pref: 'mailShares',
+    action: 'Aufgabe ansehen',
+  },
+  contacts_shared: {
+    title: (lang, p) => t(lang, '{by} hat das Adressbuch „{name}“ mit dir geteilt', p),
+    text: (lang, p) =>
+      p.permission === 'write' ? t(lang, 'Du kannst Kontakte ansehen, anlegen und ändern.') : t(lang, 'Du kannst alle Kontakte ansehen.'),
+    pref: 'mailShares',
+    action: 'Kontakte öffnen',
+  },
+  booking_new: {
+    title: (lang, p) => t(lang, 'Neue Buchung von {name}', p),
+    text: (lang, p) => t(lang, '„{page}“ am {when}', p),
+    pref: 'mailBookings',
+    action: 'Termin ansehen',
+  },
+  booking_cancelled: {
+    title: (lang, p) => t(lang, '{name} hat die Buchung storniert', p),
+    text: (lang, p) => t(lang, '„{page}“ am {when}', p),
+    pref: 'mailBookings',
+  },
+  poll_vote: {
+    title: (lang, p) => t(lang, '{name} hat bei „{title}“ abgestimmt', p),
+    text: (lang, p) => many(lang, Number(p.count), 'Bisher gibt es eine Stimme.', 'Bisher gibt es {count} Stimmen.', p),
+    pref: 'mailBookings',
+    action: 'Umfrage ansehen',
+  },
+  subscription_failed: {
+    title: (lang, p) => t(lang, 'Das Abo „{name}“ lässt sich nicht aktualisieren', p),
+    text: (_lang, p) => String(p.error ?? ''),
+    action: 'Kalender öffnen',
+  },
+  node_expired: {
+    title: (lang, p) => (p.folder ? t(lang, 'Der Ordner „{name}“ ist abgelaufen', p) : t(lang, '„{name}“ ist abgelaufen', p)),
+    text: (lang) => t(lang, 'Es liegt jetzt im Papierkorb. Dort kannst du es wiederherstellen, solange es noch da ist.'),
+    pref: 'mailReminders',
+    action: 'Papierkorb öffnen',
+  },
+  calendar_import: {
+    title: (lang, p) => t(lang, 'Import in „{name}“ fertig', p),
+    text: (lang, p) => t(lang, 'Neu: {created}, aktualisiert: {updated}, übersprungen: {skipped}', p),
+    action: 'Kalender öffnen',
   },
   login_new: {
     urgent: true,
@@ -494,8 +607,8 @@ export function digestCutoff(prefs: Pick<UserPrefs, 'digest' | 'zone'>, now = Da
   return now - since * 60_000;
 }
 
-const wantsMail = (user: UserRow, spec: Kind) =>
-  Boolean(user.email) && !inactive(user) && mailReady() && !(spec.pref && !prefsOf(user)[spec.pref]);
+const wantsMail = (user: UserRow, spec: Kind, force = false) =>
+  Boolean(user.email) && !inactive(user) && mailReady() && (force || (spec.mail !== false && !(spec.pref && !prefsOf(user)[spec.pref])));
 
 const canPush = (user: UserRow) =>
   !inactive(user) && settings.get('push.enabled') && (Boolean(prefsOf(user).push) || hasSubscriptions(user.id));
@@ -525,9 +638,9 @@ async function push(user: UserRow, kind: NotifyKind, params: Params, url: string
   );
 }
 
-async function mail(user: UserRow, kind: NotifyKind, params: Params, url: string | null) {
+async function mail(user: UserRow, kind: NotifyKind, params: Params, url: string | null, force = false) {
   const spec = KINDS[kind];
-  if (!wantsMail(user, spec)) return;
+  if (!wantsMail(user, spec, force)) return;
   const lang = preferredLanguage(user);
   const text = spec.text?.(lang, params);
   try {
@@ -568,7 +681,7 @@ export function notify(
   kind: NotifyKind,
   params: Params = {},
   url: string | null = null,
-  options: { email?: boolean } = {}
+  options: { email?: boolean; mail?: boolean; push?: boolean; urgent?: boolean } = {}
 ) {
   const user = getUser(userId);
   if (!user) return;
@@ -576,11 +689,13 @@ export function notify(
   const now = Date.now();
   const outside = options.email !== false;
   const prefs = prefsOf(user);
-  const quiet = outside && !spec.urgent && inQuiet(prefs, now);
-  const mailWanted = outside && wantsMail(user, spec);
-  const pushWanted = outside && wantsPush(user, spec);
-  const mailHeld = mailWanted && (quiet || (!spec.urgent && prefs.digest !== 'off'));
-  const pushHeld = pushWanted && quiet;
+  const urgent = options.urgent ?? spec.urgent ?? false;
+  const quiet = outside && !urgent && inQuiet(prefs, now);
+  const mailWanted = outside && options.mail !== false && wantsMail(user, spec, options.mail === true);
+  const pushWanted = outside && options.push !== false && wantsPush(user, spec);
+  const drop = Boolean(spec.timely) && outside && inQuiet(prefs, now);
+  const mailHeld = mailWanted && !drop && (quiet || (!urgent && !spec.timely && prefs.digest !== 'off'));
+  const pushHeld = pushWanted && !drop && quiet;
   const { lastId } = run(
     'INSERT INTO notifications (user_id, kind, params, url, created_at, mail_state, push_state) VALUES (?, ?, ?, ?, ?, ?, ?)',
     userId,
@@ -592,7 +707,8 @@ export function notify(
     pushHeld ? 1 : 0
   );
   publish([userId], 'notification', { id: lastId, unread: unreadCount(userId) });
-  if (mailWanted && !mailHeld) void mail(user, kind, params, url);
+  if (drop) return;
+  if (mailWanted && !mailHeld) void mail(user, kind, params, url, options.mail === true);
   if (pushWanted && !pushHeld) void push(user, kind, params, url);
 }
 

@@ -48,6 +48,11 @@ export default defineConfig({
         account: entry('account.tsx'),
         setup: entry('setup.tsx'),
         share: entry('share.tsx'),
+        calendar: entry('calendar.tsx'),
+        contacts: entry('contacts.tsx'),
+        public: entry('public.tsx'),
+        book: entry('book.tsx'),
+        poll: entry('poll.tsx'),
         auth: entry('auth.ts'),
       },
       output: {

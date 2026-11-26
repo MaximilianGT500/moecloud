@@ -26,6 +26,12 @@ import StarRounded from '@mui/icons-material/StarRounded';
 import AssignmentRounded from '@mui/icons-material/AssignmentRounded';
 import StickyNote2Rounded from '@mui/icons-material/StickyNote2Rounded';
 import LibraryMusicRounded from '@mui/icons-material/LibraryMusicRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
+import ContactsRounded from '@mui/icons-material/ContactsRounded';
+import EventAvailableRounded from '@mui/icons-material/EventAvailableRounded';
+import HowToVoteRounded from '@mui/icons-material/HowToVoteRounded';
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
 import { api, errorText, logout } from '../../lib/api';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
@@ -35,6 +41,7 @@ import type { ThemeList, ThemeResult } from '../common/themes';
 import { useModeSwitch } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
 import { useThemeControl } from '../mount';
+import { shownByFeature, useFeatures } from '../../lib/features';
 
 interface Command {
   id: string;
@@ -74,6 +81,7 @@ export function CommandPalette({
   onClose: () => void;
   onNavigate?: (href: string) => boolean;
 }) {
+  useFeatures();
   const user = boot().user!;
   const { pages } = usePlugins();
   const control = useThemeControl();
@@ -136,6 +144,7 @@ export function CommandPalette({
   const admin = t('Verwaltung');
   const looks = t('Aussehen');
   const more = t('Mehr');
+  const paletteFeature = (id: string) => (id === 'new-event' ? 'calendar' : id === 'new-task' ? 'tasks' : id);
   const commands: Command[] = [
     { id: 'home', group: places, label: t('Start'), icon: <HomeRounded />, run: () => go('/files/home') },
     { id: 'files', group: places, label: t('Dateien'), icon: <FolderRounded />, run: () => go('/files') },
@@ -148,6 +157,45 @@ export function CommandPalette({
       ? [{ id: 'forms', group: places, label: t('Formulare'), icon: <AssignmentRounded />, run: () => go('/files/forms') }]
       : []),
     { id: 'music', group: places, label: t('Musik'), icon: <LibraryMusicRounded />, run: () => go('/files/music') },
+    ...(boot().contactsOn
+      ? [{ id: 'contacts', group: places, label: t('Kontakte'), icon: <ContactsRounded />, run: () => go('/contacts') }]
+      : []),
+    ...(boot().calendarOn
+      ? [
+          { id: 'calendar', group: places, label: t('Kalender'), icon: <CalendarMonthRounded />, run: () => go('/calendar') },
+          { id: 'tasks', group: places, label: t('Aufgaben'), icon: <TaskAltRounded />, run: () => go('/calendar/tasks') },
+          ...(boot().calendarOn?.booking
+            ? [
+                {
+                  id: 'booking',
+                  group: places,
+                  label: t('Buchungsseiten'),
+                  icon: <EventAvailableRounded />,
+                  run: () => go('/calendar/booking'),
+                },
+              ]
+            : []),
+          ...(boot().calendarOn?.polls
+            ? [{ id: 'polls', group: places, label: t('Umfragen'), icon: <HowToVoteRounded />, run: () => go('/calendar/polls') }]
+            : []),
+          {
+            id: 'new-event',
+            group: more,
+            label: t('Neuer Termin'),
+            words: 'erstellen anlegen event kalender',
+            icon: <AddRounded />,
+            run: () => go('/calendar?new=event'),
+          },
+          {
+            id: 'new-task',
+            group: more,
+            label: t('Neue Aufgabe'),
+            words: 'erstellen anlegen todo',
+            icon: <TaskAltRounded />,
+            run: () => go('/calendar?new=task'),
+          },
+        ]
+      : []),
     { id: 'activity', group: places, label: t('Aktivität'), icon: <HistoryRounded />, run: () => go('/files/activity') },
     { id: 'starred', group: places, label: t('Favoriten'), icon: <StarRounded />, run: () => go('/files/starred') },
     { id: 'tags', group: places, label: t('Schlagwörter'), icon: <SellRounded />, run: () => go('/files/tags') },
@@ -177,10 +225,12 @@ export function CommandPalette({
             ['mail', t('E-Mail')],
             ['sso', t('Single Sign-on')],
             ['webhooks', t('Webhooks')],
+            ['calendar', t('Kalender')],
             ['plugins', t('Plugins')],
             ['backups', t('Sicherungen')],
             ['settings', t('Einstellungen')],
             ['system', t('System')],
+            ['help', t('Hilfe')],
           ] as [string, string][]
         ).map(([slug, label]): Command => ({
           id: `admin-${slug}`,
@@ -237,8 +287,9 @@ export function CommandPalette({
   const tokens = fold(term).split(/\s+/).filter(Boolean);
   const matches =
     tokens.length === 0
-      ? commands.filter((command) => !command.id.startsWith('theme-'))
+      ? commands.filter((command) => !command.id.startsWith('theme-') && shownByFeature(paletteFeature(command.id)))
       : commands
+          .filter((command) => shownByFeature(paletteFeature(command.id)))
           .map((command, position) => ({ command, score: rank(command, tokens), position }))
           .filter((entry) => entry.score >= 0)
           .sort((a, b) => a.score - b.score || a.position - b.position)

@@ -10,11 +10,19 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined';
+import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
+import ContactsOutlined from '@mui/icons-material/ContactsOutlined';
+import ContactsRounded from '@mui/icons-material/ContactsRounded';
+import EventAvailableOutlined from '@mui/icons-material/EventAvailableOutlined';
+import EventAvailableRounded from '@mui/icons-material/EventAvailableRounded';
 import FolderOutlined from '@mui/icons-material/FolderOutlined';
 import FolderRounded from '@mui/icons-material/FolderRounded';
 import FolderSharedOutlined from '@mui/icons-material/FolderSharedOutlined';
 import FolderSharedRounded from '@mui/icons-material/FolderSharedRounded';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
+import HowToVoteOutlined from '@mui/icons-material/HowToVoteOutlined';
+import HowToVoteRounded from '@mui/icons-material/HowToVoteRounded';
 import HomeRounded from '@mui/icons-material/HomeRounded';
 import PhotoLibraryOutlined from '@mui/icons-material/PhotoLibraryOutlined';
 import PhotoLibraryRounded from '@mui/icons-material/PhotoLibraryRounded';
@@ -44,6 +52,8 @@ import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import KeyboardRounded from '@mui/icons-material/KeyboardRounded';
 import ManageSearchRounded from '@mui/icons-material/ManageSearchRounded';
 import MoreHorizRounded from '@mui/icons-material/MoreHorizRounded';
+import TaskAltOutlined from '@mui/icons-material/TaskAltOutlined';
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
 import { BrandMark, SkipLink, StorageMeter, UserAvatar } from '../common/bits';
 import { lazyNamed } from '../common/lazy';
 import { pluginIcon, pluginPageHref, pluginPageKey, usePlugins } from '../common/plugins';
@@ -56,6 +66,7 @@ import { language, t } from '../../lib/i18n';
 import { c, curve, mix, radius } from '../../theme/tokens';
 import { NotificationBell } from './Notifications';
 import { SiteNotice } from './SiteNotice';
+import { featureOn, shownByFeature, useFeatures } from '../../lib/features';
 
 export const RAIL = 88;
 
@@ -77,6 +88,11 @@ export type Destination =
   | 'storage'
   | 'admin'
   | 'account'
+  | 'calendar'
+  | 'tasks'
+  | 'booking'
+  | 'polls'
+  | 'contacts'
   | `plugin:${string}`;
 
 interface NavItem {
@@ -121,6 +137,40 @@ function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
         { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
         { key: 'recent', href: '/files/recent', label: t('Zuletzt'), icon: <ScheduleOutlined />, activeIcon: <ScheduleRounded /> },
       ];
+  const calendar = boot().calendarOn;
+  const planning: NavItem[] = calendar
+    ? [
+        { key: 'calendar', href: '/calendar', label: t('Kalender'), icon: <CalendarMonthOutlined />, activeIcon: <CalendarMonthRounded /> },
+        { key: 'tasks', href: '/calendar/tasks', label: t('Aufgaben'), icon: <TaskAltOutlined />, activeIcon: <TaskAltRounded /> },
+      ]
+    : [];
+  const people: NavItem[] = boot().contactsOn
+    ? [{ key: 'contacts', href: '/contacts', label: t('Kontakte'), icon: <ContactsOutlined />, activeIcon: <ContactsRounded /> }]
+    : [];
+  const scheduling: NavItem[] = [
+    ...(calendar?.booking
+      ? [
+          {
+            key: 'booking' as const,
+            href: '/calendar/booking',
+            label: t('Buchungsseiten'),
+            icon: <EventAvailableOutlined />,
+            activeIcon: <EventAvailableRounded />,
+          },
+        ]
+      : []),
+    ...(calendar?.polls
+      ? [
+          {
+            key: 'polls' as const,
+            href: '/calendar/polls',
+            label: t('Umfragen'),
+            icon: <HowToVoteOutlined />,
+            activeIcon: <HowToVoteRounded />,
+          },
+        ]
+      : []),
+  ];
   const extra: NavItem[] = guest
     ? []
     : [
@@ -138,6 +188,7 @@ function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
           icon: <LibraryMusicOutlined />,
           activeIcon: <LibraryMusicRounded />,
         },
+        ...scheduling,
         ...(boot().forms
           ? [
               {
@@ -150,9 +201,11 @@ function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
             ]
           : []),
       ];
-  return [
+  const items: NavItem[] = [
     HOME,
     ...own,
+    ...planning,
+    ...people,
     ...(teams ? [TEAMS] : []),
     { key: 'starred', href: '/files/starred', label: t('Favoriten'), icon: <StarOutlineRounded />, activeIcon: <StarRounded /> },
     { key: 'tags', href: '/files/tags', label: t('Schlagwörter'), icon: <SellOutlined />, activeIcon: <SellRounded /> },
@@ -180,6 +233,7 @@ function allItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
         ]
       : []),
   ];
+  return items.filter((item) => shownByFeature(item.key));
 }
 
 const RAIL_GAP = 10;
@@ -325,10 +379,15 @@ function bottomItems(user: SessionUser, pages: PluginPage[]): NavItem[] {
     activeIcon: <PeopleRounded />,
   };
   if (boot().user?.role === 'guest') return [HOME, TEAMS, shared, account];
+  const third: NavItem | null = featureOn('photos')
+    ? { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> }
+    : boot().calendarOn && featureOn('calendar')
+      ? { key: 'calendar', href: '/calendar', label: t('Kalender'), icon: <CalendarMonthOutlined />, activeIcon: <CalendarMonthRounded /> }
+      : null;
   return [
     HOME,
     { key: 'files', href: '/files', label: t('Dateien'), icon: <FolderOutlined />, activeIcon: <FolderRounded /> },
-    { key: 'photos', href: '/files/photos', label: t('Fotos'), icon: <PhotoLibraryOutlined />, activeIcon: <PhotoLibraryRounded /> },
+    ...(third ? [third] : []),
     shared,
     account,
   ];
@@ -616,6 +675,7 @@ function useShortcuts() {
 }
 
 export function AppShell({ active, topBar, railAction, mobileAction, aside, storage, onNavigate, framed = true, children }: ShellProps) {
+  useFeatures();
   const user = boot().user!;
   const site = boot().site;
   const [shortcuts, setShortcuts] = useShortcuts();

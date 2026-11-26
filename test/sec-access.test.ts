@@ -67,6 +67,17 @@ const OPEN_PAGES = new Set([
   'GET /plugin-pages/:id/*',
   'GET /.well-known/security.txt',
   'GET /.well-known/change-password',
+  'GET /p/:token',
+  'GET /holidays/:region',
+  'GET /rsvp/:token',
+  'POST /rsvp/:token',
+  'GET /b/:slug',
+  'GET /b/manage/:token',
+  'GET /u/:token',
+  'GET /.well-known/caldav',
+  'PROPFIND /.well-known/caldav',
+  'GET /.well-known/carddav',
+  'PROPFIND /.well-known/carddav',
 ]);
 
 const SIGNED_IN_PAGES = new Set([
@@ -74,12 +85,16 @@ const SIGNED_IN_PAGES = new Set([
   'GET /files/*',
   'GET /admin',
   'GET /admin/*',
+  'GET /calendar',
+  'GET /calendar/*',
+  'GET /contacts',
+  'GET /contacts/*',
   'GET /account',
   'GET /passwort',
   'POST /passwort',
 ]);
 
-const OWN_AUTH = /^\/(dav|wopi\/|ext\/|browser\/|cool\/)/;
+const OWN_AUTH = /^\/(dav|caldav|carddav|wopi\/|ext\/|browser\/|cool\/)/;
 
 const fill = (url: string) =>
   url
@@ -90,7 +105,8 @@ const fill = (url: string) =>
 
 const routes = () => routesOf(app).filter((route) => route.method !== 'HEAD' && route.method !== 'OPTIONS');
 const key = (route: { method: string; url: string }) => `${route.method} ${route.url}`;
-const isOpenApi = (route: { method: string; url: string }) => OPEN_API.includes(key(route)) || route.url.startsWith('/api/public/');
+const isOpenApi = (route: { method: string; url: string }) =>
+  OPEN_API.includes(key(route)) || route.url.startsWith('/api/public/') || route.url.startsWith('/api/calendar/public/');
 
 async function anonymous() {
   const client = new Client(app);

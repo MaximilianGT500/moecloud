@@ -4,6 +4,7 @@ import ButtonBase from '@mui/material/ButtonBase';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import BackupRounded from '@mui/icons-material/BackupRounded';
+import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
 import DashboardRounded from '@mui/icons-material/DashboardRounded';
 import DnsRounded from '@mui/icons-material/DnsRounded';
 import ExtensionRounded from '@mui/icons-material/ExtensionRounded';
@@ -18,6 +19,7 @@ import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import ReceiptLongRounded from '@mui/icons-material/ReceiptLongRounded';
 import SettingsRounded from '@mui/icons-material/SettingsRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import SupportAgentRounded from '@mui/icons-material/SupportAgentRounded';
 import WebhookRounded from '@mui/icons-material/WebhookRounded';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
@@ -26,6 +28,7 @@ import { c, curve, mix, radius } from '../../theme/tokens';
 import { AppShell } from '../shell/AppShell';
 import { AuditSection } from './Audit';
 import { BackupsSection } from './Backups';
+import { CalendarSection } from './Calendar';
 import { GroupsSection } from './Groups';
 import { InvitesSection } from './Invites';
 import { LinksSection } from './Links';
@@ -33,6 +36,8 @@ import { MailSection } from './Mail';
 import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
 import { PluginsSection } from './Plugins';
+import { HelpSection } from './Pulse';
+import { usePulseUnread } from './pulseClient';
 import { ScanSection } from './Scan';
 import { SecuritySection } from './Security';
 import { SettingsSection } from './Settings';
@@ -55,10 +60,12 @@ type SectionKey =
   | 'mail'
   | 'sso'
   | 'webhooks'
+  | 'calendar'
   | 'plugins'
   | 'backups'
   | 'settings'
-  | 'system';
+  | 'system'
+  | 'help';
 
 const LEGACY: Record<string, SectionKey> = { users: 'people', invites: 'invites', settings: 'settings', overview: 'overview' };
 
@@ -76,16 +83,43 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
     { key: 'mail', label: t('E-Mail'), icon: <MailRounded />, group: 2 },
     { key: 'sso', label: t('Single Sign-on'), icon: <LoginRounded />, group: 2 },
     { key: 'webhooks', label: t('Webhooks'), icon: <WebhookRounded />, group: 2 },
+    { key: 'calendar', label: t('Kalender'), icon: <CalendarMonthRounded />, group: 2 },
     { key: 'plugins', label: t('Plugins'), icon: <ExtensionRounded />, group: 2 },
     { key: 'backups', label: t('Sicherungen'), icon: <BackupRounded />, group: 2 },
     { key: 'settings', label: t('Einstellungen'), icon: <SettingsRounded />, group: 3 },
     { key: 'system', label: t('System'), icon: <DnsRounded />, group: 3 },
+    { key: 'help', label: t('Hilfe'), icon: <SupportAgentRounded />, group: 3 },
   ];
 }
 
 const hrefOf = (key: SectionKey) => (key === 'overview' ? '/admin' : `/admin/${key}`);
 
-function NavLink({ item, active }: { item: ReturnType<typeof sections>[number]; active: boolean }) {
+function Count({ value }: { value: number }) {
+  return (
+    <Box
+      component="span"
+      aria-label={t('{count} ungelesen', { count: value })}
+      sx={{
+        ml: 'auto',
+        minWidth: 22,
+        height: 22,
+        px: 0.75,
+        borderRadius: `${radius.full}px`,
+        bgcolor: c.error,
+        color: c.onError,
+        fontSize: '0.75rem',
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {value > 99 ? '99+' : value}
+    </Box>
+  );
+}
+
+function NavLink({ item, active, count = 0 }: { item: ReturnType<typeof sections>[number]; active: boolean; count?: number }) {
   return (
     <ButtonBase
       component="a"
@@ -118,6 +152,7 @@ function NavLink({ item, active }: { item: ReturnType<typeof sections>[number]; 
     >
       {item.icon}
       {item.label}
+      {count > 0 && <Count value={count} />}
     </ButtonBase>
   );
 }
@@ -128,6 +163,7 @@ export function AdminPage() {
   const slug = path.replace(/^\/admin\/?/, '').split('/')[0];
   const section: SectionKey = list.some((item) => item.key === slug) ? (slug as SectionKey) : 'overview';
   const [registration, setRegistration] = useState('closed');
+  const unread = usePulseUnread();
 
   useEffect(() => {
     const legacy = query.get('tab');
@@ -176,7 +212,7 @@ export function AdminPage() {
           {list.map((item, index) => (
             <Box key={item.key}>
               {index > 0 && list[index - 1].group !== item.group && <Box sx={{ height: '1px', bgcolor: c.outlineVariant, my: 1, mx: 2 }} />}
-              <NavLink item={item} active={item.key === section} />
+              <NavLink item={item} active={item.key === section} count={item.key === 'help' ? unread : 0} />
             </Box>
           ))}
         </Box>
@@ -199,7 +235,7 @@ export function AdminPage() {
               <Chip
                 key={item.key}
                 icon={item.icon as ReactElement}
-                label={item.label}
+                label={item.key === 'help' && unread > 0 ? `${item.label} · ${unread}` : item.label}
                 component="a"
                 href={hrefOf(item.key)}
                 clickable
@@ -228,10 +264,12 @@ export function AdminPage() {
           {section === 'mail' && <MailSection />}
           {section === 'sso' && <SsoSection />}
           {section === 'webhooks' && <WebhooksSection />}
+          {section === 'calendar' && <CalendarSection />}
           {section === 'plugins' && <PluginsSection />}
           {section === 'backups' && <BackupsSection />}
           {section === 'settings' && <SettingsSection onChanged={(settings) => setRegistration(String(settings['auth.registration']))} />}
           {section === 'system' && <SystemSection />}
+          {section === 'help' && <HelpSection />}
         </Box>
       </Box>
     </AppShell>

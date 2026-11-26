@@ -76,6 +76,18 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (href: string) =
     }
   };
 
+  const nativeNotice = (title: string, text: string, url: string | null) => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted' || !document.hidden) return;
+    try {
+      const notice = new Notification(title, { body: text, icon: '/icons/icon-192.png', tag: `moe-${title}` });
+      notice.onclick = () => {
+        window.focus();
+        if (url) location.href = url;
+        notice.close();
+      };
+    } catch {}
+  };
+
   useLive((event, payload) => {
     if (event === 'reconnect') {
       void api
@@ -95,7 +107,14 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (href: string) =
         .then((data) => {
           if (anchor) setNotes(data.items);
           const fresh = payload.id ? data.items.find((note) => note.id === payload.id) : null;
-          if (fresh && !anchor) toast(fresh.title, fresh.url ? { action: { label: t('Ansehen'), onClick: () => go(fresh) } } : undefined);
+          if (fresh && !anchor) {
+            const timely = fresh.kind === 'event_reminder' || fresh.kind === 'task_due' || fresh.kind === 'invitation';
+            toast(
+              fresh.title,
+              fresh.url ? { action: { label: t('Ansehen'), onClick: () => go(fresh) }, ...(timely ? { duration: 8000 } : {}) } : undefined
+            );
+            if (timely) nativeNotice(fresh.title, fresh.text, fresh.url);
+          }
         })
         .catch(() => {});
     }

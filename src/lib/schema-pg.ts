@@ -715,6 +715,270 @@ CREATE INDEX comment_reactions_user ON comment_reactions(user_id);
 ALTER TABLE app_passwords ADD COLUMN paused_at BIGINT;
 ALTER TABLE app_passwords ADD COLUMN paused_reason ${T};
 `,
+  13: `
+CREATE TABLE calendars (
+  id ${T} PRIMARY KEY,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  slug ${T} NOT NULL,
+  name ${T} NOT NULL,
+  description ${T},
+  color ${T} NOT NULL,
+  kind ${T} NOT NULL DEFAULT 'local',
+  components ${T} NOT NULL DEFAULT 'VEVENT,VTODO',
+  zone ${T},
+  position BIGINT NOT NULL DEFAULT 0,
+  hidden BIGINT NOT NULL DEFAULT 0,
+  alarms ${T},
+  allday_alarms ${T},
+  public_token ${T} UNIQUE,
+  public_mode ${T},
+  source_url ${T},
+  refresh_minutes BIGINT,
+  synced_at BIGINT,
+  sync_error ${T},
+  sync_etag ${T},
+  sync_failures BIGINT NOT NULL DEFAULT 0,
+  revision BIGINT NOT NULL DEFAULT 1,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  trashed_at BIGINT
+);
+CREATE UNIQUE INDEX calendars_slug ON calendars(owner_id, slug);
+CREATE INDEX calendars_owner ON calendars(owner_id, position);
+CREATE INDEX calendars_kind ON calendars(kind, synced_at);
+CREATE TABLE calendar_shares (
+  calendar_id ${T} NOT NULL REFERENCES calendars(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  permission ${T} NOT NULL,
+  color ${T},
+  hidden BIGINT NOT NULL DEFAULT 0,
+  position BIGINT NOT NULL DEFAULT 0,
+  notify BIGINT NOT NULL DEFAULT 0,
+  created_by BIGINT,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (calendar_id, user_id)
+);
+CREATE INDEX calendar_shares_user ON calendar_shares(user_id);
+CREATE TABLE events (
+  id ${T} PRIMARY KEY,
+  calendar_id ${T} NOT NULL REFERENCES calendars(id) ON DELETE CASCADE ${FK},
+  uid ${T} NOT NULL,
+  href ${T} NOT NULL,
+  component ${T} NOT NULL,
+  title ${T} NOT NULL,
+  location ${T},
+  description ${T},
+  categories ${T},
+  start_at BIGINT,
+  end_at BIGINT,
+  all_day BIGINT NOT NULL DEFAULT 0,
+  recurring BIGINT NOT NULL DEFAULT 0,
+  range_end BIGINT,
+  status ${T},
+  due_at BIGINT,
+  completed_at BIGINT,
+  has_alarms BIGINT NOT NULL DEFAULT 0,
+  organizer_id BIGINT,
+  data ${T} NOT NULL,
+  ics ${T} NOT NULL,
+  etag ${T} NOT NULL,
+  sequence BIGINT NOT NULL DEFAULT 0,
+  created_by BIGINT,
+  updated_by BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  trashed_at BIGINT
+);
+CREATE UNIQUE INDEX events_href ON events(calendar_id, href);
+CREATE INDEX events_uid ON events(calendar_id, uid);
+CREATE INDEX events_range ON events(calendar_id, trashed_at, start_at, range_end);
+CREATE INDEX events_trash ON events(trashed_at);
+CREATE INDEX events_due ON events(calendar_id, component, due_at);
+CREATE TABLE attendees (
+  event_id ${T} NOT NULL REFERENCES events(id) ON DELETE CASCADE ${FK},
+  email ${T} NOT NULL,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL ${FK},
+  name ${T},
+  status ${T} NOT NULL DEFAULT 'NEEDS-ACTION',
+  role ${T},
+  token_hash ${T} UNIQUE,
+  calendar_id ${T} REFERENCES calendars(id) ON DELETE SET NULL ${FK},
+  hidden BIGINT NOT NULL DEFAULT 0,
+  notified_at BIGINT,
+  responded_at BIGINT,
+  comment ${T},
+  PRIMARY KEY (event_id, email)
+);
+CREATE INDEX attendees_user ON attendees(user_id, hidden);
+CREATE TABLE changes (
+  calendar_id ${T} NOT NULL REFERENCES calendars(id) ON DELETE CASCADE ${FK},
+  href ${T} NOT NULL,
+  revision BIGINT NOT NULL,
+  deleted BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (calendar_id, href)
+);
+CREATE INDEX changes_revision ON changes(calendar_id, revision);
+CREATE TABLE alarms (
+  event_id ${T} NOT NULL REFERENCES events(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  next_at BIGINT NOT NULL,
+  occurrence BIGINT NOT NULL,
+  action ${T} NOT NULL,
+  fired_until BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (event_id, user_id)
+);
+CREATE INDEX alarms_next ON alarms(next_at);
+CREATE TABLE event_templates (
+  id ${T} PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  name ${T} NOT NULL,
+  data ${T} NOT NULL,
+  position BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX event_templates_user ON event_templates(user_id, position);
+CREATE TABLE booking_pages (
+  id ${T} PRIMARY KEY,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  slug ${T} NOT NULL UNIQUE,
+  title ${T} NOT NULL,
+  description ${T},
+  calendar_id ${T} REFERENCES calendars(id) ON DELETE SET NULL ${FK},
+  durations ${T} NOT NULL,
+  availability ${T} NOT NULL,
+  zone ${T} NOT NULL,
+  buffer_before BIGINT NOT NULL DEFAULT 0,
+  buffer_after BIGINT NOT NULL DEFAULT 0,
+  notice_minutes BIGINT NOT NULL DEFAULT 0,
+  window_days BIGINT NOT NULL DEFAULT 60,
+  max_per_day BIGINT NOT NULL DEFAULT 0,
+  step_minutes BIGINT NOT NULL DEFAULT 30,
+  conflicts ${T},
+  location_kind ${T} NOT NULL DEFAULT 'none',
+  location ${T},
+  questions ${T},
+  color ${T},
+  enabled BIGINT NOT NULL DEFAULT 1,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX booking_pages_owner ON booking_pages(owner_id);
+CREATE TABLE bookings (
+  id ${T} PRIMARY KEY,
+  page_id ${T} NOT NULL REFERENCES booking_pages(id) ON DELETE CASCADE ${FK},
+  event_id ${T} REFERENCES events(id) ON DELETE SET NULL ${FK},
+  name ${T} NOT NULL,
+  email ${T} NOT NULL,
+  notes ${T},
+  answers ${T},
+  start_at BIGINT NOT NULL,
+  end_at BIGINT NOT NULL,
+  zone ${T},
+  token_hash ${T} NOT NULL UNIQUE,
+  status ${T} NOT NULL,
+  created_at BIGINT NOT NULL,
+  cancelled_at BIGINT
+);
+CREATE INDEX bookings_page ON bookings(page_id, start_at);
+CREATE TABLE polls (
+  id ${T} PRIMARY KEY,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  token ${T} NOT NULL UNIQUE,
+  title ${T} NOT NULL,
+  description ${T},
+  location ${T},
+  zone ${T} NOT NULL,
+  options ${T} NOT NULL,
+  settings ${T},
+  deadline BIGINT,
+  closed_at BIGINT,
+  final_option ${T},
+  event_id ${T} REFERENCES events(id) ON DELETE SET NULL ${FK},
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX polls_owner ON polls(owner_id, created_at);
+CREATE TABLE poll_votes (
+  id ${T} PRIMARY KEY,
+  poll_id ${T} NOT NULL REFERENCES polls(id) ON DELETE CASCADE ${FK},
+  name ${T} NOT NULL,
+  email ${T},
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL ${FK},
+  answers ${T} NOT NULL,
+  comment ${T},
+  token_hash ${T} NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX poll_votes_poll ON poll_votes(poll_id, created_at);
+ALTER TABLE nodes ADD COLUMN expires_at BIGINT;
+ALTER TABLE nodes ADD COLUMN expires_by BIGINT;
+CREATE INDEX nodes_expiry ON nodes(expires_at) WHERE expires_at IS NOT NULL;
+CREATE TABLE address_books (
+  id ${T} PRIMARY KEY,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  slug ${T} NOT NULL,
+  name ${T} NOT NULL,
+  description ${T},
+  position BIGINT NOT NULL DEFAULT 0,
+  revision BIGINT NOT NULL DEFAULT 1,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX address_books_slug ON address_books(owner_id, slug);
+CREATE TABLE address_book_shares (
+  book_id ${T} NOT NULL REFERENCES address_books(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  permission ${T} NOT NULL,
+  created_by BIGINT,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (book_id, user_id)
+);
+CREATE INDEX address_book_shares_user ON address_book_shares(user_id);
+CREATE TABLE contacts (
+  id ${T} PRIMARY KEY,
+  book_id ${T} NOT NULL REFERENCES address_books(id) ON DELETE CASCADE ${FK},
+  uid ${T} NOT NULL,
+  href ${T} NOT NULL,
+  kind ${T} NOT NULL DEFAULT 'individual',
+  name ${T} NOT NULL,
+  search ${T} NOT NULL,
+  birthday ${T},
+  data ${T} NOT NULL,
+  vcard ${T} NOT NULL,
+  etag ${T} NOT NULL,
+  created_by BIGINT,
+  updated_by BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  trashed_at BIGINT
+);
+CREATE UNIQUE INDEX contacts_href ON contacts(book_id, href);
+CREATE INDEX contacts_uid ON contacts(book_id, uid);
+CREATE INDEX contacts_book ON contacts(book_id, trashed_at);
+CREATE INDEX contacts_trash ON contacts(trashed_at);
+CREATE TABLE contact_emails (
+  contact_id ${T} NOT NULL REFERENCES contacts(id) ON DELETE CASCADE ${FK},
+  email ${T} NOT NULL,
+  PRIMARY KEY (contact_id, email)
+);
+CREATE INDEX contact_emails_email ON contact_emails(email);
+CREATE TABLE contact_stars (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  contact_id ${T} NOT NULL REFERENCES contacts(id) ON DELETE CASCADE ${FK},
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, contact_id)
+);
+CREATE INDEX contact_stars_contact ON contact_stars(contact_id);
+CREATE TABLE contact_changes (
+  book_id ${T} NOT NULL REFERENCES address_books(id) ON DELETE CASCADE ${FK},
+  href ${T} NOT NULL,
+  revision BIGINT NOT NULL,
+  deleted BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (book_id, href)
+);
+CREATE INDEX contact_changes_revision ON contact_changes(book_id, revision);
+`,
 };
 
 export const PG_IDENTITY: Record<string, string> = {
@@ -781,6 +1045,23 @@ export const TABLES = [
   'forms',
   'form_responses',
   'comment_reactions',
+  'calendars',
+  'calendar_shares',
+  'events',
+  'attendees',
+  'changes',
+  'alarms',
+  'event_templates',
+  'booking_pages',
+  'bookings',
+  'polls',
+  'poll_votes',
+  'address_books',
+  'address_book_shares',
+  'contacts',
+  'contact_emails',
+  'contact_stars',
+  'contact_changes',
 ];
 
 export const RECOUNT_REFS =

@@ -86,6 +86,7 @@ export interface Item {
   lock?: { userId: number; name: string; mine: boolean; expiresAt: number | null } | null;
   description?: string | null;
   reminder?: { dueAt: number; note: string | null } | null;
+  expiresAt?: number | null;
   office?: boolean;
 }
 

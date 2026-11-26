@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY vite.config.ts ./
 COPY web ./web
+COPY shared ./shared
 RUN npx vite build
 
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-slim AS deps
@@ -54,11 +55,12 @@ COPY --from=deps /deps/node_modules ./node_modules
 COPY --from=web /build/dist/web ./dist/web
 COPY package.json cli.ts ./
 COPY src ./src
+COPY shared ./shared
 COPY public ./public
 COPY examples ./examples
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/moecloud-entrypoint
 COPY --chmod=755 docker/moecloud /usr/local/bin/moecloud
-RUN chmod -R a+rX package.json cli.ts src public examples dist \
+RUN chmod -R a+rX package.json cli.ts src shared public examples dist \
   && mkdir -p /data
 EXPOSE 3000
 VOLUME ["/data"]

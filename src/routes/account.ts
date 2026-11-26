@@ -51,8 +51,9 @@ import {
   type UserPrefs,
 } from '../services/users.ts';
 import { activePlugins } from '../services/plugins.ts';
+import { FEATURES } from '../../shared/features.ts';
 
-const shownPrefs = ({ push, ...prefs }: UserPrefs) => prefs;
+const shownPrefs = ({ push, calendarSeeded, ...prefs }: UserPrefs) => prefs;
 const keyList = z.array(z.string().min(1).max(80)).max(60);
 const shownPush = (target: PushTarget | null) => (target ? { kind: target.kind, url: target.url, hasToken: Boolean(target.token) } : null);
 
@@ -219,6 +220,10 @@ export async function accountRoutes(app: FastifyInstance) {
           mailLogins: z.boolean(),
           mailReminders: z.boolean(),
           mailPlugins: z.boolean(),
+          mailInvites: z.boolean(),
+          mailBookings: z.boolean(),
+          pushReminders: z.boolean(),
+          features: z.array(z.enum(FEATURES)).max(FEATURES.length),
           digest: z.enum(['off', 'daily', 'weekly']),
           quiet: z
             .object({ from: z.number().int().min(0).max(1439), to: z.number().int().min(0).max(1439) })

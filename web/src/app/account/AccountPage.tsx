@@ -59,6 +59,8 @@ import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
 import { useThemeControl } from '../mount';
 import { ThemeChoice } from './ThemeChoice';
+import { featureOn, featuresOff, setFeaturesOff, useFeatures } from '../../lib/features';
+import type { Feature } from '../../../../shared/features';
 
 interface MailPrefs {
   mailShares: boolean;
@@ -69,9 +71,13 @@ interface MailPrefs {
   mailLogins: boolean;
   mailReminders: boolean;
   mailPlugins: boolean;
+  mailInvites: boolean;
+  mailBookings: boolean;
+  pushReminders: boolean;
 }
 
 interface Prefs extends MailPrefs {
+  features?: string[];
   digest: 'off' | 'daily' | 'weekly';
   quiet: { from: number; to: number } | null;
   zone: string;
@@ -911,6 +917,94 @@ function SecurityLog() {
   );
 }
 
+function featureList() {
+  const calendar = boot().calendarOn;
+  const list: { key: Feature; label: string; text: string; shown: boolean }[] = [
+    { key: 'photos', label: t('Fotos'), text: t('Zeitleiste, Alben und Erinnerungen an früher'), shown: true },
+    { key: 'music', label: t('Musik'), text: t('Bibliothek, Wiedergabelisten und Player'), shown: true },
+    { key: 'notes', label: t('Notizen'), text: t('Notizen in Markdown, die in deinen Dateien liegen'), shown: true },
+    {
+      key: 'forms',
+      label: t('Formulare'),
+      text: t('Umfragen und Anmeldungen, die andere über einen Link ausfüllen'),
+      shown: Boolean(boot().forms),
+    },
+    { key: 'tags', label: t('Schlagwörter'), text: t('Dateien mit farbigen Schlagwörtern ordnen'), shown: true },
+    {
+      key: 'calendar',
+      label: t('Kalender'),
+      text: t('Termine und Einladungen, dazu die nächsten Termine auf der Startseite'),
+      shown: Boolean(calendar),
+    },
+    {
+      key: 'tasks',
+      label: t('Aufgaben'),
+      text: t('Aufgaben mit Fälligkeit, dazu die offenen Aufgaben auf der Startseite'),
+      shown: Boolean(calendar),
+    },
+    {
+      key: 'booking',
+      label: t('Buchungsseiten'),
+      text: t('Freie Zeiten, die andere ohne Konto buchen'),
+      shown: Boolean(calendar?.booking),
+    },
+    { key: 'polls', label: t('Terminumfragen'), text: t('Über mehrere Terminvorschläge abstimmen'), shown: Boolean(calendar?.polls) },
+    {
+      key: 'contacts',
+      label: t('Kontakte'),
+      text: t('Adressbücher mit CardDAV, dazu Geburtstage im Kalender'),
+      shown: Boolean(boot().contactsOn),
+    },
+  ];
+  return list.filter((entry) => entry.shown);
+}
+
+function FeaturesSection({ account, onChanged }: { account: Account; onChanged: (prefs: Prefs) => void }) {
+  const on = useFeatures();
+  if (account.user.role === 'guest') return null;
+  const change = async (key: Feature, value: boolean) => {
+    const next = value ? featuresOff().filter((entry) => entry !== key) : [...featuresOff(), key];
+    const before = featuresOff();
+    setFeaturesOff(next);
+    try {
+      const result = await api.patch<{ prefs: Prefs }>('/api/account/prefs', { features: next });
+      onChanged(result.prefs);
+    } catch (error) {
+      setFeaturesOff(before);
+      toast(errorText(error));
+    }
+  };
+  return (
+    <Section
+      id="funktionen"
+      title={t('Funktionen')}
+      description={t(
+        'Was du nicht brauchst, blendest du hier aus. Es verschwindet aus Navigation, Startseite und Befehlspalette, deine Daten bleiben erhalten.'
+      )}
+    >
+      <Box data-features sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {featureList().map((feature) => (
+          <FormControlLabel
+            key={feature.key}
+            control={<Switch checked={on(feature.key)} onChange={(event) => void change(feature.key, event.target.checked)} />}
+            label={
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {feature.label}
+                </Typography>
+                <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                  {feature.text}
+                </Typography>
+              </Box>
+            }
+            sx={{ alignItems: 'center', m: 0, gap: 1 }}
+          />
+        ))}
+      </Box>
+    </Section>
+  );
+}
+
 function MailSection({ account, onChanged }: { account: Account; onChanged: (prefs: Prefs) => void }) {
   const save = async (patch: Partial<Prefs>) => {
     try {
@@ -943,6 +1037,25 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
       text: t('Für Ordner, bei denen du „Beobachten“ eingeschaltet hast'),
     },
     { key: 'mailReminders', label: t('Bei Erinnerungen an Dateien'), text: t('Für Erinnerungen, die du dir selbst gesetzt hast') },
+    ...(boot().calendarOn && (featureOn('calendar') || featureOn('tasks'))
+      ? [
+          {
+            key: 'pushReminders' as const,
+            label: t('Erinnerungen an Termine und Aufgaben'),
+            text: t('Als Push aufs Handy oder in den Browser. Erinnerungen per E-Mail stellst du direkt am Termin ein.'),
+          },
+          {
+            key: 'mailInvites' as const,
+            label: t('Einladungen und Antworten'),
+            text: t('Wenn dich jemand einlädt, einen Termin ändert oder auf deine Einladung antwortet'),
+          },
+          {
+            key: 'mailBookings' as const,
+            label: t('Buchungen und Umfragen'),
+            text: t('Neue und stornierte Buchungen, neue Stimmen in deinen Terminumfragen'),
+          },
+        ]
+      : []),
     {
       key: 'mailLogins',
       label: t('Bei Anmeldung von einem neuen Gerät'),
@@ -1810,6 +1923,8 @@ export function AccountPage() {
               </Box>
             </Section>
 
+            <FeaturesSection account={account} onChanged={(next) => setAccount({ ...account, prefs: next })} />
+
             <MailSection account={account} onChanged={(next) => setAccount({ ...account, prefs: next })} />
 
             {account.pushEnabled && !locked && <PushSection account={account} onChanged={() => void load()} />}
@@ -1989,6 +2104,9 @@ export function AccountPage() {
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2 }}>
                   <CopyField value={boot().webdav ?? `${location.origin}/dav/`} label={t('WebDAV-Adresse')} />
                   <CopyField value={account.user.username} label={t('Benutzername')} />
+                  {boot().calendarOn?.caldav && (featureOn('calendar') || featureOn('tasks')) && (
+                    <CopyField value={boot().calendarOn!.caldav!} label={t('CalDAV-Adresse für Kalender und Aufgaben')} />
+                  )}
                 </Box>
                 {security.appPasswords.map((entry) => (
                   <Box key={entry.id} data-app-password={entry.name} data-paused={entry.paused ? 'ja' : undefined}>

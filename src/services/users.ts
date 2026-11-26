@@ -7,6 +7,7 @@ import { hashPassword, randomId } from '../lib/crypto.ts';
 import { conflict, HttpError, notFound, unauthorized } from '../lib/errors.ts';
 import { isLang, type Lang } from '../lib/i18n.ts';
 import * as settings from './settings.ts';
+import { isFeature, type Feature } from '../../shared/features.ts';
 
 export type Role = 'admin' | 'user' | 'guest' | 'team';
 
@@ -65,7 +66,87 @@ export interface PushTarget {
   token: string | null;
 }
 
+export interface AlarmSpec {
+  minutes: number;
+  email?: boolean;
+}
+
+export type CalendarView = 'day' | 'week' | 'workweek' | 'days3' | 'month' | 'year' | 'agenda' | 'tasks';
+
+export interface CalendarPrefs {
+  view: CalendarView;
+  weekStart: 0 | 1 | 6;
+  slot: 15 | 30 | 60;
+  scrollTo: number;
+  workStart: number;
+  workEnd: number;
+  workDays: number[];
+  weekends: boolean;
+  weekNumbers: boolean;
+  declined: boolean;
+  dimPast: boolean;
+  zone2: string | null;
+  duration: number;
+  alarms: AlarmSpec[];
+  alldayAlarms: AlarmSpec[];
+  holidays: string[];
+  observances: boolean;
+  moon: boolean;
+  emoji: boolean;
+  tasksInCalendar: boolean;
+  completedTasks: boolean;
+  density: 'comfortable' | 'compact';
+  defaultCalendar: string | null;
+  freebusy: boolean;
+  agenda: 'off' | 'daily' | 'weekly';
+  agendaTime: number;
+  agendaSent: string;
+  colorBy: 'calendar' | 'category';
+  hideTitle: boolean;
+}
+
+export function calendarDefaults(): CalendarPrefs {
+  const holidays = settings.get('calendar.holidays');
+  return {
+    view: 'week',
+    weekStart: 1,
+    slot: 30,
+    scrollTo: 7 * 60,
+    workStart: 8 * 60,
+    workEnd: 18 * 60,
+    workDays: [1, 2, 3, 4, 5],
+    weekends: true,
+    weekNumbers: true,
+    declined: false,
+    dimPast: true,
+    zone2: null,
+    duration: 60,
+    alarms: [{ minutes: 10 }],
+    alldayAlarms: [],
+    holidays: holidays ? [holidays] : [],
+    observances: false,
+    moon: false,
+    emoji: true,
+    tasksInCalendar: true,
+    completedTasks: false,
+    density: 'comfortable',
+    defaultCalendar: null,
+    freebusy: true,
+    agenda: 'off',
+    agendaTime: 7 * 60,
+    agendaSent: '',
+    colorBy: 'calendar',
+    hideTitle: false,
+  };
+}
+
 export interface UserPrefs {
+  mailInvites: boolean;
+  mailBookings: boolean;
+  pushReminders: boolean;
+  calendar: CalendarPrefs;
+  calendarSeeded: boolean;
+  features: Feature[];
   mailShares: boolean;
   mailUploads: boolean;
   mailComments: boolean;
@@ -92,7 +173,12 @@ export interface UserPrefs {
 export const preferredLanguage = (user: Pick<UserRow, 'language'>): Lang =>
   user.language && isLang(user.language) ? user.language : settings.get('site.language');
 
-const PREF_DEFAULTS: UserPrefs = {
+const PREF_DEFAULTS: Omit<UserPrefs, 'calendar'> = {
+  mailInvites: true,
+  mailBookings: true,
+  pushReminders: true,
+  calendarSeeded: false,
+  features: [],
   mailShares: true,
   mailUploads: true,
   mailComments: true,
@@ -117,20 +203,33 @@ const PREF_DEFAULTS: UserPrefs = {
 };
 
 export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
-  if (!user.prefs) return { ...PREF_DEFAULTS };
-  try {
-    return { ...PREF_DEFAULTS, ...(JSON.parse(user.prefs) as Partial<UserPrefs>) };
-  } catch {
-    return { ...PREF_DEFAULTS };
+  let stored: Partial<UserPrefs> = {};
+  if (user.prefs) {
+    try {
+      stored = JSON.parse(user.prefs) as Partial<UserPrefs>;
+    } catch {
+      stored = {};
+    }
   }
+  return { ...PREF_DEFAULTS, ...stored, calendar: { ...calendarDefaults(), ...(stored.calendar ?? {}) } };
 }
+
+export const zoneOf = (user: Pick<UserRow, 'prefs'>) => prefsOf(user).zone || settings.get('calendar.zone') || 'Europe/Berlin';
 
 export function updatePrefs(userId: number, patch: Partial<UserPrefs>) {
   const user = getUser(userId);
   if (!user) return null;
-  const next = { ...prefsOf(user), ...patch };
+  const current = prefsOf(user);
+  const next = { ...current, ...patch, calendar: { ...current.calendar, ...(patch.calendar ?? {}) } };
   run('UPDATE users SET prefs = ? WHERE id = ?', JSON.stringify(next), userId);
   return next;
+}
+
+export function updateCalendarPrefs(userId: number, patch: Partial<CalendarPrefs>) {
+  const user = getUser(userId);
+  if (!user) return null;
+  const current = prefsOf(user);
+  return updatePrefs(userId, { calendar: { ...current.calendar, ...patch } })?.calendar ?? null;
 }
 
 export interface NewUser {
@@ -169,6 +268,18 @@ export function findByLogin(login: string) {
 
 export const findByUsername = (username: string) => one<UserRow>('SELECT * FROM users WHERE username_key = ?', keyOf(username));
 
+export const PSEUDO_MAIL = 'users.moecloud.invalid';
+
+export const pseudoMail = (user: Pick<UserRow, 'username' | 'email'>) => (user.email ?? `${user.username}@${PSEUDO_MAIL}`).toLowerCase();
+
+export const findByEmail = (email: string) => {
+  const pseudo = /^([^@\s]+)@users\.moe(?:cloud|calendar)\.invalid$/i.exec(email.trim());
+  const found = pseudo
+    ? one<UserRow>('SELECT * FROM users WHERE username_key = ?', keyOf(pseudo[1]))
+    : one<UserRow>('SELECT * FROM users WHERE email_key = ?', keyOf(email));
+  return found && found.role !== 'team' && found.role !== 'guest' ? found : undefined;
+};
+
 export const userCount = () => value<number>(`SELECT COUNT(*) FROM users WHERE ${PERSON}`) ?? 0;
 
 export async function createUser(input: NewUser): Promise<UserRow> {
@@ -198,6 +309,9 @@ export async function createUser(input: NewUser): Promise<UserRow> {
       typeof input.pending === 'number' ? input.pending : input.pending ? 1 : 0,
       input.mustChange && hash ? 1 : 0
     );
+    const off = settings.get('accounts.features').filter(isFeature);
+    if (off.length && (input.role ?? 'user') !== 'team')
+      run('UPDATE users SET prefs = ? WHERE id = ?', JSON.stringify({ features: off }), lastId);
     run(
       `INSERT INTO nodes (id, owner_id, parent_id, type, name, name_key, created_by, updated_by, created_at, updated_at, modified_at)
        VALUES (?, ?, NULL, 'folder', '', '', ?, ?, ?, ?, ?)`,
@@ -250,6 +364,7 @@ export function publicUser(user: UserRow) {
     rootId: user.root_id,
     initials: initials(user.name),
     avatar: user.avatar ?? null,
+    zone: zoneOf(user),
   };
 }
 

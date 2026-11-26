@@ -76,8 +76,12 @@ import UploadRounded from '@mui/icons-material/UploadRounded';
 import ViewListRounded from '@mui/icons-material/ViewListRounded';
 import EditNoteRounded from '@mui/icons-material/EditNoteRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
+import HourglassBottomRounded from '@mui/icons-material/HourglassBottomRounded';
+import EventAvailableRounded from '@mui/icons-material/EventAvailableRounded';
+import ContactsRounded from '@mui/icons-material/ContactsRounded';
 import { api, errorText } from '../../lib/api';
 import { boot, type Boot, type Storage } from '../../lib/boot';
+import { featureOn } from '../../lib/features';
 import { t, tn } from '../../lib/i18n';
 import { useLive } from '../../lib/live';
 import { setPrefs, usePrefs, type Prefs } from '../../lib/prefs';
@@ -134,6 +138,8 @@ import { Breadcrumbs, DropOverlay, PageTitle, SelectionBar, UploadPanel, useNewM
 import { SearchBar } from './SearchBar';
 import { useTagSync } from './tags';
 
+const CALENDAR_FILE = /\.(ics|ical|ifb|vcs)$/i;
+const CONTACT_FILE = /\.(vcf|vcard)$/i;
 const ActivityView = lazyNamed(() => import('./ActivityView'), 'ActivityView');
 const HomeView = lazyNamed(() => import('./Home'), 'HomeView');
 const TeamsView = lazyNamed(() => import('./Teams'), 'TeamsView');
@@ -146,9 +152,11 @@ const AutomationsDialog = lazyNamed(() => import('./Automations'), 'AutomationsD
 const CleanupDialog = lazyNamed(() => import('./Bulk'), 'CleanupDialog');
 const RewindDialog = lazyNamed(() => import('./Rewind'), 'RewindDialog');
 const RecordDialog = lazyNamed(() => import('./Recorder'), 'RecordDialog');
+const ScanDialog = lazyNamed(() => import('./Scanner'), 'ScanDialog');
 const LockDialog = lazyNamed(() => import('./Bulk'), 'LockDialog');
 const DavImportDialog = lazyNamed(() => import('./DavImport'), 'DavImportDialog');
 const ReminderDialog = lazyNamed(() => import('./Bulk'), 'ReminderDialog');
+const ExpiryDialog = lazyNamed(() => import('./Bulk'), 'ExpiryDialog');
 const TemplateDialog = lazyNamed(() => import('./Templates'), 'TemplateDialog');
 const ImageEditor = lazyNamed(() => import('./ImageEditor'), 'ImageEditor');
 const MiniPlayer = lazyNamed(() => import('./MiniPlayer'), 'MiniPlayer');
@@ -305,6 +313,8 @@ export function FilesApp() {
   const [packing, setPacking] = useState<Item[] | null>(null);
   const [cleanupFor, setCleanupFor] = useState<Item | null>(null);
   const [recordMode, setRecordMode] = useState<RecordMode | null>(null);
+  const [expiring, setExpiring] = useState<Item | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [rewindFor, setRewindFor] = useState<{ folder: { id: string; name: string; root: boolean }; at: number | null } | null>(null);
   const [starter, setStarter] = useState<string | null>(data.starter ?? null);
   const [automationsFor, setAutomationsFor] = useState<Item | null>(null);
@@ -783,6 +793,30 @@ export function FilesApp() {
         onClick: () => setReminding(single),
       });
     }
+    if (single && single.type === 'file' && CALENDAR_FILE.test(single.name) && boot().calendarOn && featureOn('calendar')) {
+      list.push({
+        key: 'calendar-import',
+        label: t('In Kalender importieren'),
+        icon: <EventAvailableRounded />,
+        onClick: () => window.location.assign(`/calendar?import=${encodeURIComponent(single.id)}`),
+      });
+    }
+    if (single && single.type === 'file' && CONTACT_FILE.test(single.name) && boot().contactsOn && featureOn('contacts')) {
+      list.push({
+        key: 'contacts-import',
+        label: t('In Kontakte importieren'),
+        icon: <ContactsRounded />,
+        onClick: () => window.location.assign(`/contacts?import=${encodeURIComponent(single.id)}`),
+      });
+    }
+    if (single && single.parentId && canEdit(single)) {
+      list.push({
+        key: 'expiry',
+        label: single.expiresAt ? t('Ablaufdatum ändern') : t('Ablaufdatum'),
+        icon: <HourglassBottomRounded />,
+        onClick: () => setExpiring(single),
+      });
+    }
     if (single && single.type === 'folder' && single.parentId && single.role === 'owner') {
       list.push({
         key: 'templates',
@@ -1115,6 +1149,7 @@ export function FilesApp() {
     onImport: data.import ? () => void importFromUrl(uploadTarget) : undefined,
     onDavImport: data.import ? () => setDavImport(uploadTarget) : undefined,
     onRecord: (mode) => setRecordMode(mode),
+    onScan: typeof HTMLCanvasElement !== 'undefined' ? () => setScanning(true) : undefined,
   });
 
   const dropHandlers = {
@@ -1827,6 +1862,11 @@ export function FilesApp() {
           <RecordDialog mode={recordMode} onClose={() => setRecordMode(null)} onSave={(file) => void upload([{ file }], uploadTarget)} />
         </Later>
       )}
+      {scanning && (
+        <Later>
+          <ScanDialog onClose={() => setScanning(false)} onSave={(file) => void upload([{ file }], uploadTarget)} />
+        </Later>
+      )}
       {rewindFor && (
         <Later>
           <RewindDialog folder={rewindFor.folder} initial={rewindFor.at} onClose={() => setRewindFor(null)} onDone={() => refresh()} />
@@ -1845,6 +1885,11 @@ export function FilesApp() {
       {reminding && (
         <Later>
           <ReminderDialog item={reminding} onClose={() => setReminding(null)} onDone={() => refresh()} />
+        </Later>
+      )}
+      {expiring && (
+        <Later>
+          <ExpiryDialog item={expiring} onClose={() => setExpiring(null)} onDone={() => refresh()} />
         </Later>
       )}
       {templateFor && (

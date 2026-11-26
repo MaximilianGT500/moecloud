@@ -3,6 +3,7 @@ import { open, rm } from 'node:fs/promises';
 import { runFilter } from '../lib/hooks.ts';
 import { store, tmpPath, type Received } from './blobs.ts';
 import { wake } from './processing.ts';
+import { countPulse } from './pulse.ts';
 import { checkUpload, markBlob, type ScanContext } from './scan.ts';
 
 export async function ingest(received: Received, context: ScanContext) {
@@ -23,6 +24,8 @@ export async function ingest(received: Received, context: ScanContext) {
   const sha = await store(received);
   markBlob(sha, verdict);
   wake();
+  if (context.via === 'dav') countPulse('webdav');
+  else if (context.via === 'upload' || context.via === 'link' || context.via === 'api') countPulse('upload');
   return sha;
 }
 

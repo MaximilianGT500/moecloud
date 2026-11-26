@@ -13,6 +13,14 @@ export interface Prefs {
   tile: 0.75 | 1 | 1.35;
   motion: 'system' | 'reduced';
   backdrop: 'plain' | 'glow';
+  sidebar: boolean;
+  hidden: string[];
+  hourHeight: number;
+  taskFilter: 'open' | 'today' | 'overdue' | 'upcoming' | 'mine' | 'done' | 'all';
+  taskSort: 'due' | 'priority' | 'created' | 'title';
+  taskLayout: 'list' | 'board';
+  agendaDays: number;
+  statsRange: 'week' | 'month' | 'quarter' | 'year';
 }
 
 const KEY = 'moecloud-prefs';
@@ -29,6 +37,14 @@ const DEFAULTS: Prefs = {
   tile: 1,
   motion: 'system',
   backdrop: 'plain',
+  sidebar: true,
+  hidden: [],
+  hourHeight: 52,
+  taskFilter: 'open',
+  taskSort: 'due',
+  taskLayout: 'list',
+  agendaDays: 30,
+  statsRange: 'month',
 };
 const SCALES: Prefs['scale'][] = [0.9, 1, 1.1, 1.25];
 const TILES: Prefs['tile'][] = [0.75, 1, 1.35];
@@ -48,6 +64,7 @@ function read(): Prefs {
       density: rest.density === 'compact' ? 'compact' : 'comfortable',
       motion: rest.motion === 'reduced' ? 'reduced' : 'system',
       backdrop: rest.backdrop === 'glow' ? 'glow' : 'plain',
+      taskLayout: rest.taskLayout === 'board' ? 'board' : 'list',
     };
   } catch {
     return DEFAULTS;

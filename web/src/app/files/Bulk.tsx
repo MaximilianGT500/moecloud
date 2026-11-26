@@ -493,6 +493,88 @@ export function ReminderDialog({ item, onClose, onDone }: { item: Item; onClose:
   );
 }
 
+function expiryChoices() {
+  const now = new Date();
+  const at = (days: number, months = 0) => new Date(now.getFullYear(), now.getMonth() + months, now.getDate() + days, 23, 59).getTime();
+  return [
+    { key: 'day', label: t('Morgen'), time: at(1) },
+    { key: 'week', label: t('In einer Woche'), time: at(7) },
+    { key: 'month', label: t('In einem Monat'), time: at(0, 1) },
+    { key: 'quarter', label: t('In drei Monaten'), time: at(0, 3) },
+    { key: 'year', label: t('In einem Jahr'), time: at(0, 12) },
+  ];
+}
+
+export function ExpiryDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
+  const [choices] = useState(expiryChoices);
+  const [choice, setChoice] = useState(item.expiresAt ? 'custom' : 'week');
+  const [custom, setCustom] = useState(() => localValue(item.expiresAt ?? choices[1].time));
+  const [busy, setBusy] = useState(false);
+  const time = choice === 'custom' ? new Date(custom).getTime() : (choices.find((entry) => entry.key === choice)?.time ?? NaN);
+  const valid = Number.isFinite(time) && time > Date.now() + 60_000;
+  const send = async (at: number | null) => {
+    setBusy(true);
+    const result = await attempt(() => api.put(`/api/nodes/${item.id}/expiry`, { at }));
+    setBusy(false);
+    if (!result) return;
+    toast(at ? t('„{name}“ landet am {when} im Papierkorb', { name: item.name, when: formatDateTime(at) }) : t('Ablaufdatum entfernt'));
+    onDone();
+    onClose();
+  };
+  return (
+    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (valid) void send(time);
+        }}
+      >
+        <DialogTitle>{t('Ablaufdatum für „{name}“', { name: item.name })}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" sx={{ color: c.onSurfaceVariant }}>
+            {item.type === 'folder'
+              ? t('Danach verschiebt MoeCloud den Ordner mit allem darin in den Papierkorb. Von dort lässt er sich noch wiederherstellen.')
+              : t('Danach verschiebt MoeCloud die Datei in den Papierkorb. Von dort lässt sie sich noch wiederherstellen.')}
+          </Typography>
+          <TextField select label={t('Läuft ab')} value={choice} onChange={(event) => setChoice(event.target.value)} disabled={busy}>
+            {choices.map((entry) => (
+              <MenuItem key={entry.key} value={entry.key}>
+                {entry.label}
+              </MenuItem>
+            ))}
+            <MenuItem value="custom">{t('Eigener Zeitpunkt')}</MenuItem>
+          </TextField>
+          {choice === 'custom' && (
+            <TextField
+              label={t('Datum und Uhrzeit')}
+              type="datetime-local"
+              value={custom}
+              onChange={(event) => setCustom(event.target.value)}
+              disabled={busy}
+              error={!valid}
+              helperText={valid ? undefined : t('Der Zeitpunkt muss in der Zukunft liegen')}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: localValue(Date.now()) } }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          {item.expiresAt && (
+            <Button color="error" onClick={() => void send(null)} disabled={busy} sx={{ mr: 'auto' }}>
+              {t('Ablaufdatum entfernen')}
+            </Button>
+          )}
+          <Button onClick={onClose} disabled={busy}>
+            {t('Abbrechen')}
+          </Button>
+          <Button type="submit" variant="contained" disabled={busy || !valid}>
+            {t('Speichern')}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+}
+
 const LOCK_CHOICES = [60, 480, 1440, 10080, 0];
 
 export function LockDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {

@@ -196,6 +196,33 @@ export function placeFile(actor: Actor, target: Target, content: Received | { sh
   return node;
 }
 
+export function placeIncoming(
+  owner: UserRow,
+  path: string[],
+  rawName: string,
+  content: { sha256: string; size: number },
+  details?: Record<string, unknown>
+): NodeRow {
+  const node = tx(() => {
+    const folderId = ensurePath(owner.id, null, owner.root_id, path);
+    const name = findChild(folderId, rawName) ? uniqueName(rawName, false, taken(folderId)) : rawName;
+    const created = insertNode({
+      ownerId: owner.id,
+      parentId: folderId,
+      type: 'file',
+      name,
+      actorId: null,
+      size: content.size,
+      sha256: content.sha256,
+    });
+    record({ owner: owner.id, actor: null, node: created.id, parent: folderId, action: 'link_upload', name, details });
+    changed([folderId, owner.root_id]);
+    return created;
+  });
+  checkQuota(owner.id);
+  return node;
+}
+
 export interface InitInput {
   parentId: string;
   name: string;

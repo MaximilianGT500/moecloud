@@ -36,12 +36,30 @@ export interface UpdateInfo {
   security: boolean;
   notes: { de: string[]; en: string[] };
   checkedAt: number;
+  source?: 'pulse' | 'feed';
+  yanked?: boolean;
+  title?: string | null;
+  markdown?: string | null;
+  releases?: { version: string; date: string; security: boolean; url: string }[];
 }
 
 const env = process.env;
 const envPort = Number(env.CLAMAV_PORT);
 const smtpPort = Number(env.SMTP_PORT);
 const smtpSecurity = (['tls', 'starttls', 'none'] as const).find((value) => value === env.SMTP_SECURITY);
+
+function defaultZone() {
+  const zone = env.TZ?.trim();
+  if (zone && zone.includes('/')) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone });
+      return zone;
+    } catch {
+      return 'Europe/Berlin';
+    }
+  }
+  return 'Europe/Berlin';
+}
 
 const webUrl = (value: string | undefined) => (/^https?:\/\/[^/\s]+/.test(value ?? '') ? value!.trim().replace(/\/+$/, '') : '');
 
@@ -80,6 +98,7 @@ const DEFAULTS = {
   'report.sent': '',
   'storage.defaultQuota': 0,
   'accounts.starter': '',
+  'accounts.features': [] as string[],
   'accounts.inactiveDays': 0,
   'collabora.url': webUrl(env.COLLABORA_URL),
   'collabora.internal': webUrl(env.COLLABORA_INTERNAL_URL),
@@ -91,6 +110,22 @@ const DEFAULTS = {
   'storage.versionDays': 0,
   'share.links': true,
   'forms.enabled': true,
+  'calendar.enabled': true,
+  'calendar.zone': defaultZone(),
+  'calendar.holidays': 'de',
+  'calendar.caldav': true,
+  'calendar.publicLinks': true,
+  'calendar.subscriptions': true,
+  'calendar.subscriptionsPrivate': false,
+  'calendar.imports': true,
+  'calendar.maxSubscriptions': 25,
+  'calendar.minRefresh': 15,
+  'calendar.booking': true,
+  'calendar.polls': true,
+  'calendar.externalInvites': true,
+  'calendar.freebusy': true,
+  'calendar.trashDays': 30,
+  'contacts.enabled': true,
   'share.users': true,
   'share.requirePassword': false,
   'share.maxDays': 0,
@@ -135,6 +170,8 @@ const DEFAULTS = {
   'updates.check': true,
   'updates.latest': null as UpdateInfo | null,
   'updates.notified': '',
+  'pulse.stats': false,
+  'pulse.errors': false,
   'audit.days': 180,
   'activity.days': 90,
   'search.content': true,
@@ -226,6 +263,7 @@ export const PUBLIC_KEYS = [
   'auth.passwordMin',
   'auth.sessionDays',
   'auth.sessionMaxDays',
+  'accounts.features',
   'accounts.inactiveDays',
   'auth.passwordBreach',
   'auth.confirmEmail',
@@ -257,6 +295,22 @@ export const PUBLIC_KEYS = [
   'share.stripLocation',
   'share.slugs',
   'share.reports',
+  'calendar.enabled',
+  'calendar.zone',
+  'calendar.holidays',
+  'calendar.caldav',
+  'calendar.publicLinks',
+  'calendar.subscriptions',
+  'calendar.subscriptionsPrivate',
+  'calendar.imports',
+  'calendar.maxSubscriptions',
+  'calendar.minRefresh',
+  'calendar.booking',
+  'calendar.polls',
+  'calendar.externalInvites',
+  'calendar.freebusy',
+  'calendar.trashDays',
+  'contacts.enabled',
   'users.directory',
   'users.selfDelete',
   'notice.text',

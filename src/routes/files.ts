@@ -23,6 +23,7 @@ import { homeFor } from '../services/home.ts';
 import { ingest } from '../services/ingest.ts';
 import { lockNode, MAX_LOCK_MINUTES, unlockNode } from '../services/locks.ts';
 import { listReminders, removeReminder, setReminder } from '../services/reminders.ts';
+import { setExpiry } from '../services/expiry.ts';
 import { fromTemplate, setTemplates, templatesOf } from '../services/templates.ts';
 import { cleanDuplicates, memories, photos, storageReport } from '../services/library.ts';
 import { assertNotInfected } from '../services/scan.ts';
@@ -479,6 +480,13 @@ export async function fileRoutes(app: FastifyInstance) {
   app.delete<IdParams>('/api/nodes/:id/reminder', async (request) => ({ removed: removeReminder(me(request), request.params.id) }));
 
   app.get('/api/reminders', async (request) => ({ items: listReminders(me(request)) }));
+
+  app.put<IdParams>('/api/nodes/:id/expiry', async (request) => {
+    const user = me(request);
+    const input = parse(z.object({ at: z.number().int().positive().max(253402300799000).nullable() }), request.body);
+    const node = setExpiry(user, request.params.id, input.at);
+    return { node: present([node], user, resolveAccess(user, node.id)?.role ?? 'view')[0] };
+  });
 
   const templates = (user: UserRow) => {
     const { folder, items } = templatesOf(user);

@@ -6,6 +6,10 @@ import { listSearches } from './searches.ts';
 import * as settings from './settings.ts';
 import { prefsOf, quotaOf, type UserRow } from './users.ts';
 import { zipStream } from './zip.ts';
+import { ownCalendars } from '../calendar/calendars.ts';
+import { exportIcs } from '../calendar/transfer.ts';
+import { ownBooks } from '../contacts/books.ts';
+import { exportVcf, type ContactRow } from '../contacts/store.ts';
 
 const FOLDER = 'Dateien';
 
@@ -207,5 +211,28 @@ export const exportName = (user: UserRow) => `moecloud-${user.username}-${new Da
 export function exportStream(user: UserRow): Readable {
   const roots = all<NodeRow>('SELECT * FROM nodes WHERE parent_id = ? AND trashed_at IS NULL ORDER BY name_key', user.root_id);
   const data = Buffer.from(`${JSON.stringify(accountData(user), null, 2)}\n`);
-  return zipStream(roots, { prefix: FOLDER, extras: [{ name: 'konto.json', data }] });
+  const used = new Set<string>();
+  const calendars = ownCalendars(user.id)
+    .filter((calendar) => calendar.kind === 'local')
+    .map((calendar) => {
+      const base = calendar.name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'Kalender';
+      let name = `${base}.ics`;
+      for (let index = 2; used.has(name.toLowerCase()); index++) name = `${base} (${index}).ics`;
+      used.add(name.toLowerCase());
+      return { name: `kalender/${name}`, data: Buffer.from(exportIcs(calendar), 'utf8') };
+    });
+  const books = ownBooks(user.id).map((book) => {
+    const base = book.name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'Kontakte';
+    let name = `${base}.vcf`;
+    for (let index = 2; used.has(`k:${name.toLowerCase()}`); index++) name = `${base} (${index}).vcf`;
+    used.add(`k:${name.toLowerCase()}`);
+    return {
+      name: `kontakte/${name}`,
+      data: Buffer.from(
+        exportVcf(all<ContactRow>('SELECT vcard FROM contacts WHERE book_id = ? AND trashed_at IS NULL ORDER BY name', book.id)),
+        'utf8'
+      ),
+    };
+  });
+  return zipStream(roots, { prefix: FOLDER, extras: [{ name: 'konto.json', data }, ...calendars, ...books] });
 }

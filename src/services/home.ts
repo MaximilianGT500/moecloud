@@ -6,8 +6,52 @@ import { present, recent, resolveAccess, starred, teamOwners, type NodeRow } fro
 import { listReminders } from './reminders.ts';
 import { presentTeam, teamsFor } from './teams.ts';
 import { prefsOf, storageOf, type UserRow } from './users.ts';
+import { listTasks, upcomingFor } from '../calendar/events.ts';
+import { calendarAllowed } from '../calendar/guard.ts';
+import { pendingInvitations } from '../calendar/invitations.ts';
 
 const RECENT = 10;
+
+function planning(user: UserRow) {
+  if (!calendarAllowed(user)) return null;
+  const colors = new Map<string, string>();
+  for (const row of all<{ id: string; color: string }>(
+    'SELECT id, color FROM calendars WHERE owner_id = ? AND trashed_at IS NULL',
+    user.id
+  ))
+    colors.set(row.id, row.color);
+  for (const row of all<{ id: string; color: string }>(
+    'SELECT c.id, COALESCE(s.color, c.color) AS color FROM calendar_shares s JOIN calendars c ON c.id = s.calendar_id WHERE s.user_id = ?',
+    user.id
+  ))
+    colors.set(row.id, row.color);
+  if (!colors.size) return { events: [], tasks: [], invitations: 0 };
+  return {
+    events: upcomingFor(user, 5).map((entry) => ({
+      eventId: entry.eventId,
+      recurrenceId: entry.recurrenceId,
+      title: entry.title,
+      location: entry.location,
+      start: entry.start,
+      end: entry.end,
+      allDay: entry.allDay,
+      startDate: entry.startDate,
+      color: entry.color ?? colors.get(entry.calendarId) ?? null,
+    })),
+    tasks: listTasks(user)
+      .filter((task) => !task.completed)
+      .slice(0, 5)
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        due: task.due,
+        allDay: task.allDay,
+        priority: task.priority,
+        color: task.color ?? colors.get(task.calendarId) ?? null,
+      })),
+    invitations: pendingInvitations(user).length,
+  };
+}
 
 export function homeFor(user: UserRow, date: string, offset: number) {
   const guest = user.role === 'guest';
@@ -42,5 +86,6 @@ export function homeFor(user: UserRow, date: string, offset: number) {
     reminders: listReminders(user).slice(0, 5),
     memories: groups.slice(0, 2).map((group) => ({ year: group.year, items: present(group.nodes.slice(0, 6), user) })),
     storage: storageOf(user),
+    planning: guest ? null : planning(user),
   };
 }

@@ -191,6 +191,12 @@ export function activityText(entry: ActivityEntry) {
     to: String(entry.details?.to ?? ''),
     with: String(entry.details?.with ?? ''),
   };
+  if (entry.action === 'link_upload' && entry.details?.form) {
+    return tn(entry.count, '{name} kam über das Formular „{form}“ an', '{count} Dateien kamen über das Formular „{form}“ an', {
+      ...p,
+      form: String(entry.details.form),
+    });
+  }
   if (entry.action === 'link_upload' || (entry.viaLink && entry.action === 'upload')) {
     return tn(entry.count, '{name} kam über einen Link an', '{count} Dateien kamen über einen Link an', p);
   }
