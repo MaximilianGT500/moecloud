@@ -10,7 +10,24 @@ interface Chunk {
   imports?: string[];
 }
 
-export type Entry = 'files' | 'admin' | 'account' | 'setup' | 'share' | 'auth' | 'calendar' | 'contacts' | 'public' | 'book' | 'poll';
+export type Entry =
+  | 'files'
+  | 'admin'
+  | 'account'
+  | 'setup'
+  | 'share'
+  | 'auth'
+  | 'calendar'
+  | 'contacts'
+  | 'mail'
+  | 'chat'
+  | 'bookmarks'
+  | 'feeds'
+  | 'snippets'
+  | 'snippet'
+  | 'public'
+  | 'book'
+  | 'poll';
 
 const SOURCES: Record<Entry, string> = {
   files: 'src/entries/files.tsx',
@@ -21,6 +38,12 @@ const SOURCES: Record<Entry, string> = {
   auth: 'src/entries/auth.ts',
   calendar: 'src/entries/calendar.tsx',
   contacts: 'src/entries/contacts.tsx',
+  mail: 'src/entries/mail.tsx',
+  chat: 'src/entries/chat.tsx',
+  bookmarks: 'src/entries/bookmarks.tsx',
+  feeds: 'src/entries/feeds.tsx',
+  snippets: 'src/entries/snippets.tsx',
+  snippet: 'src/entries/snippet.tsx',
   public: 'src/entries/public.tsx',
   book: 'src/entries/book.tsx',
   poll: 'src/entries/poll.tsx',

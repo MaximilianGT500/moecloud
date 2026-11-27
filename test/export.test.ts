@@ -62,6 +62,11 @@ describe('Datenexport', () => {
     await emi.json('POST', `/api/nodes/${trip}/grants`, { userId: miaId, permission: 'edit' });
     await emi.json('POST', `/api/nodes/${plan}/comments`, { text: 'Noch Tickets kaufen' });
     await emi.json('POST', '/api/searches', { name: 'Texte', query: 'type=document' });
+    await emi.json('POST', '/api/bookmarks', { url: 'https://kyoto.example/tempel', title: 'Tempel in Kyoto', tags: ['Reisen'] });
+    await emi.json('POST', '/api/snippets', { title: 'Packliste', language: 'markdown', content: '- Pass\n- Yen' });
+    await emi.json('POST', '/api/snippets', { title: 'Packliste', language: 'markdown', content: '- Regenschirm' });
+    const self = (await emi.json('POST', '/api/chat/rooms', { kind: 'self' })).json().room;
+    await emi.json('POST', `/api/chat/rooms/${self.id}/messages`, { body: 'Zugtickets ausdrucken' });
 
     const response = await emi.get('/api/account/export');
     assert.equal(response.statusCode, 200, response.body.slice(0, 200));
@@ -85,6 +90,14 @@ describe('Datenexport', () => {
     );
     assert.equal(data.comments[0].file, 'Dateien/Reisen/Plan.txt');
     assert.deepEqual(data.searches, [{ name: 'Texte', query: 'type=document' }]);
+    assert.deepEqual(
+      data.chatMessages.map((message: { room: string; text: string }) => [message.room, message.text]),
+      [['Notizen an mich', 'Zugtickets ausdrucken']]
+    );
+    assert.match(entries.get('lesezeichen.html')!.toString(), /HREF="https:\/\/kyoto\.example\/tempel"[^>]*TAGS="Reisen"/);
+    assert.equal(entries.get('schnipsel/Packliste.md')?.toString(), '- Pass\n- Yen');
+    assert.equal(entries.get('schnipsel/Packliste (2).md')?.toString(), '- Regenschirm');
+    assert.equal(entries.has('feeds.opml'), false);
     const log = (await emi.get('/api/account/security')).json();
     assert.ok(log.items.some((entry: { action: string }) => entry.action === 'account_exported'));
   });

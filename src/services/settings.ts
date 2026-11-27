@@ -9,6 +9,20 @@ export type Registration = 'closed' | 'open' | 'invite' | 'approval';
 export type MailSecurity = 'tls' | 'starttls' | 'none';
 export type SecondFactorPolicy = 'off' | 'admins' | 'all';
 
+export interface MailServer {
+  host: string;
+  port: number;
+  security: MailSecurity;
+}
+
+export interface MailPreset {
+  name: string;
+  domain: string;
+  login: 'email' | 'local';
+  imap: MailServer;
+  smtp: MailServer;
+}
+
 export interface ThemeSpec {
   seed: string;
   style: 'content' | 'tonal' | 'vibrant' | 'expressive' | 'fidelity' | 'neutral' | 'mono';
@@ -126,6 +140,23 @@ const DEFAULTS = {
   'calendar.freebusy': true,
   'calendar.trashDays': 30,
   'contacts.enabled': true,
+  'photos.enabled': true,
+  'music.enabled': true,
+  'notes.enabled': true,
+  'tags.enabled': true,
+  'tasks.enabled': true,
+  'webmail.enabled': true,
+  'webmail.custom': true,
+  'webmail.private': false,
+  'webmail.preset': null as MailPreset | null,
+  'webmail.maxAccounts': 5,
+  'chat.enabled': true,
+  'bookmarks.enabled': true,
+  'feeds.enabled': true,
+  'feeds.private': false,
+  'feeds.maxFeeds': 200,
+  'snippets.enabled': true,
+  'accounts.welcome': true,
   'share.users': true,
   'share.requirePassword': false,
   'share.maxDays': 0,
@@ -311,6 +342,23 @@ export const PUBLIC_KEYS = [
   'calendar.freebusy',
   'calendar.trashDays',
   'contacts.enabled',
+  'photos.enabled',
+  'music.enabled',
+  'notes.enabled',
+  'tags.enabled',
+  'tasks.enabled',
+  'webmail.enabled',
+  'webmail.custom',
+  'webmail.private',
+  'webmail.preset',
+  'webmail.maxAccounts',
+  'chat.enabled',
+  'bookmarks.enabled',
+  'feeds.enabled',
+  'feeds.private',
+  'feeds.maxFeeds',
+  'snippets.enabled',
+  'accounts.welcome',
   'users.directory',
   'users.selfDelete',
   'notice.text',

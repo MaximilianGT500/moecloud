@@ -15,7 +15,7 @@ const CACHED = 6;
 export const EMAIL_CSP =
   "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'";
 
-const HEAD =
+export const EMAIL_HEAD =
   '<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light"><base target="_blank">' +
   '<style>html{background:#fff;color:#1d1b20}body{margin:16px;font:15px/1.55 system-ui,sans-serif;overflow-wrap:anywhere}' +
   'img{max-width:100%;height:auto}.moe-text{white-space:pre-wrap}</style>';
@@ -111,7 +111,7 @@ export async function emailSummary(node: NodeRow) {
 
 export async function emailBody(node: NodeRow) {
   const email = await parsed(node);
-  if (!email.html) return `${HEAD}<div class="moe-text">${escapeHtml(email.text ?? '')}</div>`;
+  if (!email.html) return `${EMAIL_HEAD}<div class="moe-text">${escapeHtml(email.text ?? '')}</div>`;
   const images = new Map<string, string>();
   for (const attachment of email.attachments) {
     const key = contentKey(attachment.contentId);
@@ -126,7 +126,7 @@ export async function emailBody(node: NodeRow) {
     } catch {}
     return images.get(key) ?? 'data:,';
   });
-  return `${HEAD}${html}`;
+  return `${EMAIL_HEAD}${html}`;
 }
 
 export async function emailAttachment(node: NodeRow, index: number) {

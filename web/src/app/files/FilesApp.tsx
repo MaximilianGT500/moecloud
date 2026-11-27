@@ -32,6 +32,7 @@ import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
 import DeleteForeverRounded from '@mui/icons-material/DeleteForeverRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import ForwardToInboxRounded from '@mui/icons-material/ForwardToInboxRounded';
 import UnarchiveRounded from '@mui/icons-material/UnarchiveRounded';
 import DriveFileMoveRounded from '@mui/icons-material/DriveFileMoveRounded';
 import DriveFileRenameOutlineRounded from '@mui/icons-material/DriveFileRenameOutlineRounded';
@@ -90,6 +91,7 @@ import { registerWorker, takeShared } from '../../lib/shared';
 import { weblinkFile } from './preview/weblink';
 import { Uploader, entriesFromDrop, entriesFromInput, entriesFromPaste, hasFiles, type UploadEntry } from '../../lib/upload';
 import { c, folderColor, radius } from '../../theme/tokens';
+import { PullToRefresh } from '../common/touch';
 import { AppShell, type Destination } from '../shell/AppShell';
 import { EmptyState } from '../common/bits';
 import { choose, confirm, pickColor } from '../common/dialogs';
@@ -741,6 +743,14 @@ export function FilesApp() {
     if (single && (single.role === 'owner' || single.role === 'edit') && data.share && (data.share.links || data.share.users)) {
       list.push({ key: 'share', label: t('Teilen'), icon: <ShareRounded />, onClick: () => setShare(single), primary: true });
     }
+    if (featureOn('mail') && targets.length <= 20 && targets.every((item) => item.type === 'file' && !item.infected)) {
+      list.push({
+        key: 'mail',
+        label: t('Per E-Mail senden'),
+        icon: <ForwardToInboxRounded />,
+        onClick: () => window.location.assign(`/mail?compose=1&attach=${targets.map((item) => item.id).join(',')}`),
+      });
+    }
     if (single && editable) {
       list.push({
         key: 'rename',
@@ -1091,7 +1101,15 @@ export function FilesApp() {
       }
       const address = [shared.url, shared.text].map((value) => value.trim()).find((value) => /^https?:\/\/\S+$/i.test(value));
       try {
-        if (address) {
+        if (address && featureOn('bookmarks')) {
+          const saved = await api.post<{ existing: boolean }>('/api/bookmarks', {
+            url: address,
+            title: shared.title.trim().slice(0, 300) || undefined,
+          });
+          toast(saved.existing ? t('Das hattest du schon gespeichert') : t('Als Lesezeichen gespeichert'), {
+            action: { label: t('Öffnen'), onClick: () => window.location.assign('/bookmarks') },
+          });
+        } else if (address) {
           const file = weblinkFile(address);
           const name = shared.title.trim()
             ? `${shared.title
@@ -1720,7 +1738,7 @@ export function FilesApp() {
           <Box
             sx={{
               position: 'sticky',
-              top: { xs: 64, md: 0 },
+              top: { xs: 'var(--moe-header, 64px)', md: 0 },
               zIndex: 5,
               display: 'flex',
               alignItems: 'center',
@@ -1742,7 +1760,12 @@ export function FilesApp() {
               if (event.target === event.currentTarget && selected.size) setSelected(new Set());
             }}
           >
-            <Suspense fallback={<LoadingRows />}>{content()}</Suspense>
+            <PullToRefresh
+              onRefresh={() => (refresh(), new Promise((resolve) => setTimeout(resolve, 700)))}
+              disabled={view.kind === 'plugin' || view.kind === 'notes'}
+            >
+              <Suspense fallback={<LoadingRows />}>{content()}</Suspense>
+            </PullToRefresh>
           </Box>
           <DropOverlay
             active={dragging}

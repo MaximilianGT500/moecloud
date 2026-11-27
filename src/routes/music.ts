@@ -18,6 +18,7 @@ import {
   showPlaylist,
   updatePlaylist,
 } from '../services/music.ts';
+import { lyricsFor } from '../services/lyrics.ts';
 
 type IdParams = { Params: { id: string } };
 
@@ -25,6 +26,8 @@ const name = z.string().max(500);
 
 export async function musicRoutes(app: FastifyInstance) {
   app.get('/api/music', async (request) => listTracks(me(request)));
+
+  app.get<IdParams>('/api/nodes/:id/lyrics', async (request) => lyricsFor(me(request), request.params.id));
 
   app.post('/api/music/played', { config: { rateLimit: { max: 600, timeWindow: '1 hour' } } }, async (request) => {
     const input = parse(z.object({ id }), request.body);

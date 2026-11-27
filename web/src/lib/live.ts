@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { boot } from './boot';
 
 type Handler = (event: string, data: Record<string, unknown>) => void;
 
@@ -7,7 +8,7 @@ let source: EventSource | null = null;
 let greeted = false;
 
 function connect() {
-  if (source || typeof EventSource === 'undefined') return;
+  if (source || typeof EventSource === 'undefined' || boot().setup2fa || !boot().user) return;
   source = new EventSource('/api/events');
   for (const name of [
     'change',
@@ -23,6 +24,13 @@ function connect() {
     'events',
     'calendars',
     'contacts',
+    'badges',
+    'chat',
+    'mail',
+    'status',
+    'bookmarks',
+    'feeds',
+    'snippets',
   ]) {
     source.addEventListener(name, (event) => {
       let data: Record<string, unknown> = {};

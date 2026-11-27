@@ -10,6 +10,9 @@ import { ownCalendars } from '../calendar/calendars.ts';
 import { exportIcs } from '../calendar/transfer.ts';
 import { ownBooks } from '../contacts/books.ts';
 import { exportVcf, type ContactRow } from '../contacts/store.ts';
+import { exportBookmarks } from '../bookmarks/store.ts';
+import { exportOpml } from '../feeds/store.ts';
+import { snippetFileName, type SnippetRow } from '../snippets/store.ts';
 
 const FOLDER = 'Dateien';
 
@@ -196,6 +199,37 @@ export function accountData(user: UserRow) {
       'SELECT name, created_at, last_used_at FROM app_passwords WHERE user_id = ? ORDER BY created_at',
       user.id
     ).map((row) => ({ name: row.name, createdAt: iso(row.created_at), lastUsedAt: iso(row.last_used_at) })),
+    mailAccounts: all<{ name: string; email: string; display_name: string; imap_host: string; smtp_host: string; signature: string }>(
+      'SELECT name, email, display_name, imap_host, smtp_host, signature FROM mail_accounts WHERE user_id = ? ORDER BY position',
+      user.id
+    ).map((row) => ({
+      name: row.name,
+      email: row.email,
+      displayName: row.display_name,
+      imap: row.imap_host,
+      smtp: row.smtp_host,
+      signature: row.signature,
+    })),
+    chatMessages: all<{ kind: string; name: string; body: string; created_at: number; edited_at: number | null }>(
+      `SELECT r.kind, r.name, m.body, m.created_at, m.edited_at FROM chat_messages m JOIN chat_rooms r ON r.id = m.room_id
+       WHERE m.user_id = ? AND m.kind = 'text' AND m.deleted_at IS NULL ORDER BY m.id`,
+      user.id
+    ).map((row) => ({
+      room: row.kind === 'self' ? 'Notizen an mich' : row.name || row.kind,
+      text: row.body,
+      createdAt: iso(row.created_at),
+      editedAt: iso(row.edited_at),
+    })),
+    status:
+      all<{ state: string; emoji: string; text: string; until: number | null }>(
+        'SELECT state, emoji, text, until FROM user_status WHERE user_id = ?',
+        user.id
+      ).map((row) => ({
+        state: row.state,
+        emoji: row.emoji,
+        text: row.text,
+        until: iso(row.until),
+      }))[0] ?? null,
     forms: formsOfUser(user.id).map((form) => ({
       title: form.title,
       description: form.description,
@@ -234,5 +268,18 @@ export function exportStream(user: UserRow): Readable {
       ),
     };
   });
-  return zipStream(roots, { prefix: FOLDER, extras: [{ name: 'konto.json', data }, ...calendars, ...books] });
+  const extras = [{ name: 'konto.json', data }, ...calendars, ...books];
+  if (all('SELECT id FROM bookmarks WHERE user_id = ? LIMIT 1', user.id).length)
+    extras.push({ name: 'lesezeichen.html', data: Buffer.from(exportBookmarks(user), 'utf8') });
+  if (all('SELECT id FROM feed_sources WHERE user_id = ? LIMIT 1', user.id).length)
+    extras.push({ name: 'feeds.opml', data: Buffer.from(exportOpml(user, 'Feeds'), 'utf8') });
+  const snippetNames = new Set<string>();
+  for (const row of all<SnippetRow>('SELECT * FROM snippets WHERE user_id = ? ORDER BY created_at', user.id)) {
+    const wanted = snippetFileName(row, 'Schnipsel');
+    let name = wanted;
+    for (let index = 2; snippetNames.has(name.toLowerCase()); index++) name = wanted.replace(/(\.[^.]+)?$/, ` (${index})$1`);
+    snippetNames.add(name.toLowerCase());
+    extras.push({ name: `schnipsel/${name}`, data: Buffer.from(row.content, 'utf8') });
+  }
+  return zipStream(roots, { prefix: FOLDER, extras });
 }

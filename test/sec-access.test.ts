@@ -16,6 +16,7 @@ const OPEN_API = [
   'POST /api/setup/check',
   'POST /api/auth/passkey/options',
   'POST /api/auth/passkey/verify',
+  'GET /api/proxy/image',
 ];
 
 const OPEN_PAGES = new Set([
@@ -78,6 +79,8 @@ const OPEN_PAGES = new Set([
   'PROPFIND /.well-known/caldav',
   'GET /.well-known/carddav',
   'PROPFIND /.well-known/carddav',
+  'GET /t/:token',
+  'GET /t/:token/raw',
 ]);
 
 const SIGNED_IN_PAGES = new Set([
@@ -89,6 +92,16 @@ const SIGNED_IN_PAGES = new Set([
   'GET /calendar/*',
   'GET /contacts',
   'GET /contacts/*',
+  'GET /mail',
+  'GET /mail/*',
+  'GET /chat',
+  'GET /chat/*',
+  'GET /bookmarks',
+  'GET /bookmarks/*',
+  'GET /feeds',
+  'GET /feeds/*',
+  'GET /snippets',
+  'GET /snippets/*',
   'GET /account',
   'GET /passwort',
   'POST /passwort',

@@ -32,6 +32,15 @@ import ContactsRounded from '@mui/icons-material/ContactsRounded';
 import EventAvailableRounded from '@mui/icons-material/EventAvailableRounded';
 import HowToVoteRounded from '@mui/icons-material/HowToVoteRounded';
 import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
+import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
+import CodeRounded from '@mui/icons-material/CodeRounded';
+import EventRounded from '@mui/icons-material/EventRounded';
+import ForumRounded from '@mui/icons-material/ForumRounded';
+import MailOutlineRounded from '@mui/icons-material/MailOutlineRounded';
+import PersonRounded from '@mui/icons-material/PersonRounded';
+import RssFeedRounded from '@mui/icons-material/RssFeedRounded';
+import { formatDateTime } from '../../lib/format';
+import { languageName } from '../snippets/model';
 import { api, errorText, logout } from '../../lib/api';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
@@ -52,6 +61,30 @@ interface Command {
   icon: ReactElement;
   run: () => void;
 }
+
+interface Hit {
+  id: string;
+  title: string;
+  hint: string;
+  href: string;
+  at?: number | null;
+  external?: boolean;
+}
+
+interface Everywhere {
+  groups: { key: string; items: Hit[] }[];
+  mail: boolean;
+}
+
+const HIT_GROUPS: Record<string, { label: () => string; icon: () => ReactElement }> = {
+  contacts: { label: () => t('Kontakte'), icon: () => <PersonRounded /> },
+  events: { label: () => t('Termine'), icon: () => <EventRounded /> },
+  tasks: { label: () => t('Aufgaben'), icon: () => <TaskAltRounded /> },
+  chat: { label: () => t('Chat'), icon: () => <ForumRounded /> },
+  bookmarks: { label: () => t('Lesezeichen'), icon: () => <BookmarkRounded /> },
+  feeds: { label: () => t('Feeds'), icon: () => <RssFeedRounded /> },
+  snippets: { label: () => t('Schnipsel'), icon: () => <CodeRounded /> },
+};
 
 interface Found {
   id: string;
@@ -89,6 +122,7 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const [found, setFound] = useState<{ query: string; items: Found[] }>({ query: '', items: [] });
+  const [elsewhere, setElsewhere] = useState<{ query: string; result: Everywhere }>({ query: '', result: { groups: [], mail: false } });
   const [themes, setThemes] = useState<ThemeList | null>(null);
   const [wasOpen, setWasOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
@@ -117,6 +151,10 @@ export function CommandPalette({
       api
         .get<{ items: Found[] }>(`/api/search?q=${encodeURIComponent(term)}`, abort.signal)
         .then((result) => setFound({ query: term, items: result.items.slice(0, 8) }))
+        .catch(() => undefined);
+      api
+        .get<Everywhere>(`/api/search/everywhere?q=${encodeURIComponent(term)}`, abort.signal)
+        .then((result) => setElsewhere({ query: term, result }))
         .catch(() => undefined);
     }, 180);
     return () => {
@@ -312,7 +350,36 @@ export function CommandPalette({
           },
         }))
       : [];
-  const shown = [...files, ...(tokens.length === 0 ? matches : matches.slice(0, 12))];
+  const hits: Command[] =
+    term.length >= 2 && elsewhere.query === term
+      ? [
+          ...elsewhere.result.groups.flatMap((group) =>
+            group.items.map((hit) => ({
+              id: `${group.key}-${hit.id}`,
+              group: HIT_GROUPS[group.key]?.label() ?? group.key,
+              label: hit.title,
+              hint:
+                [group.key === 'snippets' ? languageName(hit.hint) : hit.hint, hit.at ? formatDateTime(hit.at) : '']
+                  .filter(Boolean)
+                  .join(' · ') || undefined,
+              icon: HIT_GROUPS[group.key]?.icon() ?? <SearchRounded />,
+              run: () => (hit.external ? void window.open(hit.href, '_blank', 'noopener,noreferrer') : go(hit.href)),
+            }))
+          ),
+          ...(elsewhere.result.mail
+            ? [
+                {
+                  id: 'mail-search',
+                  group: t('E-Mail'),
+                  label: t('In E-Mails nach „{q}“ suchen', { q: term }),
+                  icon: <MailOutlineRounded />,
+                  run: () => go(`/mail?q=${encodeURIComponent(term)}`),
+                },
+              ]
+            : []),
+        ]
+      : [];
+  const shown = [...files, ...hits, ...(tokens.length === 0 ? matches : matches.slice(0, 12))];
   const active = Math.min(index, Math.max(0, shown.length - 1));
   const groups: { name: string; items: { command: Command; position: number }[] }[] = [];
   shown.forEach((command, position) => {

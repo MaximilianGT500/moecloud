@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { FEATURES } from '../../shared/features.ts';
 import { parse, displayName, email, hexColor, palette, password, quota, username } from '../lib/validate.ts';
 import { checkCode, completeSetup } from '../services/setup.ts';
 import { createSession } from '../services/sessions.ts';
@@ -24,6 +25,7 @@ const setupSchema = z.object({
   registration: z.enum(['closed', 'open', 'invite']),
   defaultQuota: quota,
   admin: z.object({ username, name: displayName, email: email.optional().default(''), password }),
+  apps: z.array(z.enum(FEATURES)).max(FEATURES.length).optional(),
 });
 
 export async function setupRoutes(app: FastifyInstance) {

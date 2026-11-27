@@ -59,7 +59,8 @@ import { ThemeModeSelector, ThemeToggleButton } from '../common/ThemeToggle';
 import { toast } from '../common/toast';
 import { useThemeControl } from '../mount';
 import { ThemeChoice } from './ThemeChoice';
-import { featureOn, featuresOff, setFeaturesOff, useFeatures } from '../../lib/features';
+import { featureAvailable, featureOn, featuresOff, setFeaturesOff, useFeatures } from '../../lib/features';
+import { appCatalog } from '../common/apps';
 import type { Feature } from '../../../../shared/features';
 
 interface MailPrefs {
@@ -74,6 +75,8 @@ interface MailPrefs {
   mailInvites: boolean;
   mailBookings: boolean;
   pushReminders: boolean;
+  pushMail: boolean;
+  pushChat: boolean;
 }
 
 interface Prefs extends MailPrefs {
@@ -918,45 +921,7 @@ function SecurityLog() {
 }
 
 function featureList() {
-  const calendar = boot().calendarOn;
-  const list: { key: Feature; label: string; text: string; shown: boolean }[] = [
-    { key: 'photos', label: t('Fotos'), text: t('Zeitleiste, Alben und Erinnerungen an früher'), shown: true },
-    { key: 'music', label: t('Musik'), text: t('Bibliothek, Wiedergabelisten und Player'), shown: true },
-    { key: 'notes', label: t('Notizen'), text: t('Notizen in Markdown, die in deinen Dateien liegen'), shown: true },
-    {
-      key: 'forms',
-      label: t('Formulare'),
-      text: t('Umfragen und Anmeldungen, die andere über einen Link ausfüllen'),
-      shown: Boolean(boot().forms),
-    },
-    { key: 'tags', label: t('Schlagwörter'), text: t('Dateien mit farbigen Schlagwörtern ordnen'), shown: true },
-    {
-      key: 'calendar',
-      label: t('Kalender'),
-      text: t('Termine und Einladungen, dazu die nächsten Termine auf der Startseite'),
-      shown: Boolean(calendar),
-    },
-    {
-      key: 'tasks',
-      label: t('Aufgaben'),
-      text: t('Aufgaben mit Fälligkeit, dazu die offenen Aufgaben auf der Startseite'),
-      shown: Boolean(calendar),
-    },
-    {
-      key: 'booking',
-      label: t('Buchungsseiten'),
-      text: t('Freie Zeiten, die andere ohne Konto buchen'),
-      shown: Boolean(calendar?.booking),
-    },
-    { key: 'polls', label: t('Terminumfragen'), text: t('Über mehrere Terminvorschläge abstimmen'), shown: Boolean(calendar?.polls) },
-    {
-      key: 'contacts',
-      label: t('Kontakte'),
-      text: t('Adressbücher mit CardDAV, dazu Geburtstage im Kalender'),
-      shown: Boolean(boot().contactsOn),
-    },
-  ];
-  return list.filter((entry) => entry.shown);
+  return appCatalog().filter((entry) => featureAvailable(entry.key));
 }
 
 function FeaturesSection({ account, onChanged }: { account: Account; onChanged: (prefs: Prefs) => void }) {
@@ -982,11 +947,26 @@ function FeaturesSection({ account, onChanged }: { account: Account; onChanged: 
         'Was du nicht brauchst, blendest du hier aus. Es verschwindet aus Navigation, Startseite und Befehlspalette, deine Daten bleiben erhalten.'
       )}
     >
+      <Button
+        variant="tonal"
+        size="small"
+        sx={{ alignSelf: 'flex-start' }}
+        onClick={() => window.dispatchEvent(new Event('moe:welcome'))}
+        data-welcome-again
+      >
+        {t('Einführung noch einmal')}
+      </Button>
       <Box data-features sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {featureList().map((feature) => (
           <FormControlLabel
             key={feature.key}
-            control={<Switch checked={on(feature.key)} onChange={(event) => void change(feature.key, event.target.checked)} />}
+            control={
+              <Switch
+                checked={on(feature.key)}
+                disabled={Boolean(feature.parent && !on(feature.parent))}
+                onChange={(event) => void change(feature.key, event.target.checked)}
+              />
+            }
             label={
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
@@ -1053,6 +1033,24 @@ function MailSection({ account, onChanged }: { account: Account; onChanged: (pre
             key: 'mailBookings' as const,
             label: t('Buchungen und Umfragen'),
             text: t('Neue und stornierte Buchungen, neue Stimmen in deinen Terminumfragen'),
+          },
+        ]
+      : []),
+    ...(featureOn('mail')
+      ? [
+          {
+            key: 'pushMail' as const,
+            label: t('Neue E-Mails'),
+            text: t('Als Push für Postfächer, bei denen „Bei neuen E-Mails benachrichtigen“ an ist'),
+          },
+        ]
+      : []),
+    ...(featureOn('chat')
+      ? [
+          {
+            key: 'pushChat' as const,
+            label: t('Neue Nachrichten im Chat'),
+            text: t('Als Push, wenn dir jemand schreibt, dich erwähnt oder in eine Gruppe holt'),
           },
         ]
       : []),
@@ -1839,6 +1837,20 @@ export function AccountPage() {
                     <ToggleButton value={1.25}>{t('Sehr groß')}</ToggleButton>
                   </ToggleButtonGroup>
                 </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }} data-nav-position>
+                  <Typography variant="subtitle2">{t('Navigation auf großen Bildschirmen')}</Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    fullWidth
+                    value={prefs.navPosition}
+                    onChange={(_event, value) => value !== null && setPrefs({ navPosition: value })}
+                    aria-label={t('Navigation auf großen Bildschirmen')}
+                  >
+                    <ToggleButton value="side">{t('Links')}</ToggleButton>
+                    <ToggleButton value="top">{t('Oben')}</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <Typography variant="subtitle2">{t('Zeilen in Listen')}</Typography>
                   <ToggleButtonGroup
@@ -1896,6 +1908,20 @@ export function AccountPage() {
                       </Typography>
                       <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
                         {t('Legt einen weichen Verlauf in den Farben des Themes hinter die Oberfläche.')}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'center', m: 0, gap: 1 }}
+                />
+                <FormControlLabel
+                  control={<Switch checked={prefs.barHide} onChange={(event) => setPrefs({ barHide: event.target.checked })} />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {t('Leiste auf dem Handy beim Scrollen ausblenden')}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: c.onSurfaceVariant }}>
+                        {t('Die untere Leiste verschwindet, während du nach unten scrollst, und kommt beim Zurückscrollen wieder.')}
                       </Typography>
                     </Box>
                   }

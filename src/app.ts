@@ -7,7 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import { randomBytes } from 'node:crypto';
 import { config } from './config.ts';
 import { randomId, safeEqual } from './lib/crypto.ts';
-import { badRequest, forbidden, HttpError, unauthorized } from './lib/errors.ts';
+import { badRequest, forbidden, HttpError, unauthorized, notFound } from './lib/errors.ts';
 import { isSecure, sameOrigin } from './lib/http.ts';
 import { fromAcceptLanguage, isLang, t, type Lang } from './lib/i18n.ts';
 import { renderDocument } from './lib/html.ts';
@@ -37,6 +37,15 @@ import { davRoutes } from './routes/dav.ts';
 import { calendarRoutes } from './calendar/api.ts';
 import { caldavRoutes } from './calendar/caldav.ts';
 import { contactRoutes } from './contacts/api.ts';
+import { appEnabled, appForUrl } from './services/apps.ts';
+import { badgeRoutes } from './routes/badges.ts';
+import { proxyRoutes } from './routes/proxy.ts';
+import { mailRoutes } from './mail/api.ts';
+import { chatRoutes } from './chat/api.ts';
+import { bookmarkRoutes } from './bookmarks/api.ts';
+import { feedRoutes } from './feeds/api.ts';
+import { snippetRoutes } from './snippets/api.ts';
+import { everywhereRoutes } from './routes/everywhere.ts';
 import { carddavRoutes } from './contacts/carddav.ts';
 import { calendarPublicRoutes } from './calendar/public.ts';
 import { schedulingRoutes } from './calendar/scheduling.ts';
@@ -132,7 +141,7 @@ function inMaintenance(request: FastifyRequest) {
   return !OPEN_DURING_MAINTENANCE.test(request.url);
 }
 
-const OPEN_API = /^\/api\/(public\/|calendar\/public\/|setup(\/|$)|auth\/passkey\/|language$)/;
+const OPEN_API = /^\/api\/(public\/|calendar\/public\/|setup(\/|$)|auth\/passkey\/|language$|proxy\/image$)/;
 
 const SESSION_ONLY = new Set([
   'PUT /api/admin/pulse',
@@ -348,6 +357,14 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
+  app.addHook('onRequest', async (request, reply) => {
+    const feature = appForUrl(request.url);
+    if (!feature || appEnabled(feature)) return;
+    if (request.method === 'GET' && !request.url.startsWith('/api/') && !request.url.startsWith('/t/'))
+      return reply.redirect(request.url.startsWith('/calendar') && appEnabled('calendar') ? '/calendar' : '/files');
+    throw notFound();
+  });
+
   app.addHook('preValidation', async (request) => {
     if (request.url.includes('%00') || hasNul(request.body)) throw badRequest('Die Anfrage enthält ein ungültiges Zeichen');
   });
@@ -476,6 +493,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(caldavRoutes);
   await app.register(contactRoutes);
   await app.register(carddavRoutes);
+  await app.register(badgeRoutes);
+  await app.register(proxyRoutes);
+  await app.register(mailRoutes);
+  await app.register(chatRoutes);
+  await app.register(bookmarkRoutes);
+  await app.register(feedRoutes);
+  await app.register(snippetRoutes);
+  await app.register(everywhereRoutes);
   await app.register(metricsRoutes);
 
   return app;

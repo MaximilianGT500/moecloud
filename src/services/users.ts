@@ -144,9 +144,12 @@ export interface UserPrefs {
   mailInvites: boolean;
   mailBookings: boolean;
   pushReminders: boolean;
+  pushMail: boolean;
+  pushChat: boolean;
   calendar: CalendarPrefs;
   calendarSeeded: boolean;
   features: Feature[];
+  welcome: boolean;
   mailShares: boolean;
   mailUploads: boolean;
   mailComments: boolean;
@@ -177,8 +180,11 @@ const PREF_DEFAULTS: Omit<UserPrefs, 'calendar'> = {
   mailInvites: true,
   mailBookings: true,
   pushReminders: true,
+  pushMail: true,
+  pushChat: true,
   calendarSeeded: false,
   features: [],
+  welcome: false,
   mailShares: true,
   mailUploads: true,
   mailComments: true,
@@ -202,15 +208,18 @@ const PREF_DEFAULTS: Omit<UserPrefs, 'calendar'> = {
   home: null,
 };
 
-export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
-  let stored: Partial<UserPrefs> = {};
-  if (user.prefs) {
-    try {
-      stored = JSON.parse(user.prefs) as Partial<UserPrefs>;
-    } catch {
-      stored = {};
-    }
+function storedPrefs(user: Pick<UserRow, 'prefs'>): Partial<UserPrefs> {
+  if (!user.prefs) return {};
+  try {
+    const parsed = JSON.parse(user.prefs) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Partial<UserPrefs>) : {};
+  } catch {
+    return {};
   }
+}
+
+export function prefsOf(user: Pick<UserRow, 'prefs'>): UserPrefs {
+  const stored = storedPrefs(user);
   return { ...PREF_DEFAULTS, ...stored, calendar: { ...calendarDefaults(), ...(stored.calendar ?? {}) } };
 }
 
@@ -219,10 +228,13 @@ export const zoneOf = (user: Pick<UserRow, 'prefs'>) => prefsOf(user).zone || se
 export function updatePrefs(userId: number, patch: Partial<UserPrefs>) {
   const user = getUser(userId);
   if (!user) return null;
-  const current = prefsOf(user);
-  const next = { ...current, ...patch, calendar: { ...current.calendar, ...(patch.calendar ?? {}) } };
-  run('UPDATE users SET prefs = ? WHERE id = ?', JSON.stringify(next), userId);
-  return next;
+  const stored = storedPrefs(user);
+  const { calendar, ...rest } = patch;
+  const next: Partial<UserPrefs> = { ...stored, ...rest };
+  if (calendar || stored.calendar) next.calendar = { ...(stored.calendar ?? {}), ...(calendar ?? {}) } as CalendarPrefs;
+  const text = JSON.stringify(next);
+  run('UPDATE users SET prefs = ? WHERE id = ?', text, userId);
+  return prefsOf({ prefs: text });
 }
 
 export function updateCalendarPrefs(userId: number, patch: Partial<CalendarPrefs>) {
@@ -309,9 +321,13 @@ export async function createUser(input: NewUser): Promise<UserRow> {
       typeof input.pending === 'number' ? input.pending : input.pending ? 1 : 0,
       input.mustChange && hash ? 1 : 0
     );
+    const role = input.role ?? 'user';
     const off = settings.get('accounts.features').filter(isFeature);
-    if (off.length && (input.role ?? 'user') !== 'team')
-      run('UPDATE users SET prefs = ? WHERE id = ?', JSON.stringify({ features: off }), lastId);
+    const start = {
+      ...(off.length && role !== 'team' ? { features: off } : {}),
+      ...((role === 'user' || role === 'admin') && settings.get('accounts.welcome') ? { welcome: true } : {}),
+    };
+    if (Object.keys(start).length) run('UPDATE users SET prefs = ? WHERE id = ?', JSON.stringify(start), lastId);
     run(
       `INSERT INTO nodes (id, owner_id, parent_id, type, name, name_key, created_by, updated_by, created_at, updated_at, modified_at)
        VALUES (?, ?, NULL, 'folder', '', '', ?, ?, ?, ?, ?)`,

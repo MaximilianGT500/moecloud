@@ -14,6 +14,8 @@ export interface Prefs {
   motion: 'system' | 'reduced';
   backdrop: 'plain' | 'glow';
   sidebar: boolean;
+  navPosition: 'side' | 'top';
+  barHide: boolean;
   hidden: string[];
   hourHeight: number;
   taskFilter: 'open' | 'today' | 'overdue' | 'upcoming' | 'mine' | 'done' | 'all';
@@ -38,6 +40,8 @@ const DEFAULTS: Prefs = {
   motion: 'system',
   backdrop: 'plain',
   sidebar: true,
+  navPosition: 'side',
+  barHide: false,
   hidden: [],
   hourHeight: 52,
   taskFilter: 'open',
@@ -65,6 +69,8 @@ function read(): Prefs {
       motion: rest.motion === 'reduced' ? 'reduced' : 'system',
       backdrop: rest.backdrop === 'glow' ? 'glow' : 'plain',
       taskLayout: rest.taskLayout === 'board' ? 'board' : 'list',
+      navPosition: rest.navPosition === 'top' ? 'top' : 'side',
+      barHide: rest.barHide === true,
     };
   } catch {
     return DEFAULTS;
@@ -96,6 +102,9 @@ export function applyDisplay(prefs: Prefs = current) {
   root.style.setProperty('--moe-tile', String(prefs.tile));
   root.dataset.motion = prefs.motion;
   root.dataset.backdrop = prefs.backdrop;
+  root.dataset.nav = prefs.navPosition;
+  root.style.setProperty('--moe-rail', prefs.navPosition === 'top' ? '0px' : '88px');
+  root.style.setProperty('--moe-header', 'calc(64px + env(safe-area-inset-top))');
 }
 
 export function usePrefs(): Prefs {

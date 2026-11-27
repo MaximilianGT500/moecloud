@@ -51,6 +51,8 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - [Formulare](#formulare)
 - [Kalender und Aufgaben](#kalender-und-aufgaben)
 - [Kontakte](#kontakte)
+- [Postfach und Chat](#postfach-und-chat)
+- [Lesezeichen, Feeds und Schnipsel](#lesezeichen-feeds-und-schnipsel)
 - [Kommentare, Aktivität und Benachrichtigungen](#kommentare-aktivität-und-benachrichtigungen)
 - [Als App auf dem Handy](#als-app-auf-dem-handy)
 - [Als Laufwerk einbinden](#als-laufwerk-einbinden)
@@ -81,7 +83,7 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **Bearbeiten** direkt in der Cloud: Bilder zuschneiden, drehen, spiegeln und als JPEG, PNG, WebP oder AVIF speichern, PDF-Seiten ordnen, drehen und PDFs zusammenfügen, aus Bildern eine PDF machen, Textversionen Zeile für Zeile vergleichen
 - **Office im Browser**: Word, Excel, PowerPoint und OpenDocument bearbeitest du mit Collabora Online direkt in der Cloud, auch zu mehreren gleichzeitig, und neue Dokumente, Tabellen und Präsentationen legst du über „Neu“ an
 - **Notizen**: ein eigener Bereich für schnelle Notizen mit Markdown, Aufgaben zum Abhaken, einer Übersicht aller Aufgaben und Kategorien. Jede Notiz ist eine Textdatei in deinen Dateien, mit Versionen, Suche und Teilen wie bei allem anderen
-- **Musik** im Player am unteren Rand mit Warteschlange und Medientasten, dazu ein eigener Bereich mit allen Titeln nach Album und Interpret und mit Wiedergabelisten, die du als M3U mitnimmst, Tempo, Schlummern und einer Liste dessen, was du zuletzt und oft gehört hast. **Videos** mit Untertiteln aus SRT und VTT, die an der letzten Stelle weiterlaufen
+- **Musik** im Player am unteren Rand mit Warteschlange, Medientasten und mitlaufenden Songtexten aus LRC-Dateien, dazu ein eigener Bereich mit allen Titeln nach Album und Interpret und mit Wiedergabelisten, die du als M3U mitnimmst, Tempo, Schlummern und einer Liste dessen, was du zuletzt und oft gehört hast. **Videos** mit Untertiteln aus SRT und VTT, die an der letzten Stelle weiterlaufen
 - **Archive** entpacken direkt in der Cloud, als ZIP, TAR, TAR.GZ und GZ, mit Virenscan für jede Datei darin. ZIP-Archive packst du dort auch
 - **Aufnehmen**: Sprachnotizen, Fotos, Videos und den Bildschirm nimmst du direkt im Browser auf und speicherst sie im offenen Ordner
 - **Dokumente scannen** mit der Kamera oder aus Fotos: mehrere Seiten, gedreht und sortiert, als eine PDF im offenen Ordner
@@ -94,6 +96,11 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **CalDAV**: Kalender und Aufgaben gleichen sich mit iPhone, Mac, Android, Thunderbird und anderen Apps ab
 - **Kontakte** mit mehreren Adressbüchern, Fotos, Labels, Favoriten und Geburtstagen, die im Kalender auftauchen. Adressbücher teilst du mit anderen Konten, holst Kontakte als vCard oder CSV von Telefon, Google und Outlook und führst doppelte zusammen
 - **CardDAV**: Adressbücher gleichen sich mit iPhone, Mac, Android und Thunderbird ab
+- **E-Mail**: eigene Postfächer per IMAP und SMTP direkt im Browser, mit Ordnern, Suche, Entwürfen, Anhängen aus deinen Dateien, Formatierung mit Markdown, **Später senden** und Zurücknehmen. E-Mails erscheinen bereinigt in einem abgeschotteten Rahmen, Bilder aus dem Internet bleiben blockiert, bis du sie lädst, und kommen dann über deinen Server. Anhänge landen mit einem Klick in deinen Dateien, Einladungen im Kalender
+- **Chat** mit den anderen auf deinem Server, zu zweit oder in Gruppen, mit Antworten, Reaktionen, Erwähnungen, Dateien und einer Ablage nur für dich, live auf allen Geräten. Dein **Status** samt „Nicht stören“ hält Benachrichtigungen zurück, bis du wieder da bist
+- **Lesezeichen** mit Titel, Bild und Symbol von der Seite, Schlagwörtern, Notizen, **Später lesen** und der Suche nach toten Links, Import und Export für alle Browser, ein Lesezeichen-Knopf und auf dem Handy über **Teilen**
+- **Feeds und Podcasts**: RSS, Atom und JSON Feed in Ordnern lesen, ohne Werbung und ohne dass die Seiten dich verfolgen, Podcasts im Browser hören, an der letzten Stelle weiter, und Folgen in deinen Dateien ablegen. Import und Export als OPML
+- **Schnipsel**: Text, Befehle und Code mit Hervorhebung aufheben und per Link teilen, auf Wunsch mit Passwort, Ablaufdatum oder als Einmal-Link, der sich nach dem Lesen löscht
 - **Schlagwörter** in zehn Farben für Dateien und Ordner, auch für Geteiltes, und eine eigene Ansicht dafür
 - **Viele Dateien auf einmal umbenennen**: Text ersetzen oder ergänzen, durchnummerieren oder das Aufnahmedatum voranstellen, mit Vorschau
 - **Vorschaubilder** für Fotos, Rohdateien, Videos, PDFs, Musik mit Cover und Dokumente, die ein Vorschaubild mitbringen, etwa aus LibreOffice, Keynote oder als E-Book
@@ -125,7 +132,7 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **Sparsamer Speicher**: Gleiche Dateien liegen nur einmal auf der Platte, auch wenn sie mehrfach hochgeladen werden
 - **Registrierung** nach Wunsch: geschlossen, mit Einladung, mit Freigabe oder offen, auf Wunsch mit bestätigter E-Mail-Adresse und nur für bestimmte Domains
 - **Anmeldung** mit Passwort, Authenticator-App samt Wiederherstellungscodes oder Passkey, „Passwort vergessen“ per E-Mail und ein Protokoll aller Anmeldungen. Meldet sich jemand von einem neuen Gerät an, gibt MoeCloud Bescheid. Admins können die Zwei-Faktor-Anmeldung für alle vorschreiben, eine Mindestlänge für Passwörter festlegen, Passwörter aus bekannten Datenlecks ablehnen, bei der nächsten Anmeldung ein eigenes Passwort verlangen und bestimmen, wie lange eine Anmeldung hält. Wer sich selbst registriert, wartet auf Wunsch auf die Freigabe durch die Verwaltung, und unbenutzte Konten sperrt MoeCloud nach einer Frist von selbst
-- **Datenexport**: Alle eigenen Dateien und eine Übersicht über das Konto als ein ZIP. Erlaubt es die Verwaltung, löscht jede Person ihr Konto auch selbst
+- **Datenexport**: Alle eigenen Dateien, Kalender, Kontakte, Lesezeichen, Feeds, Schnipsel und eine Übersicht über das Konto als ein ZIP. Erlaubt es die Verwaltung, löscht jede Person ihr Konto auch selbst
 - **Sicherheitsprüfung** für Admins: eine Seite, die zeigt, was an der eigenen Einrichtung unsicher ist, gesperrte Anmeldungen freigibt und eine Adresse für Sicherheitsmeldungen hinterlegt. Dazu **Konto absichern** für jede Person und Hinweise bei jeder Änderung an der Anmeldung
 - **Dateien prüfen**: MoeCloud liest auf Knopfdruck oder regelmäßig jede gespeicherte Datei, vergleicht sie mit ihrer Prüfsumme und meldet, was fehlt oder beschädigt ist
 - **Verwaltung nur aus bestimmten Netzen**: Auf Wunsch ist die Verwaltung nur aus dem Heimnetz, dem Büro oder dem VPN erreichbar, alles andere bleibt von überall offen
@@ -140,9 +147,10 @@ Mehr zum Projekt und eine Kurzanleitung gibt es auf [moecloud.moestudio.net](htt
 - **Eigenes Logo und Anmeldeseite**: Logo, Hintergrundbild, Überschrift, Begrüßung und Platz der Anmeldung legt die Verwaltung fest
 - **Plugins** erweitern MoeCloud um Aktionen im Dateimenü, eigene Seiten, Regeln für Uploads, Aufgaben, eigene Adressen und Themes. Sechs Beispiele sind dabei
 - **Start** zeigt auf einen Blick, woran du zuletzt gearbeitet hast, dazu Favoriten, Geteiltes, Teamordner, anstehende Erinnerungen, die nächsten Termine, offene Aufgaben, Fotos vom selben Tag aus früheren Jahren und deinen Speicher
-- **Funktionen auswählen**: Wer nur Dateien oder nur den Kalender braucht, blendet Fotos, Musik, Notizen, Formulare, Schlagwörter, Kalender, Aufgaben, Buchungsseiten, Umfragen und Kontakte für sich aus. Was neue Konten sehen, legt die Verwaltung fest
-- **Schnellzugriff** mit Strg+K oder ⌘K: springt in jeden Bereich, findet Dateien und Ordner und wechselt das Theme, ganz ohne Maus
-- **Auf dem Handy** mit eigener Navigation am unteren Rand, die du selbst belegst. Als App installiert, nimmt MoeCloud Dateien, Texte und Links aus dem Teilen-Menü anderer Apps an
+- **Funktionen auswählen**: Wer nur Dateien oder nur den Kalender braucht, blendet Fotos, Musik, Notizen, Formulare, Schlagwörter, Kalender, Aufgaben, Buchungsseiten, Umfragen, Kontakte, E-Mail, Chat, Lesezeichen, Feeds und Schnipsel für sich aus. Neue Konten fragt eine kurze Einführung danach. Die Verwaltung schaltet jede Funktion für alle ab und legt fest, was neue Konten sehen
+- **Schnellzugriff** mit Strg+K oder ⌘K: springt in jeden Bereich, sucht in Dateien, Kontakten, Terminen, Aufgaben, Chat, Lesezeichen, Feeds und Schnipseln gleichzeitig und wechselt das Theme, ganz ohne Maus
+- **Navigation links oder oben**, auf großen Bildschirmen nach Wahl
+- **Auf dem Handy** mit eigener Navigation am unteren Rand, die du selbst belegst und die beim Scrollen auf Wunsch verschwindet, Dialogen von unten, Wischgesten in Listen und Aktualisieren durch Herunterziehen. Als App installiert, nimmt MoeCloud Dateien, Texte und Links aus dem Teilen-Menü anderer Apps an
 - **Deutsch und Englisch**, jede Person wählt ihre Sprache selbst
 
 ## Installation
@@ -849,6 +857,63 @@ MoeCloud spricht CardDAV unter `https://cloud.example.com/carddav/`. Wie bei Cal
 
 Apps finden die Adresse auch über `/.well-known/carddav` selbst. Änderungen gehen in beide Richtungen, geteilte Adressbücher erscheinen mit, nur zum Lesen geteilte bleiben in den Apps schreibgeschützt. Unbekannte Felder aus den Apps wie soziale Profile oder eigene Beschriftungen bleiben erhalten, auch wenn du den Kontakt im Browser bearbeitest.
 
+## Postfach und Chat
+
+Unter **E-Mail** in der Navigation verbindest du eigene Postfächer per IMAP und SMTP, in der Voreinstellung bis zu fünf pro Konto. Für GMX, web.de, Gmail, iCloud, Outlook, Yahoo, T-Online, Posteo, mailbox.org und andere kennt MoeCloud die Server selbst, sonst trägst du sie ein. Gmail, iCloud und Yahoo verlangen dafür ein App-Passwort des Anbieters. Das Passwort liegt verschlüsselt auf dem Server.
+
+- **Lesen**: Ordner, Filter für Ungelesenes, Markiertes und Anhänge, Suche im Postfach, Archivieren, Verschieben, Papierkorb und Spam, auf dem Handy auch mit Wischen. E-Mails erscheinen bereinigt in einem abgeschotteten Rahmen ohne Skripte. Bilder aus dem Internet bleiben blockiert, bis du **Bilder laden** wählst oder dem Absender immer vertraust, und kommen dann über deinen Server, sodass der Absender deine Adresse nicht sieht.
+- **Schreiben** mit Cc und Bcc, Vorschlägen aus deinen Kontakten, Anhängen vom Gerät oder aus deinen Dateien, Formatierung mit Markdown und Signatur. Entwürfe landen im Ordner des Postfachs, **Später senden** verschickt zu einem Zeitpunkt, und nach dem Senden hast du acht Sekunden zum Zurücknehmen. Im Dateimenü schickt **Per E-Mail senden** bis zu 20 Dateien als Anhang.
+- **Weiter damit**: Anhänge speicherst du in deine Dateien, Einladungen trägst du in den Kalender ein, Absender kommen zu den Kontakten, und **Als Aufgabe übernehmen** macht aus einer E-Mail eine Aufgabe.
+- **Neue E-Mails** prüft MoeCloud alle zwei Minuten und meldet sie in der Glocke, als Push und mit einer Zahl in der Navigation. In den Einstellungen eines Postfachs schaltest du das für dieses Postfach ab, unter **Konto** den Push für alle.
+
+Die Verwaltung legt unter **Admin › Funktionen** fest, ob eigene Mailserver erlaubt sind, wie viele Postfächer jede Person haben darf und ob Mailserver im lokalen Netz erreichbar sind. Mit einer **Vorgabe für einen eigenen Mailserver** reicht für Adressen der eigenen Domain das Passwort.
+
+<p align="center">
+  <img src="docs/screenshots/mail.png" alt="Das E-Mail-Postfach mit Ordnern, der Liste und einer geöffneten E-Mail" width="80%">
+</p>
+
+Unter **Chat** schreibst du allen auf deinem Server, zu zweit oder in Gruppen. **Notizen an mich** ist eine Ablage nur für dich, für Links, Notizen und Dateien zwischen Handy und Rechner.
+
+- **Nachrichten** mit Antworten, Reaktionen, Erwähnungen per `@benutzername` oder `@alle`, Links, Bearbeiten und Löschen. `**fett**`, `*kursiv*`, `` `Code` `` und Blöcke zwischen ` ``` ` formatieren den Text. Mit der Pfeiltaste nach oben bearbeitest du deine letzte Nachricht.
+- **Dateien und Bilder** schickst du über die Büroklammer, per Einfügen oder vom Handy. Sie liegen im Ordner **Chat** in deinen Dateien und sind für alle im Chat sichtbar, solange sie dort liegen.
+- **Gruppen** mit Namen, neuen Leuten und einem Verlauf, wer dazukam oder ging. Chats heftest du an oder schaltest sie stumm, auf dem Handy mit Wischen.
+- **Status** im Menü hinter deinem Bild: verfügbar, beschäftigt, abwesend oder **Nicht stören**, mit Emoji, Text und Ablaufzeit. Solange „Nicht stören“ gilt, hält MoeCloud Push und E-Mails zurück.
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="Der Chat mit einer Gruppe und mehreren Nachrichten" width="80%">
+</p>
+
+## Lesezeichen, Feeds und Schnipsel
+
+**Lesezeichen** sammelt Links an einem Ort. MoeCloud holt Titel, Beschreibung, Symbol und Vorschaubild von der Seite, entfernt Tracking-Anhänge wie `utm_source` und erkennt doppelte Links.
+
+- **Ordnen** mit Schlagwörtern, Notizen und **Später lesen**, als Liste oder Kacheln, sortiert nach Datum, Name oder Besuchen. Schlagwörter benennst du um, indem du sie mit der rechten Maustaste anklickst, auf dem Handy über den Stift am gewählten Schlagwort.
+- **Speichern** über **Neues Lesezeichen**, mit dem **Lesezeichen-Knopf** in der Lesezeichenleiste deines Browsers oder auf dem Handy über **Teilen**, wenn MoeCloud als App installiert ist.
+- **Tote Links finden** prüft im Hintergrund, welche Seiten noch da sind. **Aus dem Browser importieren** übernimmt die HTML-Datei aus Chrome, Firefox, Safari oder Edge, Ordner werden zu Schlagwörtern, und **Exportieren** gibt sie im selben Format zurück.
+
+<p align="center">
+  <img src="docs/screenshots/lesezeichen.png" alt="Lesezeichen mit Schlagwörtern und Filtern" width="80%">
+</p>
+
+**Feeds** liest Blogs, Nachrichten und Podcasts per RSS, Atom und JSON Feed. Die Adresse der Webseite reicht, den Feed sucht MoeCloud selbst.
+
+- **Lesen** in Ordnern, mit **Nur ungelesene**, Favoriten und Suche. Beiträge erscheinen bereinigt in deiner Schriftgröße, Bilder kommen über deinen Server. Mit J und K springst du zum nächsten und vorigen Beitrag, S merkt ihn als Favorit, M schaltet gelesen und ungelesen um, O öffnet das Original und R holt Neues.
+- **Podcasts** spielst du direkt im Browser, mit Tempo, Sprüngen, Leertaste und Steuerung vom Sperrbildschirm. MoeCloud merkt sich die Stelle auf allen Geräten, und **In Dateien speichern** legt eine Folge unter **Podcasts** ab.
+- **Abrufen**: Neues holt MoeCloud alle halbe Stunde, Podcasts jede Stunde. Antwortet ein Feed nicht, wartet MoeCloud länger und zeigt ein Warnzeichen. **OPML importieren** übernimmt Feeds aus einem anderen Reader.
+
+<p align="center">
+  <img src="docs/screenshots/feeds.png" alt="Feeds mit Ordnern, der Liste der Beiträge und einem geöffneten Beitrag" width="80%">
+</p>
+
+**Schnipsel** heben Text, Befehle und Code auf, mit Farben für über 25 Sprachen. Sie speichern sich beim Tippen. **Teilen** erzeugt einen Link unter `/t/…`, auf Wunsch mit Passwort, Ablaufdatum oder als **Einmal-Link**, der sich nach dem ersten Lesen löscht, und mit QR-Code. Die Seite für den Link zeigt den Code mit Zeilennummern, zum Kopieren, Herunterladen und als Rohtext. Die Regeln für Links aus **Admin › Einstellungen › Teilen**, etwa ein Pflicht-Passwort oder eine längste Dauer, gelten auch hier.
+
+<p align="center">
+  <img src="docs/screenshots/schnipsel.png" alt="Ein Schnipsel mit hervorgehobenem Code" width="49%">
+  <img src="docs/screenshots/schnipsel-einmal.png" alt="Ein Einmal-Link, der sich nach dem Öffnen löscht" width="49%">
+</p>
+
+Lesezeichen, Feeds und Schnipsel gibt es nur für Mitglieder. Seiten und Feeds im lokalen Netz ruft MoeCloud nur ab, wenn die Verwaltung das unter **Admin › Funktionen** erlaubt.
+
 ## Kommentare, Aktivität und Benachrichtigungen
 
 - **Kommentare**: Im Detailbereich unter **Kommentare** schreiben alle, die Zugriff haben, an Dateien und Ordner. Alle anderen mit Zugriff und alle, die dort schon kommentiert haben, bekommen eine Benachrichtigung. Mit `@benutzername` erwähnst du jemanden, der dort Zugriff hat, beim Tippen von `@` schlägt MoeCloud passende Personen vor. Wer erwähnt wird, bekommt dafür eine eigene Benachrichtigung.
@@ -1317,7 +1382,7 @@ Abschalten lässt sich die Prüfung unter **Admin › Einstellungen › Aufbewah
 ```json
 {
   "version": "1.9.0",
-  "date": "2026-11-26",
+  "date": "2026-11-27",
   "changelog": "https://moecloud.moestudio.net/changelog.html#v1.9.0",
   "security": false,
   "notes": {
@@ -1569,6 +1634,13 @@ curl -u emi:APP-PASSWORT -F "file=@rechnung.pdf" https://cloud.example.com/api/n
 | `GET`   | `/api/contacts/books`                                         | Adressbücher mit Zahl der Kontakte. `POST` legt eines an, `PATCH` und `DELETE` unter `/api/contacts/books/:id`, Freigaben unter `/api/contacts/books/:id/shares` und `PUT` oder `DELETE` auf `/shares/:userId` mit `read` oder `write`                                                                                                                                                                                                                                                                         |
 | `POST`  | `/api/contacts/import`                                        | vCard, CSV oder ZIP als `multipart/form-data` oder JSON `{ "node" }` lesen, `POST /api/contacts/import/:id/run` mit `{ "book", "name", "mode" }` übernimmt. `GET /api/contacts/export?book=&format=csv` exportiert als vCard oder CSV                                                                                                                                                                                                                                                                          |
 | `GET`   | `/api/contacts/birthdays?from=&to=`                           | Geburtstage im Zeitraum mit Alter, Datum als `YYYY-MM-DD`, höchstens 400 Tage. Dazu `/api/contacts/labels`, `/api/contacts/duplicates`, `POST /api/contacts/merge`, `/move`, `/delete` und `GET /api/contacts/suggest?q=`                                                                                                                                                                                                                                                                                      |
+| `GET`   | `/api/mail/accounts`                                          | Deine Postfächer. `POST` verbindet eines mit JSON `{ "email", "password", "imap", "smtp" }`, darunter `/folders`, `/messages?folder=&q=&filter=`, `/message`, `/body`, `/attachment`, `/flags`, `/move`, `/archive`, `/delete`, `/save`, `/invite`, `/drafts` und `/send`, dazu `/api/mail/outbox` und `/api/mail/unread`                                                                                                                                                                                      |
+| `GET`   | `/api/chat/rooms`                                             | Deine Chats mit Ungelesenem. `POST` öffnet einen mit JSON `{ "kind": "direct", "user" }`, `{ "kind": "group", "name", "members" }` oder `{ "kind": "self" }`, darunter `/messages`, `/members`, `/settings` und `/read`, dazu `/api/chat/messages/:id` und `/api/chat/search?q=`                                                                                                                                                                                                                               |
+| `GET`   | `/api/bookmarks`                                              | Lesezeichen mit `?q=`, `?tag=`, `?filter=later` und `?sort=`. `POST` mit JSON `{ "url", "title", "tags", "later" }` legt eines an, dazu `/api/bookmarks/tags`, `/check`, `/import` und `/export`                                                                                                                                                                                                                                                                                                               |
+| `GET`   | `/api/feeds`                                                  | Deine Feeds mit Ungelesenem. `POST` mit JSON `{ "url", "folder" }` abonniert, `GET /api/feeds/items?filter=unread` liefert Beiträge, `POST /api/feeds/items/read` markiert sie, dazu `/api/feeds/refresh`, `/import` und `/export` als OPML                                                                                                                                                                                                                                                                    |
+| `GET`   | `/api/snippets`                                               | Deine Schnipsel. `POST` mit JSON `{ "title", "language", "content" }` legt einen an, `PUT /api/snippets/:id/share` mit `{ "shared", "password", "expiresAt", "burn" }` teilt ihn                                                                                                                                                                                                                                                                                                                               |
+| `GET`   | `/api/search/everywhere?q=`                                   | Treffer aus Kontakten, Terminen, Aufgaben, Chat, Lesezeichen, Feeds und Schnipseln, nach Bereichen in `groups`                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `GET`   | `/api/account/status`                                         | Dein Status. `PUT` mit JSON `{ "state", "emoji", "text", "until" }` setzt ihn, `DELETE` löscht ihn. `GET /api/badges` nennt die Zahlen für E-Mail, Chat und Feeds                                                                                                                                                                                                                                                                                                                                              |
 | `POST`  | `/api/account/app-passwords`                                  | App-Passwort anlegen, JSON `{ "name", "readOnly", "shared", "admin", "expiresAt" }`, nur mit Sitzung im Browser. `admin` erlaubt Admins die Verwaltung, `readOnly` erlaubt nur Lesen, `shared` zeigt Teamordner und Geteiltes im WebDAV-Laufwerk, `expiresAt` ist das Ablaufdatum in Millisekunden. `DELETE /api/account/app-passwords/:id` widerruft es                                                                                                                                                       |
 | `POST`  | `/api/account/app-passwords/:id/resume`                       | Ein angehaltenes App-Passwort wieder freigeben, nur mit Sitzung im Browser. Angehaltene stehen in `GET /api/account` unter `security.appPasswords` mit `paused` (`at`, `count`, `since`)                                                                                                                                                                                                                                                                                                                       |
 | `POST`  | `/api/account/secure`                                         | Konto absichern, JSON `{ "password", "sessions", "appPasswords", "links" }`, nur mit Sitzung im Browser. Die Antwort nennt, wie viele Sitzungen beendet, App-Passwörter widerrufen und Links pausiert wurden                                                                                                                                                                                                                                                                                                   |

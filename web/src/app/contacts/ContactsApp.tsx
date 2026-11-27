@@ -3,6 +3,10 @@ import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import ButtonBase from '@mui/material/ButtonBase';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
@@ -32,6 +36,7 @@ import DeleteForeverRounded from '@mui/icons-material/DeleteForeverRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import DevicesRounded from '@mui/icons-material/DevicesRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import QrCode2Rounded from '@mui/icons-material/QrCode2Rounded';
 import DriveFileMoveOutlined from '@mui/icons-material/DriveFileMoveOutlined';
 import EditRounded from '@mui/icons-material/EditRounded';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
@@ -58,7 +63,7 @@ import { navigate, useLocation } from '../../lib/router';
 import { c, curve, mix, radius } from '../../theme/tokens';
 import { lazyNamed } from '../common/lazy';
 import { choose, confirm, prompt } from '../common/dialogs';
-import { EmptyState, UserAvatar } from '../common/bits';
+import { EmptyState, QrCode, UserAvatar } from '../common/bits';
 import { toast } from '../common/toast';
 import { AppShell } from '../shell/AppShell';
 import {
@@ -83,6 +88,7 @@ import {
   type Group,
   type Label,
   type Summary,
+  type ContactData,
 } from './model';
 import type { EditorRequest } from './ContactEditor';
 
@@ -331,6 +337,42 @@ function birthdayNote(value: string) {
     : tn(next.days, 'In einem Tag', 'In {count} Tagen');
 }
 
+const vcardText = (value: string) =>
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\r?\n/g, '\\n')
+    .replace(/([,;])/g, '\\$1');
+
+const PHONE_TYPES: Record<string, string> = {
+  mobile: 'CELL',
+  home: 'HOME',
+  work: 'WORK',
+  fax: 'FAX',
+  pager: 'PAGER',
+  main: 'VOICE',
+  other: 'VOICE',
+};
+
+export function contactCard(data: ContactData) {
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
+  lines.push(`N:${[data.family, data.given, data.additional, data.prefix, data.suffix].map(vcardText).join(';')}`);
+  lines.push(`FN:${vcardText(data.name || [data.given, data.family].filter(Boolean).join(' ') || data.organization)}`);
+  if (data.organization) lines.push(`ORG:${vcardText(data.organization)}${data.department ? `;${vcardText(data.department)}` : ''}`);
+  if (data.title) lines.push(`TITLE:${vcardText(data.title)}`);
+  for (const phone of data.phones.slice(0, 4))
+    lines.push(`TEL;TYPE=${PHONE_TYPES[phone.type] ?? 'VOICE'}:${phone.value.replace(/[^\d+*#]/g, '')}`);
+  for (const email of data.emails.slice(0, 3)) lines.push(`EMAIL;TYPE=${email.type === 'work' ? 'WORK' : 'HOME'}:${email.value}`);
+  for (const address of data.addresses.slice(0, 2)) {
+    lines.push(
+      `ADR;TYPE=${address.type === 'work' ? 'WORK' : 'HOME'}:${[address.pobox, address.extended, address.street, address.locality, address.region, address.code, address.country].map(vcardText).join(';')}`
+    );
+  }
+  for (const url of data.urls.slice(0, 2)) lines.push(`URL:${url.value}`);
+  if (data.birthday && /^\d{4}-\d{2}-\d{2}$/.test(data.birthday)) lines.push(`BDAY:${data.birthday}`);
+  lines.push('END:VCARD');
+  return lines.join('\r\n');
+}
+
 function ContactDetail({
   id,
   books,
@@ -347,6 +389,7 @@ function ContactDetail({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const [qr, setQr] = useState(false);
 
   const load = useCallback(() => {
     contactsApi
@@ -451,6 +494,18 @@ function ContactDetail({
           </IconButton>
         </Tooltip>
         <Menu anchorEl={menu} open={Boolean(menu)} onClose={() => setMenu(null)}>
+          <MenuItem
+            onClick={() => {
+              setMenu(null);
+              setQr(true);
+            }}
+            data-contact-qr
+          >
+            <ListItemIcon>
+              <QrCode2Rounded fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t('Als QR-Code zeigen')}</ListItemText>
+          </MenuItem>
           <MenuItem component="a" href={`/api/contacts/${detail.id}/vcard`} download onClick={() => setMenu(null)}>
             <ListItemIcon>
               <DownloadRounded fontSize="small" />
@@ -472,6 +527,18 @@ function ContactDetail({
             </MenuItem>
           )}
         </Menu>
+        <Dialog open={qr} onClose={() => setQr(false)} maxWidth="xs" data-contact-qr-dialog>
+          <DialogTitle>{t('Kontakt teilen')}</DialogTitle>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <QrCode value={contactCard(data)} size={240} label={t('QR-Code für {name}', { name: data.name })} />
+            <Typography variant="body2" sx={{ color: c.onSurfaceVariant, textAlign: 'center' }}>
+              {t('Mit der Kamera scannen, um {name} ins Telefonbuch zu übernehmen.', { name: data.name || t('den Kontakt') })}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setQr(false)}>{t('Fertig')}</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1, pb: 2 }}>

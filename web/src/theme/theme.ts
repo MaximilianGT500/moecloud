@@ -1,6 +1,7 @@
 import { createTheme, type Shadows } from '@mui/material/styles';
 import { FILE_TYPE_COLORS, folderColors, type M3Tokens, type Palette } from './scheme';
 import { c, curve, duration, elevation, fonts, layer, mix, radius } from './tokens';
+import { SheetTransition } from './sheet';
 
 export interface ThemeOptions {
   palette: Palette;
@@ -164,7 +165,7 @@ export function createAppTheme({ palette, corners }: ThemeOptions) {
       MuiIconButton: {
         styleOverrides: {
           root: { transition: `background-color 160ms ${curve.standard}, color 160ms ${curve.standard}` },
-          sizeSmall: { padding: 6 },
+          sizeSmall: { padding: 6, '@media (pointer: coarse)': { padding: 10 } },
         },
       },
       MuiFab: {
@@ -183,9 +184,42 @@ export function createAppTheme({ palette, corners }: ThemeOptions) {
         },
       },
       MuiDialog: {
+        defaultProps: { slots: { transition: SheetTransition } },
         styleOverrides: {
-          paper: { borderRadius: r(radius.xl), backgroundColor: c.surfaceContainerHigh, boxShadow: elevation[3], padding: 8 },
-          paperFullScreen: { borderRadius: 0, padding: 0 },
+          container: { '@media (max-width: 599.95px)': { alignItems: 'flex-end' } },
+          paper: {
+            borderRadius: r(radius.xl),
+            backgroundColor: c.surfaceContainerHigh,
+            boxShadow: elevation[3],
+            padding: 8,
+            '@media (max-width: 599.95px)': {
+              '&:not(.MuiDialog-paperFullScreen)': {
+                margin: 0,
+                width: '100%',
+                maxWidth: '100%',
+                borderBottomLeftRadius: 0,
+                borderBottomRightRadius: 0,
+                maxHeight: 'calc(100dvh - 24px - env(safe-area-inset-top))',
+                paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+                '&::before': {
+                  content: '""',
+                  display: 'block',
+                  flex: 'none',
+                  width: 32,
+                  height: 4,
+                  margin: '2px auto 4px',
+                  borderRadius: 2,
+                  backgroundColor: c.outlineVariant,
+                },
+              },
+            },
+          },
+          paperFullScreen: {
+            borderRadius: 0,
+            padding: 0,
+            paddingTop: 'env(safe-area-inset-top)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          },
         },
       },
       MuiDialogTitle: { styleOverrides: { root: { fontSize: '1.5rem', lineHeight: 1.33, fontWeight: 700, padding: '16px 16px 8px' } } },
@@ -336,7 +370,21 @@ export function createAppTheme({ palette, corners }: ThemeOptions) {
       },
       MuiSwitch: {
         styleOverrides: {
-          root: { width: 64, height: 44, padding: 8 },
+          root: {
+            width: 64,
+            height: 44,
+            padding: 8,
+            '&.MuiSwitch-sizeSmall': {
+              width: 52,
+              height: 32,
+              padding: 4,
+              '& .MuiSwitch-switchBase': {
+                padding: 8,
+                '&.Mui-checked': { transform: 'translateX(20px)', '& .MuiSwitch-thumb': { width: 18, height: 18, margin: -1 } },
+              },
+              '& .MuiSwitch-thumb': { width: 12, height: 12, margin: 2 },
+            },
+          },
           switchBase: {
             padding: 12,
             '&.Mui-checked': {

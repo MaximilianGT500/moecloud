@@ -9,6 +9,7 @@ import { prefsOf, storageOf, type UserRow } from './users.ts';
 import { listTasks, upcomingFor } from '../calendar/events.ts';
 import { calendarAllowed } from '../calendar/guard.ts';
 import { pendingInvitations } from '../calendar/invitations.ts';
+import { appEnabled } from './apps.ts';
 
 const RECENT = 10;
 
@@ -38,7 +39,7 @@ function planning(user: UserRow) {
       startDate: entry.startDate,
       color: entry.color ?? colors.get(entry.calendarId) ?? null,
     })),
-    tasks: listTasks(user)
+    tasks: (appEnabled('tasks') ? listTasks(user) : [])
       .filter((task) => !task.completed)
       .slice(0, 5)
       .map((task) => ({
@@ -74,7 +75,7 @@ export function homeFor(user: UserRow, date: string, offset: number) {
     .sort((a, b) => Number(b.grant.created_at) - Number(a.grant.created_at))
     .slice(0, 6)
     .map((entry) => entry.node);
-  const groups = guest ? [] : memories(user, date, offset);
+  const groups = guest || !appEnabled('photos') ? [] : memories(user, date, offset);
   return {
     name: user.name,
     guest,

@@ -120,6 +120,8 @@ export interface Boot {
   contactsOn?: { carddav: string } | null;
   directory?: boolean;
   featuresOff?: string[];
+  featuresDisabled?: string[];
+  welcome?: boolean;
   caldav?: string;
   calendarFeatures?: CalendarFeatures;
 }

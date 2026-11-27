@@ -133,3 +133,16 @@ export function highlight(code: string, extension: string) {
   if (!language) return null;
   return hljs.highlight(code, { language, ignoreIllegals: true }).value;
 }
+
+const NAMED: Record<string, keyof typeof LANGUAGES> = { html: 'xml' };
+
+export function highlightAs(code: string, language: string) {
+  if (language === 'text' || !code || code.length > 300_000) return null;
+  if (language === 'auto') {
+    const result = hljs.highlightAuto(code, Object.keys(LANGUAGES));
+    return result.relevance >= 6 && result.language ? { html: result.value, language: result.language } : null;
+  }
+  const name = Object.hasOwn(NAMED, language) ? NAMED[language] : language;
+  if (!Object.hasOwn(LANGUAGES, name)) return null;
+  return { html: hljs.highlight(code, { language: name, ignoreIllegals: true }).value, language: name };
+}

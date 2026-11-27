@@ -980,6 +980,202 @@ const MIGRATIONS = [
     PRIMARY KEY (book_id, href)
   );
   CREATE INDEX contact_changes_revision ON contact_changes(book_id, revision);
+
+  CREATE TABLE mail_accounts (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    login TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    imap_host TEXT NOT NULL,
+    imap_port INTEGER NOT NULL,
+    imap_security TEXT NOT NULL,
+    smtp_host TEXT NOT NULL,
+    smtp_port INTEGER NOT NULL,
+    smtp_security TEXT NOT NULL,
+    smtp_login TEXT,
+    smtp_secret TEXT,
+    signature TEXT NOT NULL DEFAULT '',
+    folders TEXT,
+    save_sent INTEGER NOT NULL DEFAULT 1,
+    notify INTEGER NOT NULL DEFAULT 1,
+    preset INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    seen_uid INTEGER,
+    seen_validity TEXT,
+    error TEXT,
+    checked_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX mail_accounts_user ON mail_accounts(user_id, position);
+
+  CREATE TABLE mail_outbox (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    send_at INTEGER NOT NULL,
+    envelope TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    recipients TEXT NOT NULL DEFAULT '',
+    followup TEXT,
+    state TEXT NOT NULL DEFAULT 'waiting',
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX mail_outbox_due ON mail_outbox(state, send_at);
+  CREATE INDEX mail_outbox_user ON mail_outbox(user_id);
+
+  CREATE TABLE mail_senders (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    address TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    trusted INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    used_at INTEGER,
+    PRIMARY KEY (user_id, address)
+  );
+
+  CREATE TABLE chat_rooms (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT '',
+    pair TEXT UNIQUE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE chat_members (
+    room_id TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member',
+    read_id INTEGER NOT NULL DEFAULT 0,
+    muted INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    joined_at INTEGER NOT NULL,
+    PRIMARY KEY (room_id, user_id)
+  );
+  CREATE INDEX chat_members_user ON chat_members(user_id);
+
+  CREATE TABLE chat_messages (
+    id INTEGER PRIMARY KEY,
+    room_id TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'text',
+    body TEXT NOT NULL DEFAULT '',
+    reply_to INTEGER,
+    files TEXT,
+    edited_at INTEGER,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX chat_messages_room ON chat_messages(room_id, id);
+
+  CREATE TABLE chat_reactions (
+    message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (message_id, user_id, emoji)
+  );
+
+  CREATE TABLE bookmarks (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    url_key TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    icon TEXT,
+    image TEXT,
+    later INTEGER NOT NULL DEFAULT 0,
+    visits INTEGER NOT NULL DEFAULT 0,
+    visited_at INTEGER,
+    status INTEGER,
+    checked_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX bookmarks_url ON bookmarks(user_id, url_key);
+  CREATE INDEX bookmarks_user ON bookmarks(user_id, created_at);
+
+  CREATE TABLE feed_sources (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    site TEXT NOT NULL DEFAULT '',
+    icon TEXT,
+    folder TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'news',
+    etag TEXT,
+    modified TEXT,
+    error TEXT,
+    errors INTEGER NOT NULL DEFAULT 0,
+    fetched_at INTEGER,
+    next_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX feed_sources_url ON feed_sources(user_id, url);
+  CREATE INDEX feed_sources_due ON feed_sources(next_at);
+
+  CREATE TABLE feed_items (
+    id INTEGER PRIMARY KEY,
+    feed_id TEXT NOT NULL REFERENCES feed_sources(id) ON DELETE CASCADE,
+    guid TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    author TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    image TEXT,
+    audio TEXT,
+    audio_type TEXT,
+    duration INTEGER,
+    position INTEGER NOT NULL DEFAULT 0,
+    published_at INTEGER NOT NULL,
+    read INTEGER NOT NULL DEFAULT 0,
+    starred INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX feed_items_guid ON feed_items(feed_id, guid);
+  CREATE INDEX feed_items_feed ON feed_items(feed_id, published_at);
+
+  CREATE TABLE snippets (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT 'text',
+    content TEXT NOT NULL,
+    password_hash TEXT,
+    shared INTEGER NOT NULL DEFAULT 0,
+    burn INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    views INTEGER NOT NULL DEFAULT 0,
+    viewed_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX snippets_user ON snippets(user_id, created_at);
+
+  CREATE TABLE user_status (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    emoji TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    until INTEGER,
+    updated_at INTEGER NOT NULL
+  );
   `,
 ];
 

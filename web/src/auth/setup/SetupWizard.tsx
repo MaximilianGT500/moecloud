@@ -23,12 +23,14 @@ import { useSeed } from '../../app/mount';
 import { BrandMark, SkipLink } from '../../app/common/bits';
 import { QuotaField } from '../../app/common/QuotaField';
 import { ThemeToggleButton } from '../../app/common/ThemeToggle';
+import { AppPicker } from '../../app/common/AppPicker';
+import { FEATURES, type Feature } from '../../../../shared/features';
 
 interface SetupBoot extends Boot {
   defaults: { url: string; language: 'de' | 'en' };
 }
 
-const STEPS = ['code', 'cloud', 'look', 'admin', 'rules'] as const;
+const STEPS = ['code', 'apps', 'cloud', 'look', 'admin', 'rules'] as const;
 type Step = (typeof STEPS)[number];
 
 function Choice({ selected, title, text, onClick }: { selected: boolean; title: string; text?: string; onClick: () => void }) {
@@ -158,6 +160,7 @@ export function SetupWizard() {
     email: '',
     password: '',
   });
+  const [apps, setApps] = useState<Set<Feature>>(() => new Set(FEATURES));
   const index = STEPS.indexOf(step);
   const set = (patch: Partial<typeof form>) => setForm({ ...form, ...patch });
 
@@ -169,6 +172,7 @@ export function SetupWizard() {
 
   const valid: Record<Step, boolean> = {
     code: form.code.trim().length > 0,
+    apps: true,
     cloud: form.siteName.trim().length > 0 && /^https?:\/\/\S+$/.test(form.siteUrl.trim()),
     look: Boolean(normalizeHex(form.seed)),
     admin: form.name.trim().length > 0 && /^[a-zA-Z0-9._-]{3,32}$/.test(form.username) && form.password.length >= 10,
@@ -181,7 +185,7 @@ export function SetupWizard() {
       setBusy(true);
       try {
         await api.post('/api/setup/check', { code: form.code.trim() });
-        go('cloud');
+        go('apps');
       } catch (reason) {
         setError(errorText(reason));
       } finally {
@@ -205,6 +209,7 @@ export function SetupWizard() {
         registration: form.registration,
         defaultQuota: form.defaultQuota,
         admin: { name: form.name.trim(), username: form.username.trim(), email: form.email.trim(), password: form.password },
+        apps: FEATURES.filter((key) => apps.has(key)),
       });
       location.href = result.redirect;
     } catch (reason) {
@@ -215,6 +220,10 @@ export function SetupWizard() {
 
   const titles: Record<Step, [string, string]> = {
     code: [t('Willkommen bei MoeCloud'), t('In ein paar Schritten läuft deine eigene Cloud. Deine Dateien bleiben auf deinem Server.')],
+    apps: [
+      t('Was soll deine Cloud können?'),
+      t('Dateien sind immer dabei. Alles andere schaltest du hier ein oder aus und später jederzeit unter Admin › Funktionen.'),
+    ],
     cloud: [t('Deine Cloud'), t('Wie heißt sie und unter welcher Adresse ist sie erreichbar?')],
     look: [t('Aussehen'), t('Alle Farben entstehen aus einer Grundfarbe. Du kannst sie später unter Admin › Einstellungen ändern.')],
     admin: [t('Dein Konto'), t('Damit verwaltest du MoeCloud. Weitere Personen legst du danach an.')],
@@ -246,6 +255,27 @@ export function SetupWizard() {
             />
           ))}
         </Box>
+      </>
+    );
+  } else if (step === 'apps') {
+    body = (
+      <>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button size="small" variant="tonal" onClick={() => setApps(new Set(FEATURES))}>
+            {t('Alles')}
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setApps(new Set<Feature>(['photos', 'notes', 'calendar', 'tasks', 'contacts']))}
+          >
+            {t('Das Wichtigste')}
+          </Button>
+          <Button size="small" variant="outlined" onClick={() => setApps(new Set())}>
+            {t('Nur Dateien')}
+          </Button>
+        </Box>
+        <AppPicker selected={apps} onChange={setApps} compact />
       </>
     );
   } else if (step === 'cloud') {

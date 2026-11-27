@@ -3,7 +3,9 @@ import { badRequest, forbidden } from '../lib/errors.ts';
 import { Limiter } from '../lib/limiter.ts';
 import type { Lang } from '../lib/i18n.ts';
 import * as settings from './settings.ts';
-import { createUser, userCount } from './users.ts';
+import { FEATURES, type Feature } from '../../shared/features.ts';
+import { APP_SETTING } from './apps.ts';
+import { createUser, updatePrefs, userCount } from './users.ts';
 
 const attempts = new Limiter(20, 15 * 60 * 1000);
 
@@ -43,6 +45,7 @@ export interface SetupInput {
   registration: settings.Registration;
   defaultQuota: number;
   admin: { username: string; name: string; email?: string; password: string };
+  apps?: Feature[];
 }
 
 export async function completeSetup(ip: string, input: SetupInput) {
@@ -66,6 +69,8 @@ export async function completeSetup(ip: string, input: SetupInput) {
     'setup.done': true,
     'setup.code': '',
   });
+  if (input.apps) for (const feature of FEATURES) settings.set(APP_SETTING[feature], input.apps.includes(feature));
+  updatePrefs(user.id, { welcome: false });
   settings.secret();
   return user;
 }

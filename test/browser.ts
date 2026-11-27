@@ -238,6 +238,9 @@ try {
     const page = await open(dark, 'setup');
     await page.goto(`${base}/setup?code=${code}`);
     await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+    await page.getByText('Was soll deine Cloud können?').first().waitFor();
+    await shot(page, 'setup-funktionen');
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click();
     await page.getByLabel('Adresse').waitFor();
     await page.getByRole('button', { name: 'Weiter', exact: true }).click();
     await page.getByRole('radiogroup', { name: 'Grundfarbe' }).waitFor();
@@ -258,6 +261,7 @@ try {
   await step('Anmelden mit Passwort', async () => {
     await login(page, 'emi');
     await item(page, 'Urlaub 2026').waitFor();
+    await api(page, 'PATCH', '/api/admin/settings', { 'accounts.welcome': false });
   });
 
   await step('E-Mail einrichten und testen', async () => {
@@ -2321,8 +2325,10 @@ try {
 
     await page.goto(`${base}/admin/calendar`);
     await page.locator('[data-admin-calendar]').getByText('Kalender einschalten').waitFor();
-    await page.goto(`${base}/admin/settings`);
+    await page.goto(`${base}/admin/apps`);
     await page.locator('[data-new-features]').getByRole('checkbox', { name: 'Buchungsseiten' }).waitFor();
+    await page.locator('[data-admin-app="feeds"]').scrollIntoViewIfNeeded();
+    await shot(page, 'admin-funktionen');
   });
 
   await step('Office-Dokument anlegen, bearbeiten und speichern', async () => {
@@ -2942,7 +2948,7 @@ try {
   await step('Teilen aus anderen Apps in die Cloud', async () => {
     await page.goto(`${base}/files`);
     const manifest = await page.evaluate(async () => (await fetch('/manifest.webmanifest')).json());
-    if (manifest.share_target?.action !== '/share-target' || manifest.shortcuts?.length !== 4)
+    if (manifest.share_target?.action !== '/share-target' || (manifest.shortcuts?.length ?? 0) < 4)
       throw new Error(`Im Manifest fehlen Teilen-Ziel oder Kurzbefehle: ${JSON.stringify(manifest).slice(0, 200)}`);
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 20_000 });
     await Promise.all([
@@ -2973,7 +2979,7 @@ try {
         form.action = '/share-target';
         for (const [name, value] of [
           ['title', 'MoeStudio'],
-          ['text', 'https://moestudio.net'],
+          ['text', 'https://moestudio.example'],
         ]) {
           const field = document.createElement('input');
           field.type = 'hidden';
@@ -2985,8 +2991,254 @@ try {
         form.submit();
       }),
     ]);
-    await visible(page, 'Weblink gespeichert');
-    await item(page, 'MoeStudio.url').waitFor();
+    await visible(page, 'Als Lesezeichen gespeichert');
+    const saved = await api<{ items: { title: string; url: string }[] }>(page, 'GET', '/api/bookmarks?q=moestudio');
+    if (saved.items[0]?.title !== 'MoeStudio' || saved.items[0]?.url !== 'https://moestudio.example/')
+      throw new Error(`Der geteilte Link fehlt bei den Lesezeichen: ${JSON.stringify(saved.items)}`);
+  });
+
+  await step('Einführung beim ersten Anmelden, Navigation oben und Status', async () => {
+    await api(page, 'PATCH', '/api/admin/settings', { 'accounts.welcome': true });
+    await api(page, 'POST', '/api/admin/users', { username: 'emilyb', name: 'Emily Brandt', email: 'emily.brandt@example.com', password });
+    const fresh = await context('dark');
+    const emily = await open(fresh, 'Emily');
+    await login(emily, 'emilyb');
+    const welcome = emily.locator('[data-welcome]');
+    await welcome.waitFor();
+    await welcome.getByText('Willkommen, Emily!').waitFor();
+    await shot(emily, 'einfuehrung');
+    for (let index = 0; index < 6 && (await welcome.count()) > 0; index++) {
+      await welcome.locator('[data-welcome-next]').click();
+      await emily.waitForTimeout(300);
+    }
+    await welcome.waitFor({ state: 'detached' });
+    await emily.reload();
+    await emily.getByRole('navigation', { name: 'Hauptnavigation' }).first().waitFor();
+    await emily.waitForTimeout(800);
+    if ((await emily.locator('[data-welcome]').count()) > 0) throw new Error('Die Einführung kommt nach dem Abschluss wieder');
+    await fresh.close();
+    await api(page, 'PATCH', '/api/admin/settings', { 'accounts.welcome': false });
+
+    await page.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem('moecloud-prefs') ?? '{}');
+      localStorage.setItem('moecloud-prefs', JSON.stringify({ ...stored, navPosition: 'top' }));
+    });
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+    const top = await page
+      .getByRole('navigation', { name: 'Hauptnavigation' })
+      .first()
+      .evaluate((nav) => nav.getBoundingClientRect().width > nav.getBoundingClientRect().height);
+    if (!top) throw new Error('Die Navigation steht nicht oben');
+    await shot(page, 'navigation-oben');
+    await page.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem('moecloud-prefs') ?? '{}');
+      delete stored.navPosition;
+      localStorage.setItem('moecloud-prefs', JSON.stringify(stored));
+    });
+
+    await api(page, 'PUT', '/api/account/status', { state: 'dnd', emoji: '🎧', text: 'Konzentriert', until: Date.now() + 2 * 3_600_000 });
+    const status = await api<{ status: { state: string } | null }>(page, 'GET', '/api/account/status');
+    if (status.status?.state !== 'dnd') throw new Error('Der Status fehlt');
+    await api(page, 'DELETE', '/api/account/status');
+  });
+
+  await step('E-Mail-Postfach im Browser', async () => {
+    const { imapSink } = await import('./imap.ts');
+    const { default: MailComposer } = await import('nodemailer/lib/mail-composer');
+    const imap = await imapSink({ user: 'emi@example.com', pass: 'imap-geheim' });
+    try {
+      const letter = (options: ConstructorParameters<typeof MailComposer>[0]) =>
+        new MailComposer({ disableFileAccess: true, disableUrlAccess: true, ...options }).compile().build();
+      const now = Date.now();
+      const mails: [string, string, string, string, string[]][] = [
+        [
+          'Mia Weber',
+          'mia@example.com',
+          'Fotos vom Wochenende',
+          'Hallo Emi,\n\nhier sind die Fotos vom Ausflug nach Kamakura. Der Strand war wunderschön!\n\nLiebe Grüße\nMia',
+          [],
+        ],
+        [
+          'Lea Hoffmann',
+          'lea@example.com',
+          'Ramen-Abend am Freitag?',
+          'Hast du Lust auf Ramen in der Kirschblüte? Ich reserviere für vier.',
+          ['\\Seen'],
+        ],
+        ['Bahn', 'service@bahn.example', 'Deine Reservierung nach Kyoto', 'Wagen 7, Platz 42. Gute Reise!', ['\\Seen', '\\Flagged']],
+      ];
+      for (const [index, [name, address, subject, text, flags]] of mails.entries()) {
+        imap.add(
+          'INBOX',
+          await letter({ from: { name, address }, to: 'emi@example.com', subject, text, messageId: `<demo-${index}@example.com>` }),
+          flags,
+          new Date(now - index * 3_600_000)
+        );
+      }
+      await api(page, 'PATCH', '/api/admin/settings', { 'webmail.private': true });
+      await api(page, 'POST', '/api/mail/accounts', {
+        email: 'emi@example.com',
+        name: 'Privat',
+        password: 'imap-geheim',
+        imap: { host: '127.0.0.1', port: imap.port, security: 'none' },
+        smtp: { host: '127.0.0.1', port: smtp.port, security: 'none' },
+      });
+      await page.goto(`${base}/mail`);
+      await page.getByText('Fotos vom Wochenende').first().click();
+      await page.locator('[data-mail-body]').waitFor();
+      await page.waitForTimeout(500);
+      await shot(page, 'mail');
+      await page.locator('[data-mail-compose="rail"]').click();
+      await page.getByRole('dialog').waitFor();
+      await shot(page, 'mail-schreiben');
+      await page.keyboard.press('Escape');
+    } finally {
+      await page.goto(`${base}/files`);
+      const accounts = await api<{ accounts: { id: string }[] }>(page, 'GET', '/api/mail/accounts').catch(() => ({ accounts: [] }));
+      for (const entry of accounts.accounts) await api(page, 'DELETE', `/api/mail/accounts/${entry.id}`).catch(() => undefined);
+      await imap.close();
+    }
+  });
+
+  await step('Chat zu zweit und in der Gruppe', async () => {
+    const people = await api<{ items: { id: number; username: string }[] }>(page, 'GET', '/api/admin/users');
+    const id = (name: string) => people.items.find((person) => person.username === name)!.id;
+    const direct = await api<{ room: { id: string } }>(page, 'POST', '/api/chat/rooms', { kind: 'direct', user: id('mia') });
+    await api(page, 'POST', `/api/chat/rooms/${direct.room.id}/messages`, { body: 'Hast du die Fotos schon sortiert? 📸' });
+    const group = await api<{ room: { id: string } }>(page, 'POST', '/api/chat/rooms', {
+      kind: 'group',
+      name: 'Ramen-Club',
+      members: [id('mia'), id('lea')],
+    });
+    const other = await context('dark');
+    const mia = await open(other, 'Mia im Chat');
+    await login(mia, 'mia');
+    await api(mia, 'POST', `/api/chat/rooms/${group.room.id}/messages`, { body: 'Freitag um 19 Uhr in der Kirschblüte? 🍜' });
+    await api(mia, 'POST', `/api/chat/rooms/${direct.room.id}/messages`, { body: 'Fast! Ich schick sie dir heute Abend.' });
+    await other.close();
+    await page.goto(`${base}/chat?room=${group.room.id}`);
+    await page.getByText('Freitag um 19 Uhr in der Kirschblüte? 🍜').waitFor();
+    await page.locator('[data-chat-input]').fill('Bin dabei! **Pünktlich** um 19 Uhr.');
+    await page.keyboard.press('Enter');
+    await page.getByText('Pünktlich', { exact: true }).waitFor();
+    await shot(page, 'chat');
+  });
+
+  await step('Lesezeichen, Feeds und Podcasts', async () => {
+    const { createServer } = await import('node:http');
+    const picture = (hue: number) =>
+      sharp(
+        Buffer.from(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="hsl(${hue},70%,62%)"/><circle cx="400" cy="250" r="140" fill="hsl(${hue},60%,30%)"/><ellipse cx="400" cy="215" rx="150" ry="40" fill="hsl(${hue},80%,88%)"/></svg>`
+        )
+      )
+        .jpeg()
+        .toBuffer();
+    const images = new Map<string, Buffer>();
+    for (const [index, hue] of [20, 140, 200, 280].entries()) images.set(`/bild-${index}.jpg`, await picture(hue));
+    let site = '';
+    const posts = [
+      ['Ramen-Brühe in drei Stunden', 'Knochen, Kombu und Geduld: So gelingt eine kräftige Brühe.'],
+      ['Gyoza falten wie in Osaka', 'Fünf Falten, eine Pfanne und eine knusprige Unterseite.'],
+      ['Matcha richtig aufschlagen', 'Mit Bambusbesen und 80 Grad warmem Wasser zum feinen Schaum.'],
+      ['Onigiri für unterwegs', 'Reis, Nori und drei Füllungen, die auch nach Stunden schmecken.'],
+    ];
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? '/', 'http://x').pathname;
+      if (images.has(path)) {
+        response.writeHead(200, { 'content-type': 'image/jpeg' });
+        response.end(images.get(path));
+      } else if (path === '/kueche/feed.xml') {
+        response.writeHead(200, { 'content-type': 'application/rss+xml; charset=utf-8' });
+        response.end(
+          `<?xml version="1.0"?><rss version="2.0"><channel><title>Emis Küche</title><link>${site}/kueche</link>${posts
+            .map(
+              ([title, text], index) =>
+                `<item><title>${title}</title><link>${site}/kueche/${index}</link><guid>${site}/kueche/${index}</guid><pubDate>${new Date(Date.now() - index * 5 * 3_600_000).toUTCString()}</pubDate><description><![CDATA[<p>${text}</p><img src="/bild-${index}.jpg"><p>Alles in einen großen Topf geben und <strong>leise köcheln</strong> lassen.</p>]]></description></item>`
+            )
+            .join('')}</channel></rss>`
+        );
+      } else if (path.startsWith('/kueche/')) {
+        const index = Number(path.split('/').pop());
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(
+          `<!doctype html><title>${posts[index]?.[0] ?? 'Emis Küche'}</title><meta name="description" content="${posts[index]?.[1] ?? ''}"><meta property="og:image" content="/bild-${index}.jpg"><link rel="alternate" type="application/rss+xml" href="/kueche/feed.xml">`
+        );
+      } else {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    site = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      await api(page, 'PATCH', '/api/admin/settings', { 'feeds.private': true });
+      for (const [index, tags, later] of [
+        [0, ['Kochen', 'Japan'], false],
+        [1, ['Kochen'], true],
+        [2, ['Kochen', 'Tee'], false],
+      ] as [number, string[], boolean][]) {
+        await api(page, 'POST', '/api/bookmarks', { url: `${site}/kueche/${index}?utm_source=newsletter`, tags, later });
+      }
+      await page.goto(`${base}/bookmarks`);
+      await page.getByText('Matcha richtig aufschlagen').first().waitFor();
+      await shot(page, 'lesezeichen');
+      await page.locator('[data-bookmark-add="rail"]').click();
+      await page.locator('[data-bookmark-url]').fill(`${site}/kueche/3`);
+      await page.getByRole('dialog').getByText('Diese Seite hat einen Feed. Neue Beiträge kannst du unter Feeds lesen.').waitFor();
+      await page.getByRole('dialog').getByRole('button', { name: 'Abonnieren' }).click();
+      await visible(page, '„Emis Küche“ abonniert');
+      await page.locator('[data-bookmark-save]').click();
+      await visible(page, 'Gespeichert');
+      await page.goto(`${base}/feeds`);
+      await page.locator('[data-feed-item]').first().click();
+      await page.locator('[data-feed-body]').waitFor();
+      await page.waitForTimeout(800);
+      await shot(page, 'feeds');
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()));
+    }
+  });
+
+  await step('Schnipsel mit Einmal-Link und Suche überall', async () => {
+    const made = await api<{ snippet: { id: string } }>(page, 'POST', '/api/snippets', {
+      title: 'Ramen-Timer',
+      language: 'typescript',
+      content:
+        "const minuten = 3;\nconst start = Date.now();\n\nsetInterval(() => {\n  if ((Date.now() - start) / 60_000 >= minuten) console.log('Ramen ist fertig! 🍜');\n}, 1000);\n",
+    });
+    const secret = await api<{ snippet: { id: string } }>(page, 'POST', '/api/snippets', {
+      title: 'WLAN im Ferienhaus',
+      language: 'text',
+      content: 'Kirschbluete-5G\nramen-und-gyoza',
+    });
+    const link = (
+      await api<{ snippet: { link: string } }>(page, 'PUT', `/api/snippets/${secret.snippet.id}/share`, { shared: true, burn: true })
+    ).snippet.link;
+    await page.goto(`${base}/snippets?id=${made.snippet.id}`);
+    await page.locator('[data-code-view]').waitFor();
+    await shot(page, 'schnipsel');
+    const guestContext = await context('dark');
+    const guest = await open(guestContext, 'Gast beim Schnipsel');
+    await guest.goto(link.replace(/^https?:\/\/[^/]+/, base));
+    await guest.locator('[data-snippet-reveal]').waitFor();
+    await shot(guest, 'schnipsel-einmal');
+    await guest.locator('[data-snippet-reveal]').click();
+    await guest.getByText('ramen-und-gyoza').waitFor();
+    const again = await guest.request.get(link.replace(/^https?:\/\/[^/]+/, base));
+    if (again.status() !== 404) throw new Error(`Der Einmal-Link geht nach dem Lesen noch: ${again.status()}`);
+    await guestContext.close();
+
+    await page.goto(`${base}/files`);
+    await item(page, 'Urlaub 2026').waitFor();
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox', { name: 'Schnellzugriff' }).fill('Ramen');
+    await page.getByRole('group', { name: 'Schnipsel' }).waitFor();
+    await page.getByRole('group', { name: 'Lesezeichen' }).waitFor();
+    await page.getByRole('group', { name: 'Feeds' }).waitFor();
+    await shot(page, 'suche-ueberall');
+    await page.keyboard.press('Escape');
   });
 
   await step('Sicherheitsprüfung, gesperrte Anmeldung und Konto absichern', async () => {

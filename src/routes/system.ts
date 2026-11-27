@@ -9,6 +9,7 @@ import { isLang, t } from '../lib/i18n.ts';
 import { setLanguageCookie } from '../lib/request.ts';
 import { BRANDING, brandingFile } from '../services/branding.ts';
 import * as settings from '../services/settings.ts';
+import { appEnabled } from '../services/apps.ts';
 import { SERVICE_WORKER } from '../services/webpush.ts';
 
 const SHARE_FALLBACK_LIMIT = 256 * 1024 * 1024;
@@ -78,11 +79,18 @@ export async function systemRoutes(app: FastifyInstance) {
         { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
       shortcuts: [
-        { name: t(lang, 'Notizen'), url: '/files/notes' },
-        { name: t(lang, 'Fotos'), url: '/files/photos' },
-        { name: t(lang, 'Zuletzt'), url: '/files/recent' },
-        { name: t(lang, 'Favoriten'), url: '/files/starred' },
-      ].map((entry) => ({ ...entry, icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] })),
+        { name: t(lang, 'E-Mail'), url: '/mail', on: appEnabled('mail') },
+        { name: t(lang, 'Chat'), url: '/chat', on: appEnabled('chat') },
+        { name: t(lang, 'Kalender'), url: '/calendar', on: appEnabled('calendar') },
+        { name: t(lang, 'Notizen'), url: '/files/notes', on: appEnabled('notes') },
+        { name: t(lang, 'Fotos'), url: '/files/photos', on: appEnabled('photos') },
+        { name: t(lang, 'Zuletzt'), url: '/files/recent', on: true },
+        { name: t(lang, 'Favoriten'), url: '/files/starred', on: true },
+      ]
+        .filter((entry) => entry.on)
+        .slice(0, 6)
+        .map(({ on: _on, ...entry }) => entry)
+        .map((entry) => ({ ...entry, icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] })),
       share_target: {
         action: '/share-target',
         method: 'POST',

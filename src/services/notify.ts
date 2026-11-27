@@ -9,6 +9,7 @@ import { hasSubscriptions, sendWebPush } from './webpush.ts';
 import * as settings from './settings.ts';
 import { ACTIVE, getUser, inactive, preferredLanguage, prefsOf, type UserPrefs, type UserRow } from './users.ts';
 import { dispatch, type WebhookEvent } from './webhooks.ts';
+import { dndActive } from './status.ts';
 
 export type NotifyKind =
   | 'shared'
@@ -61,6 +62,11 @@ export type NotifyKind =
   | 'calendar_shared'
   | 'contacts_shared'
   | 'task_assigned'
+  | 'mail_new'
+  | 'mail_failed'
+  | 'chat_message'
+  | 'chat_mention'
+  | 'chat_added'
   | 'booking_new'
   | 'booking_cancelled'
   | 'poll_vote'
@@ -311,6 +317,39 @@ const KINDS: Record<NotifyKind, Kind> = {
     text: (lang, p) => (p.due ? t(lang, 'Fällig: {due}', p) : t(lang, 'Ohne Fälligkeit')),
     pref: 'mailShares',
     action: 'Aufgabe ansehen',
+  },
+  mail_new: {
+    title: (lang, p) => (Number(p.count ?? 1) > 1 ? t(lang, '{count} neue E-Mails in {account}', p) : t(lang, 'Neue E-Mail von {from}', p)),
+    text: (lang, p) => (p.subject ? String(p.subject) : t(lang, 'Ohne Betreff')),
+    pref: 'pushMail',
+    action: 'E-Mail öffnen',
+    mail: false,
+  },
+  mail_failed: {
+    title: (lang, p) => t(lang, 'Die E-Mail „{subject}“ ließ sich nicht senden', p),
+    text: (lang) => t(lang, 'Sie liegt im Postausgang. Prüf das Postfach und versuch es noch einmal.'),
+    action: 'Postausgang öffnen',
+    mail: false,
+  },
+  chat_message: {
+    title: (lang, p) => (p.room ? t(lang, '{by} in {room}', p) : t(lang, '{by} hat dir geschrieben', p)),
+    text: (_lang, p) => String(p.preview ?? ''),
+    pref: 'pushChat',
+    action: 'Chat öffnen',
+    mail: false,
+  },
+  chat_mention: {
+    title: (lang, p) => t(lang, '{by} hat dich in {room} erwähnt', p),
+    text: (_lang, p) => String(p.preview ?? ''),
+    pref: 'pushChat',
+    action: 'Chat öffnen',
+    mail: false,
+  },
+  chat_added: {
+    title: (lang, p) => t(lang, '{by} hat dich zur Gruppe {room} hinzugefügt', p),
+    pref: 'pushChat',
+    action: 'Chat öffnen',
+    mail: false,
   },
   contacts_shared: {
     title: (lang, p) => t(lang, '{by} hat das Adressbuch „{name}“ mit dir geteilt', p),
@@ -690,7 +729,7 @@ export function notify(
   const outside = options.email !== false;
   const prefs = prefsOf(user);
   const urgent = options.urgent ?? spec.urgent ?? false;
-  const quiet = outside && !urgent && inQuiet(prefs, now);
+  const quiet = outside && !urgent && (inQuiet(prefs, now) || dndActive(userId, now));
   const mailWanted = outside && options.mail !== false && wantsMail(user, spec, options.mail === true);
   const pushWanted = outside && options.push !== false && wantsPush(user, spec);
   const drop = Boolean(spec.timely) && outside && inQuiet(prefs, now);
@@ -762,7 +801,7 @@ export async function flushSummaries(now = Date.now()) {
       continue;
     }
     const prefs = prefsOf(user);
-    if (inQuiet(prefs, now)) continue;
+    if (inQuiet(prefs, now) || dndActive(userId, now)) continue;
     const pushed = all<NotificationRow>('SELECT * FROM notifications WHERE user_id = ? AND push_state = 1 ORDER BY id', userId);
     if (pushed.length) {
       run('UPDATE notifications SET push_state = 0 WHERE user_id = ? AND push_state = 1 AND id <= ?', userId, pushed.at(-1)!.id);

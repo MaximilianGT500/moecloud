@@ -52,6 +52,7 @@ import {
 } from '../services/users.ts';
 import { activePlugins } from '../services/plugins.ts';
 import { FEATURES } from '../../shared/features.ts';
+import { setStatus, STATES, statusOf } from '../services/status.ts';
 
 const shownPrefs = ({ push, calendarSeeded, ...prefs }: UserPrefs) => prefs;
 const keyList = z.array(z.string().min(1).max(80)).max(60);
@@ -223,7 +224,10 @@ export async function accountRoutes(app: FastifyInstance) {
           mailInvites: z.boolean(),
           mailBookings: z.boolean(),
           pushReminders: z.boolean(),
+          pushMail: z.boolean(),
+          pushChat: z.boolean(),
           features: z.array(z.enum(FEATURES)).max(FEATURES.length),
+          welcome: z.boolean(),
           digest: z.enum(['off', 'daily', 'weekly']),
           quiet: z
             .object({ from: z.number().int().min(0).max(1439), to: z.number().int().min(0).max(1439) })
@@ -242,6 +246,24 @@ export async function accountRoutes(app: FastifyInstance) {
     const next = updatePrefs(me(request).id, input);
     return { prefs: next ? shownPrefs(next) : null };
   });
+
+  app.get('/api/account/status', async (request) => ({ status: statusOf(me(request).id) }));
+
+  app.put('/api/account/status', async (request) => {
+    const input = parse(
+      z.object({
+        state: z.enum(STATES),
+        emoji: z.string().max(16).default(''),
+        text: z.string().trim().max(120, 'Höchstens 120 Zeichen').default(''),
+        until: z.number().int().min(0).nullable().default(null),
+      }),
+      request.body
+    );
+    if (input.until && input.until <= Date.now()) throw badRequest('Das Ende liegt in der Vergangenheit');
+    return { status: setStatus(me(request).id, input) };
+  });
+
+  app.delete('/api/account/status', async (request) => ({ status: setStatus(me(request).id, null) }));
 
   app.put('/api/account/push', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (request) => {
     const user = me(request);

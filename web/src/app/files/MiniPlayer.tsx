@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -7,11 +7,14 @@ import IconButton from '@mui/material/IconButton';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Slider from '@mui/material/Slider';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+import LyricsRounded from '@mui/icons-material/LyricsRounded';
 import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
@@ -25,10 +28,10 @@ import SkipNextRounded from '@mui/icons-material/SkipNextRounded';
 import SkipPreviousRounded from '@mui/icons-material/SkipPreviousRounded';
 import VolumeOffRounded from '@mui/icons-material/VolumeOffRounded';
 import VolumeUpRounded from '@mui/icons-material/VolumeUpRounded';
+import { api } from '../../lib/api';
 import { formatDuration } from '../../lib/format';
 import { t, tn } from '../../lib/i18n';
 import { c, elevation, mix, radius } from '../../theme/tokens';
-import { RAIL } from '../shell/AppShell';
 import { thumbUrl, type Item } from './kinds';
 import {
   clear,
@@ -258,8 +261,89 @@ function Extras({ player }: { player: PlayerState }) {
   );
 }
 
+interface Lyrics {
+  source: 'file' | 'tags' | null;
+  synced: boolean;
+  lines: { time: number | null; text: string }[];
+}
+
+const lyricsCache = new Map<string, Lyrics>();
+
+function LyricsView({ player, track }: { player: PlayerState; track: Item }) {
+  const [lyrics, setLyrics] = useState<Lyrics | null>(lyricsCache.get(track.id) ?? null);
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const known = lyricsCache.get(track.id);
+    if (known) {
+      setLyrics(known);
+      return;
+    }
+    setLyrics(null);
+    let alive = true;
+    api
+      .get<Lyrics>(`/api/nodes/${track.id}/lyrics`)
+      .catch(() => ({ source: null, synced: false, lines: [] }) as Lyrics)
+      .then((result) => {
+        lyricsCache.set(track.id, result);
+        if (alive) setLyrics(result);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [track.id]);
+  let active = -1;
+  if (lyrics?.synced) for (const [index, line] of lyrics.lines.entries()) if ((line.time ?? 0) <= player.time + 0.25) active = index;
+  useEffect(() => {
+    if (active < 0) return;
+    box.current?.querySelector(`[data-line="${active}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [active]);
+  if (!lyrics) return <Typography sx={{ p: 3, color: c.onSurfaceVariant }}>{t('Lädt …')}</Typography>;
+  if (!lyrics.lines.length) {
+    return (
+      <Box sx={{ p: 3, textAlign: 'center', color: c.onSurfaceVariant }}>
+        <LyricsRounded sx={{ fontSize: 40, mb: 1 }} />
+        <Typography variant="body2">
+          {t(
+            'Für diesen Titel gibt es keinen Songtext. Leg eine .lrc-Datei mit gleichem Namen in denselben Ordner, dann läuft der Text mit.'
+          )}
+        </Typography>
+      </Box>
+    );
+  }
+  return (
+    <Box
+      ref={box}
+      data-lyrics
+      sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2, display: 'flex', flexDirection: 'column', gap: 1 }}
+    >
+      {lyrics.lines.map((line, index) => (
+        <Typography
+          key={index}
+          data-line={index}
+          component={lyrics.synced ? 'button' : 'p'}
+          onClick={lyrics.synced && line.time !== null ? () => seek(line.time!) : undefined}
+          sx={{
+            all: lyrics.synced ? 'unset' : undefined,
+            cursor: lyrics.synced ? 'pointer' : 'default',
+            fontSize: lyrics.synced ? '1.25rem' : '1rem',
+            fontWeight: lyrics.synced ? 700 : 400,
+            lineHeight: 1.4,
+            minHeight: line.text ? undefined : '0.8em',
+            color: !lyrics.synced || index === active ? c.onSurface : mix(c.onSurface, 38),
+            transition: 'color 200ms',
+            '&:focus-visible': { outline: `2px solid ${c.primary}`, borderRadius: `${radius.xs}px` },
+          }}
+        >
+          {line.text || '♪'}
+        </Typography>
+      ))}
+    </Box>
+  );
+}
+
 function QueuePanel({ player, small, onClose }: { player: PlayerState; small: boolean; onClose: () => void }) {
   const track = player.queue[player.index];
+  const [tab, setTab] = useState<'queue' | 'lyrics'>('queue');
   useEffect(() => {
     void prefetchInfo();
   }, [player.queue]);
@@ -310,75 +394,93 @@ function QueuePanel({ player, small, onClose }: { player: PlayerState; small: bo
           <Extras player={player} />
         </Box>
       )}
-      <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 1, borderTop: `1px solid ${c.outlineVariant}` }}>
-        <Typography variant="subtitle2" sx={{ flex: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, borderTop: `1px solid ${c.outlineVariant}` }}>
+        <ToggleButtonGroup size="small" exclusive value={tab} onChange={(_event, next: 'queue' | 'lyrics' | null) => next && setTab(next)}>
+          <ToggleButton value="queue" sx={{ gap: 0.75, px: 1.5 }}>
+            <QueueMusicRounded fontSize="small" />
+            {t('Warteschlange')}
+          </ToggleButton>
+          <ToggleButton value="lyrics" sx={{ gap: 0.75, px: 1.5 }} data-player-lyrics>
+            <LyricsRounded fontSize="small" />
+            {t('Songtext')}
+          </ToggleButton>
+        </ToggleButtonGroup>
+        <Box sx={{ flex: 1 }} />
+        {tab === 'queue' && (
+          <Button
+            size="small"
+            onClick={() => {
+              clear();
+              onClose();
+            }}
+          >
+            {t('Leeren')}
+          </Button>
+        )}
+      </Box>
+      {tab === 'lyrics' && track && <LyricsView player={player} track={track} />}
+      {tab === 'queue' && (
+        <Typography variant="caption" sx={{ px: 2, color: c.onSurfaceVariant }}>
           {tn(player.queue.length, 'Ein Titel in der Warteschlange', '{count} Titel in der Warteschlange')}
         </Typography>
-        <Button
-          size="small"
-          onClick={() => {
-            clear();
-            onClose();
-          }}
+      )}
+      {tab === 'queue' && (
+        <Box
+          component="ol"
+          aria-label={t('Warteschlange')}
+          sx={{ m: 0, p: 0, pb: 2, listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 }}
         >
-          {t('Leeren')}
-        </Button>
-      </Box>
-      <Box
-        component="ol"
-        aria-label={t('Warteschlange')}
-        sx={{ m: 0, p: 0, pb: 2, listStyle: 'none', overflowY: 'auto', flex: 1, minHeight: 0 }}
-      >
-        {player.queue.map((item, index) => {
-          const active = index === player.index;
-          return (
-            <Box component="li" key={item.id} sx={{ display: 'flex', alignItems: 'center', pr: 1 }}>
-              <ButtonBase
-                onClick={() => jump(index)}
-                aria-current={active ? 'true' : undefined}
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  justifyContent: 'flex-start',
-                  textAlign: 'left',
-                  px: 2,
-                  py: 0.75,
-                  borderRadius: `${radius.md}px`,
-                  bgcolor: active ? c.secondaryContainer : 'transparent',
-                }}
-              >
-                <Cover item={item} size={40} />
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography
-                    variant="body2"
-                    noWrap
-                    sx={{ fontWeight: active ? 700 : 500, color: active ? c.onSecondaryContainer : c.onSurface }}
-                  >
-                    {titleOf(player, item)}
-                  </Typography>
-                  {lineOf(player, item) && (
-                    <Typography variant="caption" noWrap component="p" sx={{ color: c.onSurfaceVariant }}>
-                      {lineOf(player, item)}
-                    </Typography>
-                  )}
-                </Box>
-              </ButtonBase>
-              <Tooltip title={t('Aus der Warteschlange nehmen')}>
-                <IconButton
-                  size="small"
-                  aria-label={t('„{name}“ aus der Warteschlange nehmen', { name: item.name })}
-                  onClick={() => remove(index)}
+          {player.queue.map((item, index) => {
+            const active = index === player.index;
+            return (
+              <Box component="li" key={item.id} sx={{ display: 'flex', alignItems: 'center', pr: 1 }}>
+                <ButtonBase
+                  onClick={() => jump(index)}
+                  aria-current={active ? 'true' : undefined}
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    px: 2,
+                    py: 0.75,
+                    borderRadius: `${radius.md}px`,
+                    bgcolor: active ? c.secondaryContainer : 'transparent',
+                  }}
                 >
-                  <CloseRounded fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          );
-        })}
-      </Box>
+                  <Cover item={item} size={40} />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      sx={{ fontWeight: active ? 700 : 500, color: active ? c.onSecondaryContainer : c.onSurface }}
+                    >
+                      {titleOf(player, item)}
+                    </Typography>
+                    {lineOf(player, item) && (
+                      <Typography variant="caption" noWrap component="p" sx={{ color: c.onSurfaceVariant }}>
+                        {lineOf(player, item)}
+                      </Typography>
+                    )}
+                  </Box>
+                </ButtonBase>
+                <Tooltip title={t('Aus der Warteschlange nehmen')}>
+                  <IconButton
+                    size="small"
+                    aria-label={t('„{name}“ aus der Warteschlange nehmen', { name: item.name })}
+                    onClick={() => remove(index)}
+                  >
+                    <CloseRounded fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
     </Drawer>
   );
 }
@@ -411,7 +513,7 @@ export function MiniPlayer() {
         sx={{
           position: 'fixed',
           zIndex: 1150,
-          left: { xs: 8, md: RAIL },
+          left: { xs: 8, md: 'var(--moe-rail, 88px)' },
           right: { xs: 8, md: 16 },
           bottom: { xs: 'calc(84px + env(safe-area-inset-bottom))', md: 16 },
           height: { xs: 64, md: 72 },

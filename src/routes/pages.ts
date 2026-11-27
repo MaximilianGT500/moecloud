@@ -25,6 +25,8 @@ import { teamsFor } from '../services/teams.ts';
 import { prefsOf, publicUser, storageOf } from '../services/users.ts';
 import { calendarAllowed } from '../calendar/guard.ts';
 import { contactsAllowed } from '../contacts/books.ts';
+import { appAllowed, disabledApps, personal } from '../services/apps.ts';
+import { FEATURES, type Feature } from '../../shared/features.ts';
 
 function requirePageUser(request: FastifyRequest, reply: FastifyReply) {
   if (!isSetUp()) {
@@ -52,6 +54,8 @@ export function userBoot(request: FastifyRequest) {
     plugins: pluginBoot(pending ? null : user, request.lang),
     forms: settings.get('forms.enabled') && user.role !== 'guest',
     featuresOff: prefsOf(user).features,
+    featuresDisabled: personal(user) ? disabledApps() : [...FEATURES],
+    welcome: settings.get('accounts.welcome') && !pending && prefsOf(user).welcome === true,
     calendarOn: calendarAllowed(user)
       ? {
           booking: settings.get('calendar.booking'),
@@ -149,6 +153,43 @@ export async function pageRoutes(app: FastifyInstance) {
   };
   app.get('/contacts', contacts);
   app.get('/contacts/*', contacts);
+
+  const appPage =
+    (
+      feature: Feature,
+      entry: 'mail' | 'chat' | 'bookmarks' | 'feeds' | 'snippets',
+      title: string,
+      extra: (request: FastifyRequest) => Record<string, unknown> = () => ({})
+    ) =>
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = requirePageUser(request, reply);
+      if (!user) return reply;
+      if (!appAllowed(feature, user)) throw notFound();
+      return renderApp(request, reply, { entry, title: t(request.lang, title), data: { ...userBoot(request), ...extra(request) } });
+    };
+  const mail = appPage('mail', 'mail', 'E-Mail', () => ({
+    mailLimits: { size: 25 * 1024 * 1024, custom: settings.get('webmail.custom') },
+    calendarWritable: settings.get('calendar.enabled'),
+  }));
+  app.get('/mail', mail);
+  app.get('/mail/*', mail);
+  const chat = appPage('chat', 'chat', 'Chat', () => ({
+    directory: settings.get('users.directory'),
+    upload: { chunkSize: CHUNK_SIZE, maxUpload: settings.get('storage.maxUpload') },
+  }));
+  app.get('/chat', chat);
+  app.get('/chat/*', chat);
+  const bookmarks = appPage('bookmarks', 'bookmarks', 'Lesezeichen');
+  app.get('/bookmarks', bookmarks);
+  app.get('/bookmarks/*', bookmarks);
+  const feeds = appPage('feeds', 'feeds', 'Feeds');
+  app.get('/feeds', feeds);
+  app.get('/feeds/*', feeds);
+  const snippets = appPage('snippets', 'snippets', 'Schnipsel', () => ({
+    share: { requirePassword: settings.get('share.requirePassword'), maxDays: settings.get('share.maxDays') },
+  }));
+  app.get('/snippets', snippets);
+  app.get('/snippets/*', snippets);
 
   const adminPage = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = requirePageUser(request, reply);

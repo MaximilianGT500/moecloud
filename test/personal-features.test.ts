@@ -14,7 +14,12 @@ before(async () => {
 after(() => app.close());
 
 const boot = (page: string) =>
-  JSON.parse(/<script[^>]*id="moe-boot"[^>]*>([^<]*)<\/script>/.exec(page)![1]) as { featuresOff: string[]; calendarOn: unknown };
+  JSON.parse(/<script[^>]*id="moe-boot"[^>]*>([^<]*)<\/script>/.exec(page)![1]) as {
+    featuresOff: string[];
+    featuresDisabled: string[];
+    welcome: boolean;
+    calendarOn: unknown;
+  };
 
 describe('Funktionen pro Person', () => {
   it('blendet Funktionen pro Person aus, ohne die Schnittstelle zu sperren', async () => {
@@ -60,6 +65,68 @@ describe('Funktionen pro Person', () => {
       assert.equal((await new Client(app).send({ method: 'PROPFIND', url: '/caldav/' })).statusCode, 404);
     } finally {
       settings.set('calendar.enabled', true);
+    }
+  });
+
+  it('schaltet Funktionen für alle ab und sperrt ihre Schnittstellen', async () => {
+    const changed = await emi.json('PATCH', '/api/admin/settings', {
+      'photos.enabled': false,
+      'music.enabled': false,
+      'tasks.enabled': false,
+    });
+    assert.equal(changed.statusCode, 200, changed.body);
+    try {
+      assert.equal((await emi.get('/api/photos')).statusCode, 404);
+      assert.equal((await emi.get('/api/albums')).statusCode, 404);
+      assert.equal((await emi.get('/api/music')).statusCode, 404);
+      assert.equal((await emi.get('/api/calendar/tasks')).statusCode, 404);
+      assert.equal((await emi.get('/api/calendar/calendars')).statusCode, 200);
+      const page = await emi.get('/files/photos', { accept: 'text/html' });
+      assert.equal(page.statusCode, 302);
+      assert.equal(page.headers.location, '/files');
+      assert.equal((await emi.get('/calendar/tasks', { accept: 'text/html' })).headers.location, '/calendar');
+      const data = boot((await emi.get('/files', { accept: 'text/html' })).body);
+      assert.deepEqual(data.featuresDisabled, ['photos', 'music', 'tasks']);
+      assert.deepEqual(data.featuresOff, [], 'die eigene Auswahl bleibt unberührt');
+      const home = await emi.get('/api/home');
+      assert.equal(home.statusCode, 200, home.body);
+      assert.deepEqual(home.json().memories, []);
+    } finally {
+      await emi.json('PATCH', '/api/admin/settings', { 'photos.enabled': true, 'music.enabled': true, 'tasks.enabled': true });
+    }
+    assert.equal((await emi.get('/api/photos')).statusCode, 200);
+  });
+
+  it('nimmt mit dem Kalender auch Aufgaben, Buchungsseiten und Umfragen weg', async () => {
+    settings.set('calendar.enabled', false);
+    try {
+      const data = boot((await emi.get('/files', { accept: 'text/html' })).body);
+      assert.deepEqual(data.featuresDisabled, ['calendar', 'tasks', 'booking', 'polls']);
+      assert.equal((await emi.get('/calendar/polls', { accept: 'text/html' })).headers.location, '/files');
+    } finally {
+      settings.set('calendar.enabled', true);
+    }
+  });
+
+  it('begrüßt neue Konten mit der Einführung', async () => {
+    assert.equal(
+      boot((await emi.get('/files', { accept: 'text/html' })).body).welcome,
+      false,
+      'wer die Cloud eingerichtet hat, sieht sie nicht'
+    );
+    const made = await emi.json('POST', '/api/admin/users', { username: 'emily', name: 'Emily', password: 'emilys-passwort-123' });
+    assert.equal(made.statusCode, 200, made.body);
+    const emily = await login(app, 'emily', 'emilys-passwort-123');
+    assert.equal(boot((await emily.get('/files', { accept: 'text/html' })).body).welcome, true);
+    const done = await emily.json('PATCH', '/api/account/prefs', { welcome: false, features: ['music'] });
+    assert.equal(done.statusCode, 200, done.body);
+    assert.equal(boot((await emily.get('/files', { accept: 'text/html' })).body).welcome, false);
+    settings.set('accounts.welcome', false);
+    try {
+      await emi.json('POST', '/api/admin/users', { username: 'lea2', name: 'Lea', password: 'leas-passwort-1234' });
+      assert.equal(prefsOf(findByUsername('lea2')!).welcome, false);
+    } finally {
+      settings.set('accounts.welcome', true);
     }
   });
 });

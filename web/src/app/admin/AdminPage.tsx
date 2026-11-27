@@ -21,11 +21,13 @@ import SettingsRounded from '@mui/icons-material/SettingsRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import SupportAgentRounded from '@mui/icons-material/SupportAgentRounded';
 import WebhookRounded from '@mui/icons-material/WebhookRounded';
+import WidgetsRounded from '@mui/icons-material/WidgetsRounded';
 import { boot } from '../../lib/boot';
 import { t } from '../../lib/i18n';
 import { navigate, useLocation } from '../../lib/router';
 import { c, curve, mix, radius } from '../../theme/tokens';
 import { AppShell } from '../shell/AppShell';
+import { AppsSection } from './Apps';
 import { AuditSection } from './Audit';
 import { BackupsSection } from './Backups';
 import { CalendarSection } from './Calendar';
@@ -50,6 +52,7 @@ import { WebhooksSection } from './Webhooks';
 type SectionKey =
   | 'overview'
   | 'security'
+  | 'apps'
   | 'people'
   | 'groups'
   | 'teams'
@@ -73,6 +76,7 @@ function sections(): { key: SectionKey; label: string; icon: ReactNode; group: n
   return [
     { key: 'overview', label: t('Übersicht'), icon: <DashboardRounded />, group: 0 },
     { key: 'security', label: t('Sicherheit'), icon: <ShieldRounded />, group: 0 },
+    { key: 'apps', label: t('Funktionen'), icon: <WidgetsRounded />, group: 0 },
     { key: 'people', label: t('Personen'), icon: <PeopleRounded />, group: 1 },
     { key: 'groups', label: t('Gruppen'), icon: <GroupsRounded />, group: 1 },
     { key: 'teams', label: t('Teamordner'), icon: <FolderSharedRounded />, group: 1 },
@@ -265,6 +269,7 @@ export function AdminPage() {
           {section === 'sso' && <SsoSection />}
           {section === 'webhooks' && <WebhooksSection />}
           {section === 'calendar' && <CalendarSection />}
+          {section === 'apps' && <AppsSection />}
           {section === 'plugins' && <PluginsSection />}
           {section === 'backups' && <BackupsSection />}
           {section === 'settings' && <SettingsSection onChanged={(settings) => setRegistration(String(settings['auth.registration']))} />}

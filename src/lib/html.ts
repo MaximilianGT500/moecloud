@@ -69,7 +69,7 @@ function head(request: FastifyRequest, title: string, extra = '', withTokens = t
   const nonce = escapeHtml(request.nonce);
   const site = settings.get('site.name');
   return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>${escapeHtml(title ? `${title} » ${site}` : site)}</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark light">

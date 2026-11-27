@@ -445,6 +445,7 @@ await emi.json('POST', `/api/nodes/${photos}/grants`, { userId: users.lea, permi
 
 const mia = new Session();
 await mia.login('mia', 'moecloud-demo');
+await mia.json('PATCH', '/api/account/prefs', { welcome: false });
 const miaRoot = (await mia.json<{ user: { rootId: string } }>('GET', '/api/session')).user.rootId;
 const recipes = await mia.folder(miaRoot, 'Rezepte');
 await mia.upload(recipes, 'Ramen.md', Buffer.from('# Ramen\n\n1. Brühe ansetzen\n2. Nudeln kochen\n3. Toppings vorbereiten\n'));
@@ -466,6 +467,7 @@ await mia.upload(
 
 const lea = new Session();
 await lea.login('lea', 'moecloud-demo');
+await lea.json('PATCH', '/api/account/prefs', { welcome: false });
 const photoFiles = await lea.json<{ items: { id: string; name: string }[] }>('GET', `/api/nodes/${photos}/children`);
 const sunset = photoFiles.items.find((item) => item.name === 'Sonnenuntergang am See.jpg');
 if (sunset)

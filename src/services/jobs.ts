@@ -1,4 +1,5 @@
 import { purgeUnconfirmed } from './confirmations.ts';
+import { purgeStatuses } from './status.ts';
 import type { FastifyBaseLogger } from 'fastify';
 import { statfs } from 'node:fs/promises';
 import { config } from '../config.ts';
@@ -61,6 +62,7 @@ export async function runMaintenance() {
   purgeInvites();
   purgeResets();
   purgeNotifications();
+  purgeStatuses();
   purgeBookings();
   const events = purgeTrashedEvents(settings.get('calendar.trashDays'));
   const calendars = purgeCalendars(settings.get('calendar.trashDays'));
@@ -167,10 +169,44 @@ export function startJobs(log: FastifyBaseLogger) {
       log.error(error, 'Erinnerungen an Termine fehlgeschlagen');
     }
   };
+  let mailing = false;
+  const mail = async () => {
+    if (mailing) return;
+    mailing = true;
+    try {
+      const { checkNewMail } = await import('../mail/unread.ts');
+      await checkNewMail();
+    } catch (error) {
+      log.error(error, 'Neue E-Mails ließen sich nicht abrufen');
+    } finally {
+      mailing = false;
+    }
+  };
+  let reading = false;
+  const feeds = async () => {
+    if (reading) return;
+    reading = true;
+    try {
+      const { refreshDue: refreshFeeds } = await import('../feeds/store.ts');
+      await refreshFeeds();
+    } catch (error) {
+      log.error(error, 'Feeds ließen sich nicht abrufen');
+    } finally {
+      reading = false;
+    }
+  };
   const minute = async () => {
+    try {
+      const { flushOutbox } = await import('../mail/compose.ts');
+      await flushOutbox();
+    } catch (error) {
+      log.error(error, 'Postausgang ließ sich nicht senden');
+    }
     try {
       fireReminders();
       expireNodes();
+      const { expireSnippets } = await import('../snippets/store.ts');
+      expireSnippets();
       alarms();
       await flushSummaries();
       await reconcilePlugins();
@@ -178,8 +214,13 @@ export function startJobs(log: FastifyBaseLogger) {
       log.error(error, 'Erinnerungen fehlgeschlagen');
     }
   };
+  void import('../mail/compose.ts').then(({ scheduleOutbox }) => scheduleOutbox()).catch(() => undefined);
   const timers = [
     setInterval(minute, 60_000),
+    setInterval(mail, 2 * 60_000),
+    setTimeout(mail, 60_000),
+    setInterval(feeds, 3 * 60_000),
+    setTimeout(feeds, 75_000),
     setInterval(alarms, 15_000),
     setInterval(subscriptions, 2 * 60_000),
     setTimeout(subscriptions, 20_000),

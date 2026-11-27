@@ -98,6 +98,32 @@ const webAddress = z
   .refine((value) => value === '' || /^https?:\/\/[^/\s]+/.test(value), 'Die Adresse muss mit http:// oder https:// beginnen')
   .transform((value) => value.replace(/\/+$/, ''));
 
+const mailHost = z
+  .string()
+  .trim()
+  .min(1, 'Gib den Server an')
+  .max(253)
+  .regex(/^[A-Za-z0-9.-]+$|^\[[0-9a-fA-F:.]+\]$/, 'Der Servername sieht nicht richtig aus');
+
+const mailServer = z.object({
+  host: mailHost,
+  port: z.number().int().min(1).max(65535),
+  security: z.enum(['tls', 'starttls', 'none']),
+});
+
+const mailPreset = z.object({
+  name: z.string().trim().min(1, 'Gib einen Namen ein').max(60),
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(253)
+    .refine((value) => value === '' || /^[a-z0-9.-]+\.[a-z]{2,}$/.test(value), 'Schreib die Domain wie example.com'),
+  login: z.enum(['email', 'local']),
+  imap: mailServer,
+  smtp: mailServer,
+});
+
 const settingsSchema = z
   .object({
     'site.name': z.string().trim().min(1, 'Gib deiner Cloud einen Namen').max(60),
@@ -167,6 +193,23 @@ const settingsSchema = z
     'calendar.subscriptionsPrivate': z.boolean(),
     'calendar.imports': z.boolean(),
     'contacts.enabled': z.boolean(),
+    'photos.enabled': z.boolean(),
+    'music.enabled': z.boolean(),
+    'notes.enabled': z.boolean(),
+    'tags.enabled': z.boolean(),
+    'tasks.enabled': z.boolean(),
+    'webmail.enabled': z.boolean(),
+    'webmail.custom': z.boolean(),
+    'webmail.private': z.boolean(),
+    'webmail.preset': mailPreset.nullable(),
+    'webmail.maxAccounts': z.number().int().min(1).max(20),
+    'chat.enabled': z.boolean(),
+    'bookmarks.enabled': z.boolean(),
+    'feeds.enabled': z.boolean(),
+    'feeds.private': z.boolean(),
+    'feeds.maxFeeds': z.number().int().min(1).max(2000),
+    'snippets.enabled': z.boolean(),
+    'accounts.welcome': z.boolean(),
     'calendar.maxSubscriptions': z.number().int().min(0).max(500),
     'calendar.minRefresh': z.number().int().min(5).max(1440),
     'calendar.booking': z.boolean(),

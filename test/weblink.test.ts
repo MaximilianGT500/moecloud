@@ -65,7 +65,7 @@ describe('Teilen aus anderen Apps', () => {
     assert.equal(manifest.share_target.method, 'POST');
     assert.deepEqual(
       manifest.shortcuts.map((entry: { url: string }) => entry.url),
-      ['/files/notes', '/files/photos', '/files/recent', '/files/starred']
+      ['/mail', '/chat', '/calendar', '/files/notes', '/files/photos', '/files/recent']
     );
   });
 
