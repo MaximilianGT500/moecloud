@@ -1177,6 +1177,65 @@ const MIGRATIONS = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS mail_accounts (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    login TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    imap_host TEXT NOT NULL,
+    imap_port INTEGER NOT NULL,
+    imap_security TEXT NOT NULL,
+    smtp_host TEXT NOT NULL,
+    smtp_port INTEGER NOT NULL,
+    smtp_security TEXT NOT NULL,
+    smtp_login TEXT,
+    smtp_secret TEXT,
+    signature TEXT NOT NULL DEFAULT '',
+    folders TEXT,
+    save_sent INTEGER NOT NULL DEFAULT 1,
+    notify INTEGER NOT NULL DEFAULT 1,
+    preset INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    seen_uid INTEGER,
+    seen_validity TEXT,
+    error TEXT,
+    checked_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS mail_accounts_user ON mail_accounts(user_id, position);
+
+  CREATE TABLE IF NOT EXISTS mail_outbox (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    send_at INTEGER NOT NULL,
+    envelope TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    recipients TEXT NOT NULL DEFAULT '',
+    followup TEXT,
+    state TEXT NOT NULL DEFAULT 'waiting',
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS mail_outbox_due ON mail_outbox(state, send_at);
+  CREATE INDEX IF NOT EXISTS mail_outbox_user ON mail_outbox(user_id);
+
+  CREATE TABLE IF NOT EXISTS mail_senders (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    address TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    trusted INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    used_at INTEGER,
+    PRIMARY KEY (user_id, address)
+  );
+  `,
 ];
 
 export const pendingMigrations = (database: DatabaseSync) =>

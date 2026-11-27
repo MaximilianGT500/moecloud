@@ -1174,6 +1174,65 @@ CREATE TABLE user_status (
   updated_at BIGINT NOT NULL
 );
 `,
+  14: `
+CREATE TABLE IF NOT EXISTS mail_accounts (
+  id ${T} PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  name ${T} NOT NULL,
+  email ${T} NOT NULL,
+  display_name ${T} NOT NULL DEFAULT '',
+  login ${T} NOT NULL,
+  secret ${T} NOT NULL,
+  imap_host ${T} NOT NULL,
+  imap_port BIGINT NOT NULL,
+  imap_security ${T} NOT NULL,
+  smtp_host ${T} NOT NULL,
+  smtp_port BIGINT NOT NULL,
+  smtp_security ${T} NOT NULL,
+  smtp_login ${T},
+  smtp_secret ${T},
+  signature ${T} NOT NULL DEFAULT '',
+  folders ${T},
+  save_sent BIGINT NOT NULL DEFAULT 1,
+  notify BIGINT NOT NULL DEFAULT 1,
+  preset BIGINT NOT NULL DEFAULT 0,
+  position BIGINT NOT NULL DEFAULT 0,
+  seen_uid BIGINT,
+  seen_validity ${T},
+  error ${T},
+  checked_at BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mail_accounts_user ON mail_accounts(user_id, position);
+
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id ${T} PRIMARY KEY,
+  account_id ${T} NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE ${FK},
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  send_at BIGINT NOT NULL,
+  envelope ${T} NOT NULL,
+  subject ${T} NOT NULL DEFAULT '',
+  recipients ${T} NOT NULL DEFAULT '',
+  followup ${T},
+  state ${T} NOT NULL DEFAULT 'waiting',
+  error ${T},
+  attempts BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mail_outbox_due ON mail_outbox(state, send_at);
+CREATE INDEX IF NOT EXISTS mail_outbox_user ON mail_outbox(user_id);
+
+CREATE TABLE IF NOT EXISTS mail_senders (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
+  address ${T} NOT NULL,
+  name ${T} NOT NULL DEFAULT '',
+  trusted BIGINT NOT NULL DEFAULT 0,
+  used BIGINT NOT NULL DEFAULT 0,
+  used_at BIGINT,
+  PRIMARY KEY (user_id, address)
+);
+`,
 };
 
 export const PG_IDENTITY: Record<string, string> = {
