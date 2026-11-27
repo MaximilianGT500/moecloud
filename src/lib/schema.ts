@@ -1238,6 +1238,12 @@ const MIGRATIONS = [
   `,
 ];
 
+const release190Repair = MIGRATIONS[12]
+  .replace(/\bCREATE TABLE /g, 'CREATE TABLE IF NOT EXISTS ')
+  .replace(/\bCREATE (UNIQUE )?INDEX /g, 'CREATE $1INDEX IF NOT EXISTS ')
+  .replace(/\s*ALTER TABLE nodes ADD COLUMN expires_(?:at|by) INTEGER;\s*/g, '\n');
+MIGRATIONS.push(release190Repair);
+
 export const pendingMigrations = (database: DatabaseSync) =>
   MIGRATIONS.length - (database.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 
@@ -1247,6 +1253,13 @@ export function migrate(database: DatabaseSync, until = MIGRATIONS.length) {
   for (let version = current; version < Math.min(until, MIGRATIONS.length); version++) {
     database.exec('BEGIN IMMEDIATE');
     try {
+      if (version === 14) {
+        const columns = new Set(
+          (database.prepare('PRAGMA table_info(nodes)').all() as { name: string }[]).map(({ name }) => name)
+        );
+        if (!columns.has('expires_at')) database.exec('ALTER TABLE nodes ADD COLUMN expires_at INTEGER');
+        if (!columns.has('expires_by')) database.exec('ALTER TABLE nodes ADD COLUMN expires_by INTEGER');
+      }
       database.exec(MIGRATIONS[version]);
       database.exec(`PRAGMA user_version = ${version + 1}`);
       database.exec('COMMIT');

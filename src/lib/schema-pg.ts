@@ -1174,7 +1174,9 @@ CREATE TABLE user_status (
   updated_at BIGINT NOT NULL
 );
 `,
-  14: `
+};
+
+PG_STEPS[14] = `
 CREATE TABLE IF NOT EXISTS mail_accounts (
   id ${T} PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE ${FK},
@@ -1232,8 +1234,12 @@ CREATE TABLE IF NOT EXISTS mail_senders (
   used_at BIGINT,
   PRIMARY KEY (user_id, address)
 );
-`,
-};
+`;
+
+PG_STEPS[15] = PG_STEPS[13]
+  .replace(/\bCREATE TABLE /g, 'CREATE TABLE IF NOT EXISTS ')
+  .replace(/\bCREATE (UNIQUE )?INDEX /g, 'CREATE $1INDEX IF NOT EXISTS ')
+  .replace(/ALTER TABLE (\w+) ADD COLUMN /g, 'ALTER TABLE $1 ADD COLUMN IF NOT EXISTS ');
 
 export const PG_IDENTITY: Record<string, string> = {
   users: 'id',
